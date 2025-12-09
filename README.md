@@ -32,6 +32,7 @@
 > Since LABOKit processes everything locally using advanced AI models, performance depends entirely on your computer's specifications.
 > * **High-end PC / Dedicated GPU:** Fast & smooth processing.
 > * **Low-end PC / Integrated Graphics:** Expect longer processing times and potential lag during heavy tasks (like Upscaling).
+> * **Note For Linux Users:** You Must Manually download the ffmpeg file on [ffmpeg official website](https://github.com/BtbN/FFmpeg-Builds/releases) and choose **ffmpeg-master-latest-linux64-gpl.tar.xz**.
 
 ## Plugins
 LABOKit capabilities can be extended using `.kit` plugins. 
