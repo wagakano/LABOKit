@@ -77,7 +77,7 @@ LABOKit for Linux must be run directly from the Python source code. You will nee
 
 5.  **Model Setup**
     * LABOKit will attempt to download necessary models on the first run.
-    * Ensure the `realesrgan_ncnn` folder (for Vulkan) and the `models` folder (for PyTorch) are present in the project directory.
+    * Ensure the `realesrgan_ncnn` folder (for Vulkan) and the `models` folder (for PyTorch) are present in the project directory. If not working, Put on "~/home/$user/.local/share/LABOKit/"
 
 6.  **Run the Application:**
     ```bash
