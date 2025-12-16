@@ -1,7 +1,15 @@
 PySide6
-rembg[gpu] 
-onnxruntime 
+rembg[gpu]
+onnxruntime
 Pillow>=9.0.0
 numpy
 opencv-python-headless
 svgwrite
+requests
+packaging
+torch
+torchvision
+basicsr
+realesrgan
+qrcode[pil]
+urllib3

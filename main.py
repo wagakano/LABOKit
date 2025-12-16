@@ -1,14 +1,52 @@
-import importlib.machinery
-import importlib.util
+# --- PATCH TORCHVISION BASICSR ---
+import torchvision.transforms.functional as F
+try:
+    from torchvision.transforms import functional_tensor
+except ImportError:
+    import sys
+    from types import ModuleType
+    
+    ft_module = ModuleType('torchvision.transforms.functional_tensor')
+    ft_module.rgb_to_grayscale = F.rgb_to_grayscale
+    sys.modules['torchvision.transforms.functional_tensor'] = ft_module
+
+import sys
 import os
 import random
-import platform
-import shutil
 import subprocess
-import sys
+import importlib.util
+import importlib.machinery
+import shutil
+import json
+import urllib.request
+import base64
+import platform
+import ssl
+import requests
+import svgwrite
+import cv2
 from pathlib import Path
-
 from PIL import Image
+from packaging import version
+import urllib3
+urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
+
+# --- IMPORT ENGINE AI  ---
+try:
+    import torch
+    import cv2
+    import numpy as np
+    from basicsr.archs.srvgg_arch import SRVGGNetCompact 
+    from realesrgan import RealESRGANer
+    HAS_TORCH = True
+except ImportError as e:
+    HAS_TORCH = False
+    print(f"Warning: AI Engine modules missing: {e}")
+
+# --- APP INFO ---
+APP_VERSION = "2.0.0"
+APP_UPDATE_URL = "https://raw.githubusercontent.com/wagakano/LABOKit/main_windows/latest_version.json"
+PLUGIN_MANIFEST_URL = "https://raw.githubusercontent.com/wagakano/LABOKit/main_windows/plugins_manifest.json"
 
 # --- PATH & ASSETS SETUP ---
 # 1. Internal Path (Source files inside EXE/Build)
@@ -43,6 +81,8 @@ MODEL_DIR = APP_DATA / "models"
 REALESRGAN_DIR = APP_DATA / "realesrgan"
 PLUGIN_DIR = APP_DATA / "plugins"
 FFMPEG_DIR = APP_DATA / "ffmpeg"
+ICON_PATH = INTERNAL_DIR / "labokit.ico"
+remove = None
 
 # Setup Environment Variables
 os.environ["U2NET_HOME"] = str(MODEL_DIR)
@@ -52,24 +92,34 @@ if sys.platform == "win32":
 else:
     REALESRGAN_EXE = REALESRGAN_DIR / "realesrgan-ncnn-vulkan"
 
-# Icon & Assets
-ICON_PATH = INTERNAL_DIR / "labokit.ico"
-remove = None
+# ICON_PATH = INTERNAL_DIR / "labokit.ico"
 
 # --- IMPORTS ---
-from PySide6.QtCore import QSize, Qt, QTimer, QUrl
-from PySide6.QtGui import QAction, QDesktopServices, QFont, QIcon, QPixmap
+from PySide6.QtCore import Qt, QSize, QTimer, QUrl, QRectF, QThread, Signal
+from PySide6.QtGui import QAction, QPixmap, QFont, QIcon, QDesktopServices, QPainterPath, QRegion, QColor, QPalette
 from PySide6.QtWidgets import (
     QApplication, QMainWindow, QWidget, QVBoxLayout, QHBoxLayout,
     QListWidget, QListWidgetItem, QLabel, QPushButton, QFileDialog,
     QMessageBox, QProgressDialog, QFrame, QComboBox, QTabWidget,
-    QDialog, QPlainTextEdit, QSplashScreen
+    QDialog, QPlainTextEdit, QSplashScreen, QMenuBar, QSizePolicy
 )
 
 IMAGE_FILTER = (
     "Images (*.jpg *.jpeg *.png *.bmp *.tif *.tiff *.webp *.gif "
     "*.JPG *.JPEG *.PNG *.BMP *.TIF *.TIFF *.WEBP *.GIF)"
 )
+
+# --- IMPORT LIBRARY PYTORCH & REALESRGAN ---
+try:
+    import torch
+    from torch import nn
+    import numpy as np
+    import cv2
+    from realesrgan import RealESRGANer 
+    HAS_TORCH = True
+except ImportError as e:
+    HAS_TORCH = False
+    print(f"Warning: PyTorch/RealESRGAN modules not found: {e}")
 
 # --- RUNNING TEXT DATA (World Line Meter) ---
 RUNNING_VALUES = [
@@ -84,60 +134,56 @@ RUNNING_VALUES = [
 BG_PRESETS = {
     "Standard": {"alpha_matting": False, "post_process_mask": False},
     "Medium": {"alpha_matting": False, "post_process_mask": True},
-    "High": {
-        "alpha_matting": True,
-        "alpha_matting_foreground_threshold": 240,
-        "alpha_matting_background_threshold": 10,
-        "alpha_matting_erode_structure_size": 10,
-        "alpha_matting_base_size": 1000,
-        "post_process_mask": True,
-    },
+    "High": {"alpha_matting": True, "alpha_matting_foreground_threshold": 240, "alpha_matting_background_threshold": 10, "alpha_matting_erode_structure_size": 10, "alpha_matting_base_size": 1000, "post_process_mask": True},
 }
 DEFAULT_PRESET_NAME = "Standard"
 
+# --- SMART DEPLOYMENT (AUTO-UPDATE ASSETS) ---
+def sync_folder(src_dir, dst_dir):
+    if not src_dir.exists(): return
 
-# --- SMART DEPLOYMENT (SILENT) ---
+    dst_dir.mkdir(parents=True, exist_ok=True)
+
+    for item in src_dir.iterdir():
+        dst_item = dst_dir / item.name
+
+        if item.is_dir():
+            sync_folder(item, dst_item)
+        else:
+            if not dst_item.exists():
+                try:
+                    shutil.copy2(item, dst_item)
+                    print(f"[Update] New asset deployed: {item.name}")
+                except Exception as e:
+                    print(f"Failed to deploy {item.name}: {e}")
+
 def deploy_assets():
-    """Copy assets from EXE to AppData on first run (Silent Mode)"""
+    print("Checking assets...")
 
-    # 1. Models
-    if not MODEL_DIR.exists():
-        try:
-            shutil.copytree(INTERNAL_DIR / "models", MODEL_DIR)
-        except Exception as e:
-            print(f"Model deploy error: {e}")
+    # 1. Models (U2Net)
+    sync_folder(INTERNAL_DIR / "models", MODEL_DIR)
 
-    # 2. Real-ESRGAN
-    if not REALESRGAN_DIR.exists():
-        try:
-            shutil.copytree(INTERNAL_DIR / "realesrgan", REALESRGAN_DIR)
-        except Exception as e:
-            print(f"Tool deploy error: {e}")
+    # 2. Real-ESRGAN (Exe & Models)
+    sync_folder(INTERNAL_DIR / "realesrgan_ncnn", REALESRGAN_DIR)
 
     # 3. FFMPEG
-    if not FFMPEG_DIR.exists():
-        try:
-            shutil.copytree(INTERNAL_DIR / "ffmpeg", FFMPEG_DIR)
-        except Exception as e:
-            print(f"FFmpeg deploy error: {e}")
+    sync_folder(INTERNAL_DIR / "ffmpeg", FFMPEG_DIR)
 
-    # 4. Plugins Folder
-    if not PLUGIN_DIR.exists():
+    # 4. Plugins Folder (Default Plugins)
+    internal_plugins = INTERNAL_DIR / "plugins"
+    if internal_plugins.exists():
         PLUGIN_DIR.mkdir(exist_ok=True)
-        # Copy built-in plugins if available
-        internal_plugins = INTERNAL_DIR / "plugins"
-        if internal_plugins.exists():
-            for item in internal_plugins.glob("*.kit"):
-                try:
-                    shutil.copy2(item, PLUGIN_DIR / item.name)
-                except:
-                    pass
-
+        for item in internal_plugins.glob("*.kit"):
+            dst_item = PLUGIN_DIR / item.name
+            try:
+                shutil.copy2(item, dst_item)
+                # print(f"[System] Built-in plugin deployed/updated: {item.name}")
+            except Exception as e:
+                print(f"Failed to deploy built-in {item.name}: {e}")
 
 # ==========================================
 # TABS
 # ==========================================
-
 
 class BgRemoverTab(QWidget):
     def __init__(self, parent=None):
@@ -154,224 +200,196 @@ class BgRemoverTab(QWidget):
 
     def _setup_ui(self):
         outer = QVBoxLayout(self)
-        outer.setContentsMargins(8, 8, 8, 8)
-        outer.setSpacing(6)
-        main = QHBoxLayout()
-        outer.addLayout(main)
-
+        outer.setContentsMargins(8,8,8,8); outer.setSpacing(6)
+        main = QHBoxLayout(); outer.addLayout(main)
+        
         # Left Panel
-        left = QVBoxLayout()
-        main.addLayout(left, 1)
+        left = QVBoxLayout(); main.addLayout(left, 1)
         self.list_w = QListWidget()
         self.list_w.currentRowChanged.connect(self.on_file_selected)
-        lbl = QLabel("LOADED IMAGES (BG Remover):")
-        lbl.setStyleSheet("border:none; background:transparent;")
-        left.addWidget(lbl)
-        left.addWidget(self.list_w)
-
+        lbl = QLabel("LOADED IMAGES (BG Remover):"); lbl.setStyleSheet("border:none; background:transparent;")
+        left.addWidget(lbl); left.addWidget(self.list_w)
+        
         btns = QHBoxLayout()
-        b_add = QPushButton("Add Images…")
-        b_add.clicked.connect(self.add_images)
-        b_clr = QPushButton("Clear List")
-        b_clr.clicked.connect(self.clear_list)
-        btns.addWidget(b_add)
-        btns.addWidget(b_clr)
-        left.addLayout(btns)
+        b_add = QPushButton("Add Images…"); b_add.clicked.connect(self.add_images)
+        b_clr = QPushButton("Clear List"); b_clr.clicked.connect(self.clear_list)
+        btns.addWidget(b_add); btns.addWidget(b_clr); left.addLayout(btns)
 
         # Right Panel
-        right = QVBoxLayout()
-        main.addLayout(right, 3)
-        self.out_lbl = QLabel("BG OUTPUT FOLDER: (auto)")
-        self.out_lbl.setWordWrap(True)
+        right = QVBoxLayout(); main.addLayout(right, 3)
+        self.out_lbl = QLabel("BG OUTPUT FOLDER: (auto)"); self.out_lbl.setWordWrap(True)
         right.addWidget(self.out_lbl)
 
         # Previews
-        prev = QHBoxLayout()
-        right.addLayout(prev, 5)
+        prev = QHBoxLayout(); right.addLayout(prev, 5)
         self.lbl_orig = self._create_box("Original")
         self.lbl_res = self._create_box("Result (Background Removed)")
-        prev.addWidget(self.lbl_orig)
-        prev.addWidget(self.lbl_res)
+        prev.addWidget(self.lbl_orig); prev.addWidget(self.lbl_res)
 
         # Controls
         right.addSpacing(6)
         pres_row = QHBoxLayout()
         pres_row.addWidget(QLabel("Sensitivity:"))
-        self.combo = QComboBox()
-        self.combo.addItems(self.presets.keys())
+        self.combo = QComboBox(); self.combo.addItems(self.presets.keys())
         self.combo.currentTextChanged.connect(self.on_preset)
-        pres_row.addWidget(self.combo)
-        right.addLayout(pres_row)
+        pres_row.addWidget(self.combo); right.addLayout(pres_row)
 
         right.addSpacing(10)
         proc_row = QHBoxLayout()
-        b_sel = QPushButton("Remove BG (Selected)")
-        b_sel.clicked.connect(self.proc_sel)
-        b_all = QPushButton("Remove BG (All)")
-        b_all.clicked.connect(self.proc_all)
-        proc_row.addWidget(b_sel)
-        proc_row.addWidget(b_all)
-        right.addLayout(proc_row)
+        b_sel = QPushButton("Remove BG (Selected)"); b_sel.clicked.connect(self.proc_sel)
+        b_all = QPushButton("Remove BG (All)"); b_all.clicked.connect(self.proc_all)
+        proc_row.addWidget(b_sel); proc_row.addWidget(b_all); right.addLayout(proc_row)
         right.addStretch()
 
         # Footer (Pixel Bar)
-        bot = QFrame()
-        bot.setObjectName("PixelBar")
-        bl = QHBoxLayout(bot)
-        bl.setContentsMargins(10, 3, 10, 4)
-        bl.setSpacing(18)
+        bot = QFrame(); bot.setObjectName("PixelBar")
+        bl = QHBoxLayout(bot); bl.setContentsMargins(10,3,10,4); bl.setSpacing(18)
         font = QFont("Consolas", 9)
         for _ in range(10):
-            l = QLabel("0.000000α")
-            l.setFont(font)
-            self.pixel_labels.append(l)
-            bl.addWidget(l)
+            l = QLabel("0.000000α"); l.setFont(font); self.pixel_labels.append(l); bl.addWidget(l)
         outer.addWidget(bot)
 
     def _create_box(self, title):
         f = QFrame()
+        f.setObjectName("PreviewFrame")
         f.setFrameShape(QFrame.StyledPanel)
+
         l = QVBoxLayout(f)
-        l.addWidget(QLabel(title))
+        l.setContentsMargins(0, 0, 0, 0)
+        l.setSpacing(0)
+
+        lbl_title = QLabel(title)
+        lbl_title.setStyleSheet("border: none; background: transparent; color: #1c2333; font-weight: bold; padding: 6px 0 6px 8px;")
+        l.addWidget(lbl_title)
+
+        line = QFrame()
+        line.setFrameShape(QFrame.HLine)
+        line.setFrameShadow(QFrame.Sunken)
+        line.setStyleSheet("border: none; background-color: #b3bcd1; min-height: 1px; max-height: 1px;") 
+        l.addWidget(line)
+
+        content_widget = QWidget() 
+        content_widget.setStyleSheet("border: none; background: transparent;")
+        cl = QVBoxLayout(content_widget)
+        cl.setContentsMargins(0, 0, 0, 0)
+        
         img = QLabel()
         img.setAlignment(Qt.AlignCenter)
         img.setMinimumSize(QSize(200, 200))
-        l.addWidget(img, 1)
-        f.img_lbl = img
-        return f
+        img.setObjectName("PreviewImage")
+        
+        cl.addWidget(img)
+        l.addWidget(content_widget, 1) 
 
+        f.img_lbl = img
+
+        f.setStyleSheet("""
+            #PreviewFrame {
+                border: 1px solid #b3bcd1; 
+                border-radius: 4px;        
+                background-color: #f7f9fc; 
+            }
+        """)
+        return f
+    
     def _init_running_text(self):
-        for l in self.pixel_labels:
-            l.setText(random.choice(RUNNING_VALUES) + "  •")
-        self.timer = QTimer(self)
-        self.timer.timeout.connect(self._update_text)
+        for l in self.pixel_labels: l.setText(random.choice(RUNNING_VALUES) + "  •")
+        self.timer = QTimer(self); self.timer.timeout.connect(self._update_text)
         self.timer.start(1000)
 
     def _update_text(self):
-        idx = self._running_index % len(self.pixel_labels)
-        self._running_index += 1
+        idx = self._running_index % len(self.pixel_labels); self._running_index += 1
         self.pixel_labels[idx].setText(random.choice(RUNNING_VALUES) + "  •")
 
     def add_images(self):
         files, _ = QFileDialog.getOpenFileNames(self, "Select Images", "", IMAGE_FILTER)
-        if not files:
-            return
+        if not files: return
         for f in files:
             p = Path(f)
             if p not in self.image_paths:
                 self.image_paths.append(p)
-                item = QListWidgetItem(p.name)
-                item.setData(Qt.UserRole, p)
+                item = QListWidgetItem(p.name); item.setData(Qt.UserRole, p)
                 self.list_w.addItem(item)
-        if self.list_w.count() > 0:
-            self.list_w.setCurrentRow(0)
+        if self.list_w.count()>0: self.list_w.setCurrentRow(0)
 
     def clear_list(self):
-        self.image_paths.clear()
-        self.output_map.clear()
-        self.list_w.clear()
+        self.image_paths.clear(); self.output_map.clear(); self.list_w.clear()
         self._update_prev(None)
 
     def on_file_selected(self, row):
-        if row < 0 or row >= len(self.image_paths):
-            self._update_prev(None)
-        else:
-            self._update_prev(self.image_paths[row])
+        if row < 0 or row >= len(self.image_paths): self._update_prev(None)
+        else: self._update_prev(self.image_paths[row])
 
     def _update_prev(self, path):
         orig, res = self.lbl_orig.img_lbl, self.lbl_res.img_lbl
         if not path:
-            orig.setPixmap(QPixmap())
-            orig.setText("(no image)")
-            res.setPixmap(QPixmap())
-            res.setText("(no result)")
+            orig.setPixmap(QPixmap()); orig.setText("(no image)")
+            res.setPixmap(QPixmap()); res.setText("(no result)")
             return
-
+        
         pix = QPixmap(str(path))
         if not pix.isNull():
-            orig.setPixmap(
-                pix.scaled(orig.size(), Qt.KeepAspectRatio, Qt.SmoothTransformation)
-            )
+            orig.setPixmap(pix.scaled(orig.size(), Qt.KeepAspectRatio, Qt.SmoothTransformation))
             orig.setText("")
-        else:
-            orig.setText("(error)")
+        else: orig.setText("(error)")
 
         out = self.output_map.get(path)
         if out and out.exists():
             rpix = QPixmap(str(out))
-            res.setPixmap(
-                rpix.scaled(res.size(), Qt.KeepAspectRatio, Qt.SmoothTransformation)
-            )
+            res.setPixmap(rpix.scaled(res.size(), Qt.KeepAspectRatio, Qt.SmoothTransformation))
             res.setText("")
-        else:
-            res.setPixmap(QPixmap())
-            res.setText("(no result)")
+        else: res.setPixmap(QPixmap()); res.setText("(no result)")
 
     def resizeEvent(self, e):
         super().resizeEvent(e)
         r = self.list_w.currentRow()
-        if r >= 0:
-            self._update_prev(self.image_paths[r])
+        if r >= 0: self._update_prev(self.image_paths[r])
 
-    def on_preset(self, n):
-        self.current_preset_name = n
+    def on_preset(self, n): self.current_preset_name = n
 
     def ensure_out(self, sample):
         if not self.output_dir:
-            self.output_dir = sample.parent / "LABOKit_BG"
-            self.output_dir.mkdir(exist_ok=True)
+            self.output_dir = sample.parent / "LABOKit_BG"; self.output_dir.mkdir(exist_ok=True)
             self.out_lbl.setText(f"BG OUTPUT FOLDER: {self.output_dir}")
-            QMessageBox.information(
-                self, "Info", f"Output folder set to:\n{self.output_dir}"
-            )
+            QMessageBox.information(self, "Info", f"Output folder set to:\n{self.output_dir}")
         return self.output_dir
 
     def change_output_folder(self):
         d = QFileDialog.getExistingDirectory(self, "Select Folder")
         if d:
-            self.output_dir = Path(d)
-            self.out_lbl.setText(f"BG OUTPUT FOLDER: {self.output_dir}")
+            self.output_dir = Path(d); self.out_lbl.setText(f"BG OUTPUT FOLDER: {self.output_dir}")
 
     def proc_sel(self):
         sel = [i.data(Qt.UserRole) for i in self.list_w.selectedItems()]
-        if not sel:
-            return QMessageBox.info(self, "Info", "Select images first.")
+        if not sel: return QMessageBox.information(self, "Info", "Select images first.")
         self._run(sel)
 
     def proc_all(self):
-        if not self.image_paths:
-            return QMessageBox.info(self, "Info", "Add images first.")
+        if not self.image_paths: return QMessageBox.information(self, "Info", "Add images first.")
         self._run(self.image_paths)
 
     def _run(self, paths):
         out = self.ensure_out(paths[0])
         dlg = QProgressDialog("Removing BG...", "Cancel", 0, len(paths), self)
-        dlg.setWindowModality(Qt.ApplicationModal)
-        dlg.show()
-
+        dlg.setWindowModality(Qt.ApplicationModal); dlg.show()
+        
         cnt = 0
         import rembg
-
         for i, p in enumerate(paths):
-            if dlg.wasCanceled():
-                break
+            if dlg.wasCanceled(): break
             dlg.setLabelText(f"Processing {p.name}...")
             QApplication.processEvents()
             try:
-                res = rembg.remove(
-                    p.read_bytes(), **self.presets.get(self.current_preset_name, {})
-                )
+                res = rembg.remove(p.read_bytes(), **self.presets.get(self.current_preset_name, {}))
                 opath = out / f"{p.stem}_nobg.png"
                 opath.write_bytes(res)
                 self.output_map[p] = opath
                 cnt += 1
-            except Exception as e:
-                print(e)
-            dlg.setValue(i + 1)
+            except Exception as e: print(e)
+            dlg.setValue(i+1)
         dlg.close()
         QMessageBox.information(self, "Done", f"Processed {cnt} images.\nFolder: {out}")
-        if self.list_w.currentRow() >= 0:
-            self._update_prev(self.image_paths[self.list_w.currentRow()])
+        if self.list_w.currentRow() >= 0: self._update_prev(self.image_paths[self.list_w.currentRow()])
 
     def show_help(self):
         text = (
@@ -392,7 +410,6 @@ class BgRemoverTab(QWidget):
         )
         QMessageBox.information(self, "Help – BG Remover", text)
 
-
 class UpscalerTab(QWidget):
     def __init__(self, parent=None):
         super().__init__(parent)
@@ -407,264 +424,263 @@ class UpscalerTab(QWidget):
 
     def _setup_ui(self):
         outer = QVBoxLayout(self)
-        outer.setContentsMargins(8, 8, 8, 8)
-        outer.setSpacing(6)
-        main = QHBoxLayout()
-        outer.addLayout(main)
-
+        outer.setContentsMargins(8,8,8,8); outer.setSpacing(6)
+        main = QHBoxLayout(); outer.addLayout(main)
+        
         # Left Panel
-        left = QVBoxLayout()
-        main.addLayout(left, 1)
+        left = QVBoxLayout(); main.addLayout(left, 1)
         self.list_w = QListWidget()
         self.list_w.currentItemChanged.connect(self.on_item)
-        lbl = QLabel("LOADED IMAGES (Upscaler):")
-        lbl.setStyleSheet("border:none; background:transparent;")
-        left.addWidget(lbl)
-        left.addWidget(self.list_w)
-
+        lbl = QLabel("LOADED IMAGES (Upscaler):"); lbl.setStyleSheet("border:none; background:transparent;")
+        left.addWidget(lbl); left.addWidget(self.list_w)
+        
         btns = QHBoxLayout()
-        b_add = QPushButton("Add Images…")
-        b_add.clicked.connect(self.add_images)
-        b_clr = QPushButton("Clear List")
-        b_clr.clicked.connect(self.clear_list)
-        btns.addWidget(b_add)
-        btns.addWidget(b_clr)
-        left.addLayout(btns)
+        b_add = QPushButton("Add Images…"); b_add.clicked.connect(self.add_images)
+        b_clr = QPushButton("Clear List"); b_clr.clicked.connect(self.clear_list)
+        btns.addWidget(b_add); btns.addWidget(b_clr); left.addLayout(btns)
 
         # Right Panel
-        right = QVBoxLayout()
-        main.addLayout(right, 3)
-        self.out_lbl = QLabel("UPSCALE OUTPUT FOLDER: (auto)")
-        self.out_lbl.setWordWrap(True)
+        right = QVBoxLayout(); main.addLayout(right, 3)
+        self.out_lbl = QLabel("UPSCALE OUTPUT FOLDER: (auto)"); self.out_lbl.setWordWrap(True)
         right.addWidget(self.out_lbl)
 
         # Previews
-        prev = QHBoxLayout()
-        right.addLayout(prev, 5)
+        prev = QHBoxLayout(); right.addLayout(prev, 5)
         self.lbl_orig = self._create_box("Original")
         self.lbl_res = self._create_box("Result (Upscaled)")
-        prev.addWidget(self.lbl_orig)
-        prev.addWidget(self.lbl_res)
+        prev.addWidget(self.lbl_orig); prev.addWidget(self.lbl_res)
 
         # Options
         right.addSpacing(6)
         opt = QHBoxLayout()
-        opt.addWidget(QLabel("Scale:"))
-        self.combo_s = QComboBox()
-        self.combo_s.addItems(["2x", "4x"])
-        self.combo_s.setCurrentText("4x")
+        opt.addWidget(QLabel("Scale:")); self.combo_s = QComboBox(); self.combo_s.addItems(["2x", "4x"]); self.combo_s.setCurrentText("4x")
         opt.addWidget(self.combo_s)
-        opt.addWidget(QLabel("Model:"))
-        self.combo_m = QComboBox()
-        self.combo_m.addItems(["realesrgan-x4plus", "realesrgan-x4plus-anime"])
-        opt.addWidget(self.combo_m)
-        right.addLayout(opt)
+        opt.addWidget(QLabel("Model:")); self.combo_m = QComboBox()
+        self.combo_m.addItems([
+            "realesrgan-x4plus", 
+            "realesrgan-x4plus-anime", 
+            "realesr-general-x4v3.pth"
+        ])
+        opt.addWidget(self.combo_m); right.addLayout(opt)
 
         # Buttons
         right.addSpacing(10)
         proc = QHBoxLayout()
-        b_sel = QPushButton("Upscale (Selected)")
-        b_sel.clicked.connect(self.proc_sel)
-        b_all = QPushButton("Upscale (All)")
-        b_all.clicked.connect(self.proc_all)
-        proc.addWidget(b_sel)
-        proc.addWidget(b_all)
-        right.addLayout(proc)
+        b_sel = QPushButton("Upscale (Selected)"); b_sel.clicked.connect(self.proc_sel)
+        b_all = QPushButton("Upscale (All)"); b_all.clicked.connect(self.proc_all)
+        proc.addWidget(b_sel); proc.addWidget(b_all); right.addLayout(proc)
         right.addStretch()
 
         # Footer
-        bot = QFrame()
-        bot.setObjectName("PixelBar")
-        bl = QHBoxLayout(bot)
-        bl.setContentsMargins(10, 3, 10, 4)
-        bl.setSpacing(18)
+        bot = QFrame(); bot.setObjectName("PixelBar")
+        bl = QHBoxLayout(bot); bl.setContentsMargins(10,3,10,4); bl.setSpacing(18)
         font = QFont("Consolas", 9)
         for _ in range(10):
-            l = QLabel("0.000000α")
-            l.setFont(font)
-            self.pixel_labels.append(l)
-            bl.addWidget(l)
+            l = QLabel("0.000000α"); l.setFont(font); self.pixel_labels.append(l); bl.addWidget(l)
         outer.addWidget(bot)
+
+    def run_python_inference(self, img_path, out_path, model_name):
+        if not HAS_TORCH:
+            QMessageBox.critical(self, "Error", "(torch/basicsr/realesrgan) is not ready.")
+            return False
+
+        try:
+            model_path = REALESRGAN_DIR / "models" / model_name 
+            if not model_path.exists():
+                model_path = MODEL_DIR / model_name
+                if not model_path.exists(): return False
+
+            model = SRVGGNetCompact(num_in_ch=3, num_out_ch=3, num_feat=64, num_conv=32, upscale=4, act_type='prelu')
+            
+            upsampler = RealESRGANer(
+                scale=4,
+                model_path=str(model_path),
+                model=model,
+                tile=400,       
+                tile_pad=10,
+                pre_pad=0,
+                half=False,   
+                gpu_id=None
+            )
+
+            img = cv2.imread(str(img_path), cv2.IMREAD_UNCHANGED)
+            output, _ = upsampler.enhance(img, outscale=4)
+            cv2.imwrite(str(out_path), output)
+            return True
+
+        except Exception as e:
+            print(f"Error: {e}")
+            import traceback; traceback.print_exc()
+            return False
 
     def _create_box(self, title):
         f = QFrame()
+        f.setObjectName("PreviewFrame")
         f.setFrameShape(QFrame.StyledPanel)
+
         l = QVBoxLayout(f)
-        l.addWidget(QLabel(title))
+        l.setContentsMargins(0, 0, 0, 0)
+        l.setSpacing(0)
+
+        lbl_title = QLabel(title)
+        lbl_title.setStyleSheet("border: none; background: transparent; color: #1c2333; font-weight: bold; padding: 6px 0 6px 8px;")
+        l.addWidget(lbl_title)
+
+        line = QFrame()
+        line.setFrameShape(QFrame.HLine)
+        line.setFrameShadow(QFrame.Sunken)
+        line.setStyleSheet("border: none; background-color: #b3bcd1; min-height: 1px; max-height: 1px;") 
+        l.addWidget(line)
+
+        content_widget = QWidget() 
+        content_widget.setStyleSheet("border: none; background: transparent;")
+        cl = QVBoxLayout(content_widget)
+        cl.setContentsMargins(0, 0, 0, 0)
+        
         img = QLabel()
         img.setAlignment(Qt.AlignCenter)
         img.setMinimumSize(QSize(200, 200))
-        l.addWidget(img, 1)
+        img.setObjectName("PreviewImage")
+        
+        cl.addWidget(img)
+        l.addWidget(content_widget, 1) 
+
         f.img_lbl = img
+
+        f.setStyleSheet("""
+            #PreviewFrame {
+                border: 1px solid #b3bcd1; 
+                border-radius: 4px;        
+                background-color: #f7f9fc; 
+            }
+        """)
         return f
 
     def _init_running_text(self):
-        for l in self.pixel_labels:
-            l.setText(random.choice(RUNNING_VALUES) + "  •")
-        self.timer = QTimer(self)
-        self.timer.timeout.connect(self._update_text)
+        for l in self.pixel_labels: l.setText(random.choice(RUNNING_VALUES) + "  •")
+        self.timer = QTimer(self); self.timer.timeout.connect(self._update_text)
         self.timer.start(1000)
 
     def _update_text(self):
-        idx = self._running_index % len(self.pixel_labels)
-        self._running_index += 1
+        idx = self._running_index % len(self.pixel_labels); self._running_index += 1
         self.pixel_labels[idx].setText(random.choice(RUNNING_VALUES) + "  •")
 
     def add_images(self):
         files, _ = QFileDialog.getOpenFileNames(self, "Select Images", "", IMAGE_FILTER)
-        if not files:
-            return
+        if not files: return
         for f in files:
             p = Path(f)
             if p not in self.image_paths:
                 self.image_paths.append(p)
-                item = QListWidgetItem(p.name)
-                item.setData(Qt.UserRole, p)
+                item = QListWidgetItem(p.name); item.setData(Qt.UserRole, p)
                 self.list_w.addItem(item)
-        if self.list_w.count() > 0:
-            self.list_w.setCurrentRow(0)
+        if self.list_w.count()>0: self.list_w.setCurrentRow(0)
 
     def clear_list(self):
-        self.image_paths.clear()
-        self.output_map.clear()
-        self.list_w.clear()
+        self.image_paths.clear(); self.output_map.clear(); self.list_w.clear()
         self._update_prev(None)
 
     def on_item(self, curr, prev):
-        if not curr:
-            self._update_prev(None)
-        else:
-            self._update_prev(curr.data(Qt.UserRole))
+        if not curr: self._update_prev(None)
+        else: self._update_prev(curr.data(Qt.UserRole))
 
     def _update_prev(self, path):
         self.view_path = path
         orig, res = self.lbl_orig.img_lbl, self.lbl_res.img_lbl
         if not path:
-            orig.setPixmap(QPixmap())
-            orig.setText("(no image)")
-            res.setPixmap(QPixmap())
-            res.setText("(no result)")
+            orig.setPixmap(QPixmap()); orig.setText("(no image)")
+            res.setPixmap(QPixmap()); res.setText("(no result)")
             return
-
+        
         pix = QPixmap(str(path))
         if not pix.isNull():
-            orig.setPixmap(
-                pix.scaled(orig.size(), Qt.KeepAspectRatio, Qt.SmoothTransformation)
-            )
+            orig.setPixmap(pix.scaled(orig.size(), Qt.KeepAspectRatio, Qt.SmoothTransformation))
             orig.setText("")
-        else:
-            orig.setText("(error)")
+        else: orig.setText("(error)")
 
         out = self.output_map.get(path)
         if out and out.exists():
             rpix = QPixmap(str(out))
-            res.setPixmap(
-                rpix.scaled(res.size(), Qt.KeepAspectRatio, Qt.SmoothTransformation)
-            )
+            res.setPixmap(rpix.scaled(res.size(), Qt.KeepAspectRatio, Qt.SmoothTransformation))
             res.setText("")
-        else:
-            res.setPixmap(QPixmap())
-            res.setText("(no result)")
+        else: res.setPixmap(QPixmap()); res.setText("(no result)")
 
     def resizeEvent(self, e):
         super().resizeEvent(e)
-        if self.view_path:
-            self._update_prev(self.view_path)
+        if self.view_path: self._update_prev(self.view_path)
 
     def ensure_out(self, sample):
         if not self.output_dir:
-            self.output_dir = sample.parent / "LABOKit_UP"
-            self.output_dir.mkdir(exist_ok=True)
+            self.output_dir = sample.parent / "LABOKit_UP"; self.output_dir.mkdir(exist_ok=True)
             self.out_lbl.setText(f"UPSCALE OUTPUT FOLDER: {self.output_dir}")
-            QMessageBox.information(
-                self, "Info", f"Output folder set to:\n{self.output_dir}"
-            )
+            QMessageBox.information(self, "Info", f"Output folder set to:\n{self.output_dir}")
         return self.output_dir
-
+    
     def change_output_folder(self):
         d = QFileDialog.getExistingDirectory(self, "Select Folder")
         if d:
-            self.output_dir = Path(d)
-            self.out_lbl.setText(f"UPSCALE OUTPUT FOLDER: {self.output_dir}")
+            self.output_dir = Path(d); self.out_lbl.setText(f"UPSCALE OUTPUT FOLDER: {self.output_dir}")
 
     def proc_sel(self):
         sel = [i.data(Qt.UserRole) for i in self.list_w.selectedItems()]
-        if not sel:
-            return QMessageBox.info(self, "Info", "Select images first.")
+        if not sel: return QMessageBox.information(self, "Info", "Select images first.")
         self._run(sel)
 
     def proc_all(self):
-        if not self.image_paths:
-            return QMessageBox.info(self, "Info", "Add images first.")
+        if not self.image_paths: return QMessageBox.information(self, "Info", "Add images first.")
         self._run(self.image_paths)
 
     def _run(self, paths):
-        if not REALESRGAN_EXE.exists():
-            return QMessageBox.warning(
-                self,
-                "Error",
-                f"Executable not found at:\n{REALESRGAN_EXE}\nWait for install.",
-            )
+        model_name = self.combo_m.currentText()
+        is_python_mode = model_name.endswith(".pth")
 
+        if not is_python_mode and not REALESRGAN_EXE.exists():
+            return QMessageBox.warning(self, "Error", f"Executable not found at:\n{REALESRGAN_EXE}")
+        
         out = self.ensure_out(paths[0])
         dlg = QProgressDialog("Upscaling...", "Cancel", 0, len(paths), self)
         dlg.setWindowModality(Qt.ApplicationModal)
         dlg.show()
-
+        
         cnt = 0
-        target_scale = int(self.combo_s.currentText().replace("x", ""))
-        model = self.combo_m.currentText()
-
+        target_scale = 4 # Default model scale
+        
         for i, p in enumerate(paths):
-            if dlg.wasCanceled():
-                break
+            if dlg.wasCanceled(): break
             dlg.setLabelText(f"Processing {p.name}...")
             QApplication.processEvents()
-
+            
             try:
-                opath = out / f"{p.stem}_up{target_scale}x.png"
+                opath = out / f"{p.stem}_up4x.png"
+                success = False
 
-                exec_scale = 4
+                if is_python_mode:
+                    success = self.run_python_inference(p, opath, model_name)
+                
+                else:
+                    cmd = [
+                        str(REALESRGAN_EXE), 
+                        "-i", str(p), 
+                        "-o", str(opath), 
+                        "-n", model_name, 
+                        "-s", "4"
+                    ]
+                    flags = subprocess.CREATE_NO_WINDOW if sys.platform=="win32" else 0
+                    subprocess.run(cmd, capture_output=True, creationflags=flags, cwd=str(REALESRGAN_DIR))
+                    success = opath.exists()
 
-                cmd = [
-                    str(REALESRGAN_EXE),
-                    "-i",
-                    str(p),
-                    "-o",
-                    str(opath),
-                    "-n",
-                    model,
-                    "-s",
-                    str(exec_scale),
-                ]
-
-                flags = subprocess.CREATE_NO_WINDOW if sys.platform == "win32" else 0
-
-                subprocess.run(
-                    cmd,
-                    capture_output=True,
-                    creationflags=flags,
-                    cwd=str(REALESRGAN_DIR),
-                )
-
-                if target_scale == 2:
-                    with Image.open(opath) as img:
-                        new_w = img.width // 2
-                        new_h = img.height // 2
-                        img = img.resize((new_w, new_h), Image.Resampling.LANCZOS)
-                        img.save(opath)
-
-                self.output_map[p] = opath
-                cnt += 1
-            except Exception as e:
+                if success:
+                    self.output_map[p] = opath
+                    cnt += 1
+                    
+            except Exception as e: 
                 print(f"Upscale Error: {e}")
-
-            dlg.setValue(i + 1)
-
+            
+            dlg.setValue(i+1)
+        
         dlg.close()
         QMessageBox.information(self, "Done", f"Upscaled {cnt} images.\nFolder: {out}")
-        if self.list_w.currentItem():
-            self.on_item(self.list_w.currentItem(), None)
+        if self.list_w.currentItem(): self.on_item(self.list_w.currentItem(), None)
 
     def show_help(self):
         text = (
@@ -677,6 +693,7 @@ class UpscalerTab(QWidget):
             "<ul>"
             "<li><b>realesrgan-x4plus:</b> Best for photos, realistic textures, and general images.</li>"
             "<li><b>realesrgan-x4plus-anime:</b> Optimized for 2D illustration, anime, and line art (faster & sharper lines).</li>"
+            "<li><b>realesr-general-x4v3:</b> Optimized for Low-End/Non Vulkan/Integrated GPU PC.</li>"
             "</ul>"
             "<b>3. Scale Factor</b><br>"
             "Choose <b>4x</b> for maximum detail or <b>2x</b> for a quicker resize.<br><br>"
@@ -684,37 +701,241 @@ class UpscalerTab(QWidget):
             "This feature requires a Vulkan-compatible GPU. On first run, it might take a few seconds to initialize."
         )
         QMessageBox.information(self, "Help – Upscaler", text)
+        
 
+class CustomTitleBar(QWidget):
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        self.setFixedHeight(30)
+        self.parent_win = parent
+        self.pressing = False
+        self.start_pos = None
+
+        layout = QHBoxLayout(self)
+        layout.setContentsMargins(10, 0, 10, 0)
+        layout.setSpacing(8)
+
+        self.title_lbl = QLabel("LABOKit")
+        self.title_lbl.setStyleSheet("font-weight: bold; color: #333; border: none; background: transparent;")
+        self.title_lbl.setAttribute(Qt.WA_TransparentForMouseEvents)
+
+        self.menu_container = QWidget()
+        self.menu_container.setStyleSheet("background: transparent; border: none;") 
+        self.menu_layout = QHBoxLayout(self.menu_container)
+        self.menu_layout.setContentsMargins(0, 0, 0, 0)
+        self.menu_layout.setSpacing(5)
+
+        btn_size = 18
+        radius = btn_size // 2
+        
+        btn_style = f"""
+            QPushButton {{
+                background-color: #808080;
+                border: none;
+                border-radius: {radius}px;
+                font-family: "Arial", "Segoe UI", sans-serif; 
+                font-size: 13px;
+                font-weight: 450;
+                color: white;
+                margin: 0px;
+                padding: 0px; 
+                padding-bottom: 2px;
+            }}
+            QPushButton:hover {{
+                background-color: #666666;
+            }}
+            QPushButton:pressed {{
+                background-color: #444444;
+            }}
+        """
+
+        self.btn_min = QPushButton("−") 
+        self.btn_min.setFixedSize(btn_size, btn_size)
+        self.btn_min.setStyleSheet(btn_style)
+        self.btn_min.clicked.connect(self.minimize_window)
+
+        self.btn_close = QPushButton("×") 
+        self.btn_close.setFixedSize(btn_size, btn_size)
+        self.btn_close.setStyleSheet(btn_style)
+        self.btn_close.clicked.connect(self.close_window)
+
+        layout.addWidget(self.title_lbl)
+        layout.addWidget(self.menu_container)
+        layout.addStretch(1) 
+        layout.addWidget(self.btn_min)
+        layout.addWidget(self.btn_close)
+
+        self.setStyleSheet("""
+            CustomTitleBar {
+                background: qlineargradient(x1:0, y1:0, x2:0, y2:1,
+                                            stop:0 #f0f0f0, 
+                                            stop:0.5 #dcdcdc,
+                                            stop:1 #b0b0b0);
+                border: none;
+            }
+        """)
+
+    def mousePressEvent(self, event):
+        if event.button() == Qt.LeftButton:
+            self.pressing = True
+            self.start_pos = event.globalPosition().toPoint() - self.parent_win.frameGeometry().topLeft()
+            event.accept()
+
+    def mouseMoveEvent(self, event):
+        if self.pressing and event.buttons() & Qt.LeftButton:
+            self.parent_win.move(event.globalPosition().toPoint() - self.start_pos)
+            event.accept()
+
+    def mouseReleaseEvent(self, event):
+        self.pressing = False
+
+    def minimize_window(self):
+        self.parent_win.showMinimized()
+
+    def close_window(self):
+        self.parent_win.close()
+
+# --- UPDATE WORKERS ---
+
+class AppUpdateChecker(QThread):
+    found_update = Signal(str, str, str) # version, url, changelog
+
+    def run(self):
+        try:
+            with urllib.request.urlopen(APP_UPDATE_URL) as url:
+                data = json.loads(url.read().decode())
+                remote_ver = data.get("version", "0.0.0")
+                if remote_ver > APP_VERSION:
+                    self.found_update.emit(remote_ver, data.get("url", ""), data.get("changelog", ""))
+        except Exception as e:
+            print(f"App Update Check Failed: {e}")
+
+class PluginUpdater(QThread):
+    update_found = Signal(str, str, str, str) 
+
+    def run(self):
+        try:
+            if not PLUGIN_DIR.exists(): return
+            
+            with urllib.request.urlopen(PLUGIN_MANIFEST_URL) as url:
+                remote_data = json.loads(url.read().decode())
+
+            for kit_file in PLUGIN_DIR.glob("*.kit"):
+                plugin_id = kit_file.stem 
+                
+                if plugin_id in remote_data:
+                    remote_info = remote_data[plugin_id]
+                    
+                    local_ver = self.get_local_version(kit_file)
+                    remote_ver = remote_info.get("version", "1.0")
+                    
+                    if remote_ver > local_ver:
+                        enc_url = remote_info.get("url_encoded", "")
+                        try:
+                            if enc_url == "-" or not enc_url: continue
+                            real_url = base64.b64decode(enc_url).decode("utf-8")
+                            self.update_found.emit(plugin_id, remote_ver, remote_info.get("changelog", ""), real_url)
+                        except: pass
+
+        except Exception as e:
+            print(f"Plugin Update Check Failed: {e}")
+
+    def get_local_version(self, path):
+        try:
+            with open(path, "r", encoding="utf-8", errors="ignore") as f:
+                content = f.read()
+            
+            import re
+            match = re.search(r'PLUGIN_VERSION\s*=\s*["\']([^"\']+)["\']', content)
+            
+            if match:
+                return match.group(1) 
+            
+            return "1.0" 
+            
+        except Exception as e:
+            # print(f"Version check error for {path.name}: {e}")
+            return "1.0"
 
 # ==========================================
 # MAIN WINDOW
 # ==========================================
 
-
 class LABOKitMainWindow(QMainWindow):
     def __init__(self):
         super().__init__()
         self.setWindowTitle("LABOKit")
+        
+        screen = QApplication.primaryScreen().geometry()
+        screen_height = screen.height()
+        base_height_ref = 1440
+        base_w_ref = 1200
+        base_h_ref = 800
+        scale_factor = screen_height / base_height_ref
+        new_w = int(base_w_ref * scale_factor)
+        new_h = int(base_h_ref * scale_factor)
+        final_w = max(900, new_w) 
+        final_h = max(600, new_h)
+        self.setFixedSize(final_w, final_h)
+        
+        self.setWindowFlags(Qt.FramelessWindowHint)
+        
+        self.central_container = QWidget()
+        self.setCentralWidget(self.central_container)
+        
+        self.outer_layout = QVBoxLayout(self.central_container)
+        self.outer_layout.setContentsMargins(0, 0, 0, 0)
+        
+        self.main_frame = QFrame()
+        self.main_frame.setObjectName("MainFrame")
+        self.main_frame.setStyleSheet("""
+            #MainFrame {
+                background-color: #e9edf5;
+                border-radius: 10px; 
+                border: 1px solid #999; 
+            }
+        """)
+        
+        self.outer_layout.addWidget(self.main_frame)
+        
+        self.main_layout = QVBoxLayout(self.main_frame)
+        self.main_layout.setContentsMargins(0, 0, 0, 0)
+        self.main_layout.setSpacing(0)
+
+        self.custom_title_bar = CustomTitleBar(self)
+        self.main_layout.addWidget(self.custom_title_bar)
+
         self.tabs = QTabWidget()
         self.bg_tab = BgRemoverTab(self)
         self.up_tab = UpscalerTab(self)
         self.tabs.addTab(self.bg_tab, "BG Remover")
         self.tabs.addTab(self.up_tab, "Upscaler")
-        self.setCentralWidget(self.tabs)
+        
+        self.main_layout.addWidget(self.tabs)
+        self.main_layout.addSpacing(5) 
+
         self.loaded_plugins = []
         self._setup_menu()
         self._load_plugins()
+        self.check_app_updates()
+        self.check_plugin_updates()
 
+    def resizeEvent(self, event):
+        path = QPainterPath()
+        path.addRoundedRect(QRectF(self.rect()), 10, 10)
+        
+        region = QRegion(path.toFillPolygon().toPolygon())
+        self.setMask(region)
+        
+        super().resizeEvent(event)
     def _load_plugins(self):
-        if not PLUGIN_DIR.exists():
-            PLUGIN_DIR.mkdir(parents=True, exist_ok=True)
-
+        if not PLUGIN_DIR.exists(): PLUGIN_DIR.mkdir(parents=True, exist_ok=True)
+        
         # Remove old tabs
         for p in self.loaded_plugins:
-            if p.get("tab"):
+            if p.get("tab"): 
                 idx = self.tabs.indexOf(p["tab"])
-                if idx != -1:
-                    self.tabs.removeTab(idx)
+                if idx != -1: self.tabs.removeTab(idx)
         self.loaded_plugins.clear()
 
         # Load new
@@ -722,25 +943,16 @@ class LABOKitMainWindow(QMainWindow):
             try:
                 mod_name = f"plugin_{f.stem}"
                 loader = importlib.machinery.SourceFileLoader(mod_name, str(f))
-                spec = importlib.util.spec_from_file_location(
-                    mod_name, str(f), loader=loader
-                )
+                spec = importlib.util.spec_from_file_location(mod_name, str(f), loader=loader)
                 mod = importlib.util.module_from_spec(spec)
                 spec.loader.exec_module(mod)
-
+                
                 if hasattr(mod, "create_tab"):
                     tab = mod.create_tab(self)
                     name = getattr(mod, "PLUGIN_NAME", f.stem)
                     self.tabs.addTab(tab, name)
-                    self.loaded_plugins.append(
-                        {
-                            "name": name,
-                            "tab": tab,
-                            "help": getattr(mod, "HELP_TEXT", ""),
-                        }
-                    )
-            except Exception as e:
-                print(f"Plugin Error {f.name}: {e}")
+                    self.loaded_plugins.append({"name": name, "tab": tab, "help": getattr(mod, "HELP_TEXT", "")})
+            except Exception as e: print(f"Plugin Error {f.name}: {e}")
 
         self._refresh_plugin_menu()
 
@@ -748,34 +960,60 @@ class LABOKitMainWindow(QMainWindow):
         if hasattr(self, "menu_plugins"):
             self.menu_plugins.clear()
             if not self.loaded_plugins:
-                self.menu_plugins.addAction(
-                    QAction("(No plugins loaded)", self, enabled=False)
-                )
+                self.menu_plugins.addAction(QAction("(No plugins loaded)", self, enabled=False))
             else:
                 for p in self.loaded_plugins:
                     a = QAction(p["name"], self)
-                    a.triggered.connect(
-                        lambda c, x=p: QMessageBox.information(self, "Help", x["help"])
-                    )
+                    a.triggered.connect(lambda c, x=p: QMessageBox.information(self, "Help", x["help"]))
                     self.menu_plugins.addAction(a)
 
     def load_plugin_file(self):
-        f, _ = QFileDialog.getOpenFileName(
-            self, "Load Plugin", "", "LABOKit Plugin (*.kit)"
-        )
+        f, _ = QFileDialog.getOpenFileName(self, "Load Plugin", "", "LABOKit Plugin (*.kit)")
         if f:
             try:
                 shutil.copy2(f, PLUGIN_DIR)
                 self._load_plugins()
                 QMessageBox.information(self, "Success", "Plugin loaded!")
-            except Exception as e:
-                QMessageBox.warning(self, "Error", str(e))
+            except Exception as e: QMessageBox.warning(self, "Error", str(e))
 
-    def open_url(self, url):
-        QDesktopServices.openUrl(QUrl(url))
-
+    def open_url(self, url): QDesktopServices.openUrl(QUrl(url))
     def _setup_menu(self):
-        mb = self.menuBar()
+        mb = QMenuBar()
+        mb.setStyleSheet("""
+            QMenuBar { 
+                background: transparent; 
+                border: none;
+            }
+            QMenuBar::item { 
+                background: transparent; 
+                color: #333; 
+                padding: 4px 8px;
+                border-radius: 4px;
+            }
+            QMenuBar::item:selected { 
+                background-color: rgba(0, 0, 0, 0.1);
+                color: #000; 
+            }
+            
+            QMenu {
+                background-color: #f7f9fc; 
+                border: 1px solid #b3bcd1;
+                border-radius: 4px;
+                padding: 4px;
+            }
+            QMenu::item {
+                padding: 4px 24px 4px 10px; 
+                color: #1c2333;
+                border-radius: 3px;
+                background: transparent;
+            }
+            QMenu::item:selected {
+                background-color: #cfe2ff;
+                color: #101522;
+            }
+        """)
+        
+        self.custom_title_bar.menu_layout.addWidget(mb)
 
         file = mb.addMenu("&File")
         file.addAction("Add Images...", self.add_images_curr)
@@ -785,10 +1023,7 @@ class LABOKitMainWindow(QMainWindow):
 
         conf = mb.addMenu("&Config")
         conf.addAction("Load Plugin (.kit)...", self.load_plugin_file)
-        conf.addAction(
-            "Open Plugins Folder",
-            lambda: QDesktopServices.openUrl(QUrl.fromLocalFile(str(PLUGIN_DIR))),
-        )
+        conf.addAction("Open Plugins Folder", lambda: QDesktopServices.openUrl(QUrl.fromLocalFile(str(PLUGIN_DIR))))
 
         help = mb.addMenu("&Help")
         help.addAction("BG Remover Help", self.bg_tab.show_help)
@@ -798,69 +1033,95 @@ class LABOKitMainWindow(QMainWindow):
         self.menu_plugins = help.addMenu("Plugins")
 
         supp = mb.addMenu("&Support")
-        supp.addAction(
-            "Get Plugins (Trakteer ID)",
-            lambda: self.open_url(
-                "https://trakteer.id/kano-bbif7/showcase/labokit-advanced-plugins-m84J6"
-            ),
-        )
-        supp.addAction(
-            "Get Plugins (Ko-fi)",
-            lambda: self.open_url("https://ko-fi.com/s/a367e473fe"),
-        )
+        supp.addAction("Get Plugins (Trakteer ID)", lambda: self.open_url("https://trakteer.id/kano-bbif7/showcase/labokit-advanced-plugins-m84J6"))
+        supp.addAction("Get Plugins (Ko-fi)", lambda: self.open_url("https://ko-fi.com/s/a367e473fe"))
 
     def add_images_curr(self):
         w = self.tabs.currentWidget()
-        if hasattr(w, "add_images"):
-            w.add_images()
+        if hasattr(w, "add_images"): w.add_images()
 
     def change_out_curr(self):
         w = self.tabs.currentWidget()
-        if hasattr(w, "change_output_folder"):
-            w.change_output_folder()
+        if hasattr(w, "change_output_folder"): w.change_output_folder()
 
-    def show_bg_help(self):
-        self.bg_tab.show_help()
-
-    def show_upscale_help(self):
-        self.up_tab.show_help()
+    def show_bg_help(self): self.bg_tab.show_help()
+    def show_upscale_help(self): self.up_tab.show_help()
 
     def show_notice(self):
         p = INTERNAL_DIR / "LABOKit_NOTICE.txt"
-        if not p.exists():
-            return QMessageBox.warning(self, "Error", "Notice file missing.")
-        dlg = QDialog(self)
-        dlg.setWindowTitle("NOTICE")
-        dlg.resize(600, 400)
-        lay = QVBoxLayout(dlg)
-        t = QPlainTextEdit(p.read_text(encoding="utf-8"))
-        t.setReadOnly(True)
-        t.setFont(QFont("Consolas", 9))
-        lay.addWidget(t)
-        dlg.exec()
+        if not p.exists(): return QMessageBox.warning(self, "Error", "Notice file missing.")
+        dlg = QDialog(self); dlg.setWindowTitle("NOTICE"); dlg.resize(600,400)
+        lay = QVBoxLayout(dlg); t = QPlainTextEdit(p.read_text(encoding="utf-8")); t.setReadOnly(True)
+        t.setFont(QFont("Consolas",9)); lay.addWidget(t); dlg.exec()
 
+    def check_app_updates(self):
+        self.app_checker = AppUpdateChecker()
+        self.app_checker.found_update.connect(self.show_app_update_dialog)
+        self.app_checker.start()
+
+    def show_app_update_dialog(self, new_ver, url, log):
+        msg = QMessageBox(self)
+        msg.setWindowTitle("Update Available!")
+        msg.setText(f"<b>New version {new_ver} is available!</b>")
+        msg.setInformativeText(f"Current: v{APP_VERSION}\n\n<b>What's New:</b>\n{log}")
+        msg.setIcon(QMessageBox.Information)
+        btn_download = msg.addButton("Download Now", QMessageBox.AcceptRole)
+        msg.addButton("Later", QMessageBox.RejectRole)
+        msg.exec()
+        if msg.clickedButton() == btn_download:
+            QDesktopServices.openUrl(QUrl(url))
+
+    def check_plugin_updates(self):
+        self.plugin_updater = PluginUpdater()
+        self.plugin_updater.update_found.connect(self.download_and_install_plugin)
+        self.plugin_updater.start()
+
+    def download_and_install_plugin(self, name, new_ver, log, url):
+        try:
+            prog = QProgressDialog(f"Auto-updating {name} to v{new_ver}...", None, 0, 0, self)
+            prog.setWindowModality(Qt.WindowModal)
+            prog.setStyleSheet("QProgressDialog { background-color: #f5f7fb; }")
+            prog.show()
+            QApplication.processEvents()
+            
+            target_file = PLUGIN_DIR / f"{name}.kit"
+            
+            headers = {
+                'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+                'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,image/apng,*/*;q=0.8',
+                'Accept-Language': 'en-US,en;q=0.9',
+                'Connection': 'keep-alive',
+                'Upgrade-Insecure-Requests': '1'
+            }
+
+            with requests.get(url, headers=headers, stream=True, verify=False, timeout=30) as r:
+                r.raise_for_status() # Cek error 403/404/500
+                with open(target_file, 'wb') as f:
+                    for chunk in r.iter_content(chunk_size=8192): 
+                        if chunk: f.write(chunk)
+            
+            prog.close()
+            
+            QMessageBox.information(self, "Plugin Updated", f"<b>{name}</b> has been auto-updated to v{new_ver}!\n\nChangelog:\n{log}")
+            self._load_plugins() 
+            
+        except Exception as e:
+            print(f"Auto-update failed for {name}: {e}")
 
 def main():
     app = QApplication(sys.argv)
     app.setApplicationName("LABOKit")
-    if ICON_PATH.exists():
-        app.setWindowIcon(QIcon(str(ICON_PATH)))
+    if ICON_PATH.exists(): app.setWindowIcon(QIcon(str(ICON_PATH)))
     default_font = QFont("Consolas", 9)
     app.setFont(default_font)
 
     # Simple Splash (Image Only)
     splash_img_path = INTERNAL_DIR / "splash.png"
-    pix = (
-        QPixmap(str(splash_img_path)) if splash_img_path.exists() else QPixmap(400, 100)
-    )
-    if not splash_img_path.exists():
-        pix.fill(Qt.white)
-
-    splash = QSplashScreen(
-        pix.scaledToWidth(400, Qt.SmoothTransformation), Qt.WindowStaysOnTopHint
-    )
-    splash.show()
-    app.processEvents()
+    pix = QPixmap(str(splash_img_path)) if splash_img_path.exists() else QPixmap(400,100)
+    if not splash_img_path.exists(): pix.fill(Qt.white)
+    
+    splash = QSplashScreen(pix.scaledToWidth(400, Qt.SmoothTransformation), Qt.WindowStaysOnTopHint)
+    splash.show(); app.processEvents()
 
     # Silent Deploy
     deploy_assets()
@@ -868,10 +1129,8 @@ def main():
     # Warmup
     try:
         from rembg import remove as r_rem
-
-        r_rem(b"\x00" * 10)
-    except:
-        pass
+        r_rem(b"\x00"*10)
+    except: pass
 
     # Style
     app.setStyleSheet("""
@@ -908,7 +1167,6 @@ def main():
     win.show()
     splash.finish(win)
     sys.exit(app.exec())
-
 
 if __name__ == "__main__":
     main()
