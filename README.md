@@ -46,6 +46,37 @@
 > * **Performance:** High-end PCs will process images instantly. Low-end PCs may experience longer processing times during upscaling.
 > * **Note For Linux Users:** You Must Manually download the ffmpeg file on [ffmpeg official website](https://github.com/BtbN/FFmpeg-Builds/releases) and choose **ffmpeg-master-latest-linux64-gpl.tar.xz**.
 
+
+## 📥 How to Build?? Linux Users
+
+1.  Clone this repository
+```
+git clone -b main-linux https://github.com/wagakano/LABOKit.git
+cd LABOKit
+```
+2.  make venv for python and active it
+```
+python -m venv /path/to/venv
+
+source /patch/to/venv/active
+``` 
+3.  run pip install 
+```
+pip install -r requirements.txt
+
+```
+4. run program
+```
+python main.py
+```
+
+> **⚠️ Hardware Requirement:**
+> LABOKit processes everything locally using advanced AI models.
+> * **Standard Upscaling (x4plus):** Requires a **Vulkan-compatible GPU**.
+> * **CPU Upscaling (General x4v3):** Works on **any computer** (including non-Vulkan/Integrated Graphics).
+> * **Performance:** High-end PCs will process images instantly. Low-end PCs may experience longer processing times during upscaling.
+> * **Note For Linux Users:** You Must Manually download the ffmpeg file on [ffmpeg official website](https://github.com/BtbN/FFmpeg-Builds/releases) and choose **ffmpeg-master-latest-linux64-gpl.tar.xz**.
+
 ## Plugins
 LABOKit capabilities can be extended using `.kit` plugins.
 
