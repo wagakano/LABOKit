@@ -63,7 +63,6 @@ source /patch/to/venv/active
 3.  run pip install 
 ```
 pip install -r requirements.txt
-
 ```
 4. run program
 ```
