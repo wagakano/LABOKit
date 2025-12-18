@@ -43,11 +43,15 @@
 **(Linux)**
 * **[Source Code](https://github.com/wagakano/LABOKit/tree/main_linux)**
 
-> ## ⚠️ Hardware Requirement
+## ⚠️ Hardware Requirement
 > LABOKit processes everything locally using advanced AI models.
 > * **Standard Upscaling (x4plus):** Requires a **Vulkan-compatible GPU**.
 > * **CPU Upscaling (General x4v3):** Works on **any computer** (including non-Vulkan/Integrated Graphics).
 > * **Performance:** High-end PCs will process images instantly. Low-end PCs may experience longer processing times during upscaling.
+
+## ⚠️ Important Notes
+* **First Startup Delay:** When you run the application for the first time, the startup process may take longer than usual. You might see a "Not Responding" status while the app initializes and loads the necessary data. This is normal and only happens during the first run; subsequent launches will be much faster.
+* **Upscaling & System Load:** During the upscaling process, the application may temporarily enter a "Not Responding" state. This is expected behavior due to the heavy computational load required by the ESRGAN models. Even on high-end systems, this can happen. As long as the application does not crash, please wait for the process to complete—it is working hard in the background!
 
 ## Plugins
 LABOKit capabilities can be extended using `.kit` plugins.
