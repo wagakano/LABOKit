@@ -87,10 +87,12 @@ A bridge for advanced users. Allows you to load external `.onnx` Upscaler models
 <img width="1200" height="800" alt="Image" src="https://github.com/user-attachments/assets/5c746637-00cc-4582-9a30-93e433a83ab0" />
 
 ### 3. QR-Code Generator
-**File:** **[QRCode.kit](https://github.com/wagakano/LABOKit/releases)**
-**Status:** Work in Progress
+**File:** **[QRCodeGenerator.kit]([https://github.com/wagakano/LABOKit/releases](https://github.com/wagakano/LABOKit/releases/download/v2.0/QRCodeGenerator.kit))**
+**Status:** Released
 
 A batch-able QR-Code generator.
+
+<img width="1200" height="800" alt="Image" src="https://github.com/user-attachments/assets/83884af6-ebad-40fe-8e41-4bb28d31247b" />
 
 ## Advanced Plugins
 Also you can get the **Advanced Plugin Bundle** by supporting the development (Donation/Pay What You Want).
