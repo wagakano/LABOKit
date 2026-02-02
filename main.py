@@ -350,12 +350,17 @@ class BgRemoverTab(QWidget):
         
         cnt = 0
         import rembg
+        from rembg import new_session
+
+        # Create session once (reuse model for batch)
+        session = new_session()
+
         for i, p in enumerate(paths):
             if dlg.wasCanceled(): break
             dlg.setLabelText(f"Processing {p.name}...")
             QApplication.processEvents()
             try:
-                res = rembg.remove(p.read_bytes(), **self.presets.get(self.current_preset_name, {}))
+                res = rembg.remove(p.read_bytes(), session=session, **self.presets.get(self.current_preset_name, {}))
                 opath = out / f"{p.stem}_nobg.png"
                 opath.write_bytes(res)
                 self.output_map[p] = opath
@@ -1100,12 +1105,6 @@ def main():
 
     # Silent Deploy
     deploy_assets()
-
-    # Warmup
-    try:
-        from rembg import remove as r_rem
-        r_rem(b"\x00"*10)
-    except: pass
 
     # Style
     app.setStyleSheet("""
