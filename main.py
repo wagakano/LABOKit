@@ -204,6 +204,13 @@ class BgRemoverTab(QWidget):
         # Controls
         right.addSpacing(6)
         pres_row = QHBoxLayout()
+
+        pres_row.addWidget(QLabel("Model:"))
+        self.combo_model = QComboBox()
+        self.combo_model.addItems(["Standard", "Anime"])
+        pres_row.addWidget(self.combo_model)
+
+        pres_row.addSpacing(10)
         pres_row.addWidget(QLabel("Sensitivity:"))
         self.combo = QComboBox(); self.combo.addItems(self.presets.keys())
         self.combo.currentTextChanged.connect(self.on_preset)
@@ -353,7 +360,9 @@ class BgRemoverTab(QWidget):
         from rembg import new_session
 
         # Create session once (reuse model for batch)
-        session = new_session()
+        model_map = {"Standard": "u2net", "Anime": "isnet-anime"}
+        sel_model = model_map.get(self.combo_model.currentText(), "u2net")
+        session = new_session(model_name=sel_model)
 
         for i, p in enumerate(paths):
             if dlg.wasCanceled(): break
