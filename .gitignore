@@ -12,3 +12,4 @@ dist/
 .idea/
 realesrgan_ncnn/
 potrace/
+models/
