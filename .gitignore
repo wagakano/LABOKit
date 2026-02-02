@@ -11,5 +11,4 @@ dist/
 .vscode/
 .idea/
 realesrgan_ncnn/
-models/
 potrace/
