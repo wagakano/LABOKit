@@ -160,6 +160,41 @@ def deploy_assets():
 # TABS
 # ==========================================
 
+VALID_EXTENSIONS = {
+    ".jpg", ".jpeg", ".png", ".bmp", ".tif", ".tiff", ".webp", ".gif"
+}
+
+class FileDropListWidget(QListWidget):
+    files_dropped = Signal(list)
+
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        self.setAcceptDrops(True)
+
+    def dragEnterEvent(self, event):
+        if event.mimeData().hasUrls():
+            event.accept()
+        else:
+            event.ignore()
+
+    def dragMoveEvent(self, event):
+        if event.mimeData().hasUrls():
+            event.accept()
+        else:
+            event.ignore()
+
+    def dropEvent(self, event):
+        if event.mimeData().hasUrls():
+            files = []
+            for u in event.mimeData().urls():
+                if u.isLocalFile():
+                    files.append(Path(u.toLocalFile()))
+            if files:
+                self.files_dropped.emit(files)
+            event.accept()
+        else:
+            event.ignore()
+
 class BgRemoverTab(QWidget):
     def __init__(self, parent=None):
         super().__init__(parent)
@@ -180,7 +215,8 @@ class BgRemoverTab(QWidget):
         
         # Left Panel
         left = QVBoxLayout(); main.addLayout(left, 1)
-        self.list_w = QListWidget()
+        self.list_w = FileDropListWidget()
+        self.list_w.files_dropped.connect(self.add_dropped_files)
         self.list_w.currentRowChanged.connect(self.on_file_selected)
         lbl = QLabel("LOADED IMAGES (BG Remover):"); lbl.setStyleSheet("border:none; background:transparent;")
         left.addWidget(lbl); left.addWidget(self.list_w)
@@ -293,6 +329,16 @@ class BgRemoverTab(QWidget):
                 item = QListWidgetItem(p.name); item.setData(Qt.UserRole, p)
                 self.list_w.addItem(item)
         if self.list_w.count()>0: self.list_w.setCurrentRow(0)
+
+    def add_dropped_files(self, files):
+        for p in files:
+            if p.suffix.lower() in VALID_EXTENSIONS:
+                if p not in self.image_paths:
+                    self.image_paths.append(p)
+                    item = QListWidgetItem(p.name); item.setData(Qt.UserRole, p)
+                    self.list_w.addItem(item)
+        if self.list_w.count() > 0 and self.list_w.currentRow() < 0:
+            self.list_w.setCurrentRow(0)
 
     def clear_list(self):
         self.image_paths.clear(); self.output_map.clear(); self.list_w.clear()
@@ -418,7 +464,8 @@ class UpscalerTab(QWidget):
         
         # Left Panel
         left = QVBoxLayout(); main.addLayout(left, 1)
-        self.list_w = QListWidget()
+        self.list_w = FileDropListWidget()
+        self.list_w.files_dropped.connect(self.add_dropped_files)
         self.list_w.currentItemChanged.connect(self.on_item)
         lbl = QLabel("LOADED IMAGES (Upscaler):"); lbl.setStyleSheet("border:none; background:transparent;")
         left.addWidget(lbl); left.addWidget(self.list_w)
@@ -564,6 +611,16 @@ class UpscalerTab(QWidget):
                 item = QListWidgetItem(p.name); item.setData(Qt.UserRole, p)
                 self.list_w.addItem(item)
         if self.list_w.count()>0: self.list_w.setCurrentRow(0)
+
+    def add_dropped_files(self, files):
+        for p in files:
+            if p.suffix.lower() in VALID_EXTENSIONS:
+                if p not in self.image_paths:
+                    self.image_paths.append(p)
+                    item = QListWidgetItem(p.name); item.setData(Qt.UserRole, p)
+                    self.list_w.addItem(item)
+        if self.list_w.count() > 0 and self.list_w.currentRow() < 0:
+            self.list_w.setCurrentRow(0)
 
     def clear_list(self):
         self.image_paths.clear(); self.output_map.clear(); self.list_w.clear()
