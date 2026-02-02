@@ -38,16 +38,20 @@
 **(Windows)**
 1.  Go to the **[Releases](https://github.com/wagakano/LABOKit/releases/tag/v2.0)** page.
 2.  Download the `LABOKit_v2.0.exe`.
-3.  Run `LABOKit.exe` and enjoy! (☆▽☆)
+3.  Run `LABOKit_v2.0.exe` and enjoy! (☆▽☆)
 
 **(Linux)**
 * **[Source Code](https://github.com/wagakano/LABOKit/tree/main_linux)**
 
-> ## ⚠️ Hardware Requirement
+## ⚠️ Hardware Requirement
 > LABOKit processes everything locally using advanced AI models.
 > * **Standard Upscaling (x4plus):** Requires a **Vulkan-compatible GPU**.
 > * **CPU Upscaling (General x4v3):** Works on **any computer** (including non-Vulkan/Integrated Graphics).
 > * **Performance:** High-end PCs will process images instantly. Low-end PCs may experience longer processing times during upscaling.
+
+## ⚠️ Important Notes
+* **First Startup Delay:** When you run the application for the first time, the startup process may take longer than usual. You might see a "Not Responding" status while the app initializes and loads the necessary data. This is normal and only happens during the first run; subsequent launches will be much faster.
+* **Upscaling & System Load:** During the upscaling process, the application may temporarily enter a "Not Responding" state. This is expected behavior due to the heavy computational load required by the ESRGAN models. Even on high-end systems, this can happen. As long as the application does not crash, please wait for the process to complete—it is working hard in the background!
 
 ## Plugins
 LABOKit capabilities can be extended using `.kit` plugins.
@@ -83,10 +87,12 @@ A bridge for advanced users. Allows you to load external `.onnx` Upscaler models
 <img width="1200" height="800" alt="Image" src="https://github.com/user-attachments/assets/5c746637-00cc-4582-9a30-93e433a83ab0" />
 
 ### 3. QR-Code Generator
-**File:** **[QRCode.kit](https://github.com/wagakano/LABOKit/releases)**
-**Status:** Work in Progress
+**File:** **[QRCodeGenerator.kit](https://github.com/wagakano/LABOKit/releases/download/v2.0/QRCodeGenerator.kit)**
+**Status:** Released
 
 A batch-able QR-Code generator.
+
+<img width="1200" height="800" alt="Image" src="https://github.com/user-attachments/assets/83884af6-ebad-40fe-8e41-4bb28d31247b" />
 
 ## Advanced Plugins
 Also you can get the **Advanced Plugin Bundle** by supporting the development (Donation/Pay What You Want).
@@ -146,8 +152,14 @@ LABOKit is free and open-source. By purchasing this bundle (Pay What You Want), 
     *(Note: PyTorch and RealESRGAN modules are required for full feature support)*
 
 3.  **Model Setup**
-    * LABOKit will attempt to download necessary models on the first run.
-    * For the Upscaler, ensure the `realesrgan_ncnn` folder (containing the executable) and the `models` folder (containing .pth files) are correctly placed in the project directory.
+    * BG Remover (rembg)
+      * **Automatic:** The application will automatically download the required model (`u2net.onnx`, ~170MB) into the `models/` folder on the first run.
+      * **Manual (Offline):** If you prefer manual setup, download [u2net.onnx](https://github.com/danielgatis/rembg/releases/download/v0.0.0/u2net.onnx), create a folder named `models` in the project root, and place the file there (`LABOKit/models/u2net.onnx`).
+    * Upscaler (realesrgan) - ensure the `realesrgan_ncnn` folder (containing the executable) and the `models` folder (containing .pth files) are correctly placed in the project directory.
+        * Download [realesrgan-ncnn-vulkan.exe](https://github.com/xinntao/Real-ESRGAN?tab=readme-ov-file#portable-executable-files-ncnn) and the models (e.g., `realesrgan-x4plus.bin`, etc.).
+        * Place them in the `realesrgan_ncnn/` folder inside the project directory.\
+        * Add `realesr-general-x4v3.pth` into `realesrgan_ncnn/models/`
+        * *(Note: Ensure the executable path matches the setup in `main.py`)*
 
 4.  Run the application:
     ```bash
