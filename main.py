@@ -1,14 +1,17 @@
 # --- PATCH TORCHVISION BASICSR ---
-import torchvision.transforms.functional as F
 try:
-    from torchvision.transforms import functional_tensor
+    import torchvision.transforms.functional as F
+    try:
+        from torchvision.transforms import functional_tensor
+    except ImportError:
+        import sys
+        from types import ModuleType
+
+        ft_module = ModuleType('torchvision.transforms.functional_tensor')
+        ft_module.rgb_to_grayscale = F.rgb_to_grayscale
+        sys.modules['torchvision.transforms.functional_tensor'] = ft_module
 except ImportError:
-    import sys
-    from types import ModuleType
-    
-    ft_module = ModuleType('torchvision.transforms.functional_tensor')
-    ft_module.rgb_to_grayscale = F.rgb_to_grayscale
-    sys.modules['torchvision.transforms.functional_tensor'] = ft_module
+    pass
 
 import sys
 import os
@@ -76,7 +79,8 @@ from PySide6.QtWidgets import (
     QApplication, QMainWindow, QWidget, QVBoxLayout, QHBoxLayout,
     QListWidget, QListWidgetItem, QLabel, QPushButton, QFileDialog,
     QMessageBox, QProgressDialog, QFrame, QComboBox, QTabWidget,
-    QDialog, QPlainTextEdit, QSplashScreen, QMenuBar, QSizePolicy
+    QDialog, QPlainTextEdit, QSplashScreen, QMenuBar, QSizePolicy,
+    QStackedWidget, QButtonGroup
 )
 
 IMAGE_FILTER = (
@@ -157,12 +161,57 @@ def deploy_assets():
                 print(f"Failed to deploy built-in {item.name}: {e}")
 
 # ==========================================
+# CUSTOM WIDGETS
+# ==========================================
+
+class BottomNavBar(QFrame):
+    tab_changed = Signal(int)
+
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        self.setFixedHeight(70)
+        self.setObjectName("BottomNavBar")
+
+        self.layout = QHBoxLayout(self)
+        self.layout.setContentsMargins(10, 5, 10, 5)
+        self.layout.setSpacing(10)
+
+        self.group = QButtonGroup(self)
+        self.group.setExclusive(True)
+        self.group.buttonClicked.connect(self._on_btn_clicked)
+
+    def add_tab(self, name, index, checked=False):
+        btn = QPushButton(name)
+        btn.setCheckable(True)
+        btn.setCursor(Qt.PointingHandCursor)
+        btn.setFixedHeight(45)
+        btn.setObjectName("NavButton")
+
+        self.group.addButton(btn, index)
+        self.layout.addWidget(btn)
+
+        if checked:
+            btn.setChecked(True)
+        return btn
+
+    def clear_plugins(self):
+        for btn in self.group.buttons():
+            if self.group.id(btn) >= 2:
+                self.group.removeButton(btn)
+                self.layout.removeWidget(btn)
+                btn.deleteLater()
+
+    def _on_btn_clicked(self, btn):
+        self.tab_changed.emit(self.group.id(btn))
+
+# ==========================================
 # TABS
 # ==========================================
 
 class BgRemoverTab(QWidget):
     def __init__(self, parent=None):
         super().__init__(parent)
+        self.setAcceptDrops(True)
         self.image_paths = []
         self.output_dir = None
         self.output_map = {}
@@ -170,129 +219,134 @@ class BgRemoverTab(QWidget):
         self.presets = BG_PRESETS
         self.pixel_labels = []
         self._running_index = 0
+        self._current_view_path = None
         self._setup_ui()
         self._init_running_text()
 
     def _setup_ui(self):
-        outer = QVBoxLayout(self)
-        outer.setContentsMargins(8,8,8,8); outer.setSpacing(6)
-        main = QHBoxLayout(); outer.addLayout(main)
+        layout = QVBoxLayout(self)
+        layout.setContentsMargins(10,10,10,10); layout.setSpacing(10)
         
-        # Left Panel
-        left = QVBoxLayout(); main.addLayout(left, 1)
-        self.list_w = QListWidget()
-        self.list_w.currentRowChanged.connect(self.on_file_selected)
-        lbl = QLabel("LOADED IMAGES (BG Remover):"); lbl.setStyleSheet("border:none; background:transparent;")
-        left.addWidget(lbl); left.addWidget(self.list_w)
-        
-        btns = QHBoxLayout()
-        b_add = QPushButton("Add Images…"); b_add.clicked.connect(self.add_images)
-        b_clr = QPushButton("Clear List"); b_clr.clicked.connect(self.clear_list)
-        btns.addWidget(b_add); btns.addWidget(b_clr); left.addLayout(btns)
-
-        # Right Panel
-        right = QVBoxLayout(); main.addLayout(right, 3)
-        self.out_lbl = QLabel("BG OUTPUT FOLDER: (auto)"); self.out_lbl.setWordWrap(True)
-        right.addWidget(self.out_lbl)
-
-        # Previews
-        prev = QHBoxLayout(); right.addLayout(prev, 5)
-        self.lbl_orig = self._create_box("Original")
-        self.lbl_res = self._create_box("Result (Background Removed)")
-        prev.addWidget(self.lbl_orig); prev.addWidget(self.lbl_res)
-
-        # Controls
-        right.addSpacing(6)
-        pres_row = QHBoxLayout()
-
-        pres_row.addWidget(QLabel("Model:"))
-        self.combo_model = QComboBox()
-        self.combo_model.addItems(["Standard", "Anime"])
-        pres_row.addWidget(self.combo_model)
-
-        pres_row.addSpacing(10)
-        pres_row.addWidget(QLabel("Sensitivity:"))
-        self.combo = QComboBox(); self.combo.addItems(self.presets.keys())
-        self.combo.currentTextChanged.connect(self.on_preset)
-        pres_row.addWidget(self.combo); right.addLayout(pres_row)
-
-        right.addSpacing(10)
-        proc_row = QHBoxLayout()
-        b_sel = QPushButton("Remove BG (Selected)"); b_sel.clicked.connect(self.proc_sel)
-        b_all = QPushButton("Remove BG (All)"); b_all.clicked.connect(self.proc_all)
-        proc_row.addWidget(b_sel); proc_row.addWidget(b_all); right.addLayout(proc_row)
-        right.addStretch()
-
-        # Footer (Pixel Bar)
-        bot = QFrame(); bot.setObjectName("PixelBar")
-        bl = QHBoxLayout(bot); bl.setContentsMargins(10,3,10,4); bl.setSpacing(18)
-        font = QFont("Consolas", 9)
-        for _ in range(10):
-            l = QLabel("0.000000α"); l.setFont(font); self.pixel_labels.append(l); bl.addWidget(l)
-        outer.addWidget(bot)
-
-    def _create_box(self, title):
-        f = QFrame()
-        f.setObjectName("PreviewFrame")
-        f.setFrameShape(QFrame.StyledPanel)
-
-        l = QVBoxLayout(f)
-        l.setContentsMargins(0, 0, 0, 0)
-        l.setSpacing(0)
-
-        lbl_title = QLabel(title)
-        lbl_title.setStyleSheet("border: none; background: transparent; color: #1c2333; font-weight: bold; padding: 6px 0 6px 8px;")
-        l.addWidget(lbl_title)
-
-        line = QFrame()
-        line.setFrameShape(QFrame.HLine)
-        line.setFrameShadow(QFrame.Sunken)
-        line.setStyleSheet("border: none; background-color: #b3bcd1; min-height: 1px; max-height: 1px;") 
-        l.addWidget(line)
-
-        content_widget = QWidget() 
-        content_widget.setStyleSheet("border: none; background: transparent;")
-        cl = QVBoxLayout(content_widget)
-        cl.setContentsMargins(0, 0, 0, 0)
-        
-        img = QLabel()
-        img.setAlignment(Qt.AlignCenter)
-        img.setMinimumSize(QSize(200, 200))
-        img.setObjectName("PreviewImage")
-        
-        cl.addWidget(img)
-        l.addWidget(content_widget, 1) 
-
-        f.img_lbl = img
-
-        f.setStyleSheet("""
+        # 1. Preview (Top)
+        self.preview_frame = QFrame()
+        self.preview_frame.setObjectName("PreviewFrame")
+        self.preview_frame.setFrameShape(QFrame.StyledPanel)
+        self.preview_frame.setStyleSheet("""
             #PreviewFrame {
-                border: 1px solid #b3bcd1; 
-                border-radius: 4px;        
-                background-color: #f7f9fc; 
+                border: 1px solid #b3bcd1;
+                border-radius: 4px;
+                background-color: #f7f9fc;
             }
         """)
-        return f
-    
+        
+        pv_layout = QVBoxLayout(self.preview_frame)
+        pv_layout.setContentsMargins(0,0,0,0)
+
+        self.img_lbl = QLabel("Drag & Drop Images Here")
+        self.img_lbl.setAlignment(Qt.AlignCenter)
+        self.img_lbl.setMinimumHeight(200)
+        self.img_lbl.setStyleSheet("border: none; color: #888;")
+        pv_layout.addWidget(self.img_lbl)
+
+        layout.addWidget(self.preview_frame, 3)
+
+        # 2. Controls (Middle)
+        controls = QFrame()
+        controls.setObjectName("ControlFrame")
+        c_layout = QVBoxLayout(controls)
+        c_layout.setContentsMargins(0,5,0,5)
+
+        # Row 1
+        row1 = QHBoxLayout()
+        row1.addWidget(QLabel("Model:"))
+        self.combo_model = QComboBox()
+        self.combo_model.addItems(["Standard", "Anime"])
+        row1.addWidget(self.combo_model)
+
+        row1.addWidget(QLabel("Level:"))
+        self.combo = QComboBox()
+        self.combo.addItems(self.presets.keys())
+        self.combo.currentTextChanged.connect(self.on_preset)
+        row1.addWidget(self.combo)
+        c_layout.addLayout(row1)
+
+        # Row 2
+        row2 = QHBoxLayout()
+        self.btn_compare = QPushButton("Hold to Compare")
+        self.btn_compare.setCursor(Qt.PointingHandCursor)
+        self.btn_compare.pressed.connect(self.show_original)
+        self.btn_compare.released.connect(self.show_result)
+        self.btn_compare.setEnabled(False)
+        row2.addWidget(self.btn_compare)
+
+        self.btn_process = QPushButton("Remove BG")
+        self.btn_process.setCursor(Qt.PointingHandCursor)
+        self.btn_process.setStyleSheet("background-color: #e0f0ff; border: 1px solid #a0c0e0;")
+        self.btn_process.clicked.connect(self.proc_all)
+        row2.addWidget(self.btn_process)
+        c_layout.addLayout(row2)
+
+        layout.addWidget(controls)
+
+        self.out_lbl = QLabel("Output: (Auto)"); self.out_lbl.setStyleSheet("color: #666; font-size: 10px;")
+        layout.addWidget(self.out_lbl)
+
+        # 3. List (Bottom)
+        list_con = QWidget()
+        lc = QVBoxLayout(list_con); lc.setContentsMargins(0,0,0,0)
+
+        hl = QHBoxLayout()
+        hl.addWidget(QLabel("Queue:"))
+        b_clr = QPushButton("Clear"); b_clr.setFixedSize(50,20)
+        b_clr.clicked.connect(self.clear_list)
+        hl.addWidget(b_clr); hl.addStretch()
+        lc.addLayout(hl)
+
+        self.list_w = QListWidget()
+        self.list_w.setFixedHeight(120)
+        self.list_w.currentRowChanged.connect(self.on_file_selected)
+        lc.addWidget(self.list_w)
+
+        layout.addWidget(list_con, 1)
+
+        # 4. Pixel Bar
+        bot = QFrame(); bot.setObjectName("PixelBar")
+        bl = QHBoxLayout(bot); bl.setContentsMargins(5,2,5,2); bl.setSpacing(10)
+        font = QFont("Consolas", 8)
+        for _ in range(5):
+            l = QLabel("0.000000α"); l.setFont(font); self.pixel_labels.append(l); bl.addWidget(l)
+        layout.addWidget(bot)
+
+    def dragEnterEvent(self, event):
+        if event.mimeData().hasUrls(): event.accept()
+        else: event.ignore()
+
+    def dropEvent(self, event):
+        files = [u.toLocalFile() for u in event.mimeData().urls()]
+        self.add_files(files)
+
+    def add_files(self, files):
+        for f in files:
+            p = Path(f)
+            if p.suffix.lower() in ['.jpg', '.jpeg', '.png', '.bmp', '.webp', '.tif', '.tiff']:
+                if p not in self.image_paths:
+                    self.image_paths.append(p)
+                    item = QListWidgetItem(p.name); item.setData(Qt.UserRole, p)
+                    self.list_w.addItem(item)
+        if self.list_w.count()>0 and self.list_w.currentRow()<0: self.list_w.setCurrentRow(0)
+
     def _init_running_text(self):
-        for l in self.pixel_labels: l.setText(random.choice(RUNNING_VALUES) + "  •")
+        for l in self.pixel_labels: l.setText(random.choice(RUNNING_VALUES) + " •")
         self.timer = QTimer(self); self.timer.timeout.connect(self._update_text)
         self.timer.start(1000)
 
     def _update_text(self):
         idx = self._running_index % len(self.pixel_labels); self._running_index += 1
-        self.pixel_labels[idx].setText(random.choice(RUNNING_VALUES) + "  •")
+        self.pixel_labels[idx].setText(random.choice(RUNNING_VALUES) + " •")
 
     def add_images(self):
         files, _ = QFileDialog.getOpenFileNames(self, "Select Images", "", IMAGE_FILTER)
-        if not files: return
-        for f in files:
-            p = Path(f)
-            if p not in self.image_paths:
-                self.image_paths.append(p)
-                item = QListWidgetItem(p.name); item.setData(Qt.UserRole, p)
-                self.list_w.addItem(item)
-        if self.list_w.count()>0: self.list_w.setCurrentRow(0)
+        if files: self.add_files(files)
 
     def clear_list(self):
         self.image_paths.clear(); self.output_map.clear(); self.list_w.clear()
@@ -303,43 +357,55 @@ class BgRemoverTab(QWidget):
         else: self._update_prev(self.image_paths[row])
 
     def _update_prev(self, path):
-        orig, res = self.lbl_orig.img_lbl, self.lbl_res.img_lbl
+        self._current_view_path = path
+        self.btn_compare.setEnabled(False)
+        self.btn_compare.setText("Hold to Compare")
+
         if not path:
-            orig.setPixmap(QPixmap()); orig.setText("(no image)")
-            res.setPixmap(QPixmap()); res.setText("(no result)")
+            self.img_lbl.setText("Drag & Drop Images Here")
+            self.img_lbl.setPixmap(QPixmap())
             return
-        
-        pix = QPixmap(str(path))
-        if not pix.isNull():
-            orig.setPixmap(pix.scaled(orig.size(), Qt.KeepAspectRatio, Qt.SmoothTransformation))
-            orig.setText("")
-        else: orig.setText("(error)")
 
         out = self.output_map.get(path)
         if out and out.exists():
-            rpix = QPixmap(str(out))
-            res.setPixmap(rpix.scaled(res.size(), Qt.KeepAspectRatio, Qt.SmoothTransformation))
-            res.setText("")
-        else: res.setPixmap(QPixmap()); res.setText("(no result)")
+            self.show_result()
+            self.btn_compare.setEnabled(True)
+        else:
+            self.show_original()
+
+    def show_original(self):
+        if not self._current_view_path: return
+        pix = QPixmap(str(self._current_view_path))
+        if not pix.isNull():
+            self.img_lbl.setPixmap(pix.scaled(self.img_lbl.size(), Qt.KeepAspectRatio, Qt.SmoothTransformation))
+            self.img_lbl.setText("")
+
+    def show_result(self):
+        if not self._current_view_path: return
+        out = self.output_map.get(self._current_view_path)
+        if out and out.exists():
+            pix = QPixmap(str(out))
+            self.img_lbl.setPixmap(pix.scaled(self.img_lbl.size(), Qt.KeepAspectRatio, Qt.SmoothTransformation))
+            self.img_lbl.setText("")
+        else: self.show_original()
 
     def resizeEvent(self, e):
         super().resizeEvent(e)
-        r = self.list_w.currentRow()
-        if r >= 0: self._update_prev(self.image_paths[r])
+        if self._current_view_path: self._update_prev(self._current_view_path)
 
     def on_preset(self, n): self.current_preset_name = n
 
     def ensure_out(self, sample):
         if not self.output_dir:
             self.output_dir = sample.parent / "LABOKit_BG"; self.output_dir.mkdir(exist_ok=True)
-            self.out_lbl.setText(f"BG OUTPUT FOLDER: {self.output_dir}")
+            self.out_lbl.setText(f"Output: {self.output_dir.name}")
             QMessageBox.information(self, "Info", f"Output folder set to:\n{self.output_dir}")
         return self.output_dir
 
     def change_output_folder(self):
         d = QFileDialog.getExistingDirectory(self, "Select Folder")
         if d:
-            self.output_dir = Path(d); self.out_lbl.setText(f"BG OUTPUT FOLDER: {self.output_dir}")
+            self.output_dir = Path(d); self.out_lbl.setText(f"Output: {self.output_dir.name}")
 
     def proc_sel(self):
         sel = [i.data(Qt.UserRole) for i in self.list_w.selectedItems()]
@@ -359,7 +425,6 @@ class BgRemoverTab(QWidget):
         import rembg
         from rembg import new_session
 
-        # Create session once (reuse model for batch)
         model_map = {"Standard": "u2net", "Anime": "isnet-anime"}
         sel_model = model_map.get(self.combo_model.currentText(), "u2net")
         session = new_session(model_name=sel_model)
@@ -386,87 +451,144 @@ class BgRemoverTab(QWidget):
             "<p>Powered by <b>U^2-Net</b> (Machine Learning).</p>"
             "<hr>"
             "<b>1. Add Images</b><br>"
-            "Drag & drop files or use the 'Add Images' button. Supports JPG, PNG, WEBP, BMP.<br><br>"
+            "Drag & drop files or use the 'Add Images' button.<br><br>"
             "<b>2. Sensitivity Presets</b>"
             "<ul>"
             "<li><b>Standard:</b> Best for general use. Fast & clean edges.</li>"
             "<li><b>Medium:</b> Applies post-processing to smooth rough edges.</li>"
             "<li><b>High:</b> Aggressive alpha matting. Good for hair/fur details but slower.</li>"
             "</ul>"
-            "<b>3. Processing</b><br>"
-            "Click 'Remove BG (All)' to process the entire list.<br>"
-            "Results are saved automatically to the <b>LABOKit_BG</b> folder next to your input files.<br><br>"
         )
         QMessageBox.information(self, "Help – BG Remover", text)
 
 class UpscalerTab(QWidget):
+    MODEL_MAP = {
+        "General": "realesrgan-x4plus",
+        "Anime/2D": "realesrgan-x4plus-anime",
+        "General - Performance Mode": "realesr-general-x4v3.pth"
+    }
+
     def __init__(self, parent=None):
         super().__init__(parent)
+        self.setAcceptDrops(True)
         self.image_paths = []
         self.output_dir = None
         self.output_map = {}
-        self.view_path = None
         self.pixel_labels = []
         self._running_index = 0
+        self._current_view_path = None
         self._setup_ui()
         self._init_running_text()
 
     def _setup_ui(self):
-        outer = QVBoxLayout(self)
-        outer.setContentsMargins(8,8,8,8); outer.setSpacing(6)
-        main = QHBoxLayout(); outer.addLayout(main)
+        layout = QVBoxLayout(self)
+        layout.setContentsMargins(10,10,10,10); layout.setSpacing(10)
         
-        # Left Panel
-        left = QVBoxLayout(); main.addLayout(left, 1)
+        # 1. Preview (Top)
+        self.preview_frame = QFrame()
+        self.preview_frame.setObjectName("PreviewFrame")
+        self.preview_frame.setFrameShape(QFrame.StyledPanel)
+        self.preview_frame.setStyleSheet("""
+            #PreviewFrame {
+                border: 1px solid #b3bcd1;
+                border-radius: 4px;
+                background-color: #f7f9fc;
+            }
+        """)
+        
+        pv_layout = QVBoxLayout(self.preview_frame)
+        pv_layout.setContentsMargins(0,0,0,0)
+
+        self.img_lbl = QLabel("Drag & Drop Images Here")
+        self.img_lbl.setAlignment(Qt.AlignCenter)
+        self.img_lbl.setMinimumHeight(200)
+        self.img_lbl.setStyleSheet("border: none; color: #888;")
+        pv_layout.addWidget(self.img_lbl)
+
+        layout.addWidget(self.preview_frame, 3)
+
+        # 2. Controls (Middle)
+        controls = QFrame()
+        controls.setObjectName("ControlFrame")
+        c_layout = QVBoxLayout(controls)
+        c_layout.setContentsMargins(0,5,0,5)
+
+        # Row 1
+        row1 = QHBoxLayout()
+        row1.addWidget(QLabel("Scale:"))
+        self.combo_s = QComboBox(); self.combo_s.addItems(["2x", "4x"]); self.combo_s.setCurrentText("4x")
+        self.combo_s.setFixedWidth(60)
+        row1.addWidget(self.combo_s)
+
+        row1.addWidget(QLabel("Model:"))
+        self.combo_m = QComboBox()
+        self.combo_m.addItems(list(self.MODEL_MAP.keys()))
+        row1.addWidget(self.combo_m)
+        c_layout.addLayout(row1)
+
+        # Row 2
+        row2 = QHBoxLayout()
+        self.btn_compare = QPushButton("Hold to Compare")
+        self.btn_compare.setCursor(Qt.PointingHandCursor)
+        self.btn_compare.pressed.connect(self.show_original)
+        self.btn_compare.released.connect(self.show_result)
+        self.btn_compare.setEnabled(False)
+        row2.addWidget(self.btn_compare)
+
+        self.btn_process = QPushButton("Upscale")
+        self.btn_process.setCursor(Qt.PointingHandCursor)
+        self.btn_process.setStyleSheet("background-color: #e0f0ff; border: 1px solid #a0c0e0;")
+        self.btn_process.clicked.connect(self.proc_all)
+        row2.addWidget(self.btn_process)
+        c_layout.addLayout(row2)
+
+        layout.addWidget(controls)
+
+        self.out_lbl = QLabel("Output: (Auto)"); self.out_lbl.setStyleSheet("color: #666; font-size: 10px;")
+        layout.addWidget(self.out_lbl)
+
+        # 3. List
+        list_con = QWidget()
+        lc = QVBoxLayout(list_con); lc.setContentsMargins(0,0,0,0)
+
+        hl = QHBoxLayout()
+        hl.addWidget(QLabel("Queue:"))
+        b_clr = QPushButton("Clear"); b_clr.setFixedSize(50,20)
+        b_clr.clicked.connect(self.clear_list)
+        hl.addWidget(b_clr); hl.addStretch()
+        lc.addLayout(hl)
+
         self.list_w = QListWidget()
+        self.list_w.setFixedHeight(120)
         self.list_w.currentItemChanged.connect(self.on_item)
-        lbl = QLabel("LOADED IMAGES (Upscaler):"); lbl.setStyleSheet("border:none; background:transparent;")
-        left.addWidget(lbl); left.addWidget(self.list_w)
-        
-        btns = QHBoxLayout()
-        b_add = QPushButton("Add Images…"); b_add.clicked.connect(self.add_images)
-        b_clr = QPushButton("Clear List"); b_clr.clicked.connect(self.clear_list)
-        btns.addWidget(b_add); btns.addWidget(b_clr); left.addLayout(btns)
+        lc.addWidget(self.list_w)
+        layout.addWidget(list_con, 1)
 
-        # Right Panel
-        right = QVBoxLayout(); main.addLayout(right, 3)
-        self.out_lbl = QLabel("UPSCALE OUTPUT FOLDER: (auto)"); self.out_lbl.setWordWrap(True)
-        right.addWidget(self.out_lbl)
-
-        # Previews
-        prev = QHBoxLayout(); right.addLayout(prev, 5)
-        self.lbl_orig = self._create_box("Original")
-        self.lbl_res = self._create_box("Result (Upscaled)")
-        prev.addWidget(self.lbl_orig); prev.addWidget(self.lbl_res)
-
-        # Options
-        right.addSpacing(6)
-        opt = QHBoxLayout()
-        opt.addWidget(QLabel("Scale:")); self.combo_s = QComboBox(); self.combo_s.addItems(["2x", "4x"]); self.combo_s.setCurrentText("4x")
-        opt.addWidget(self.combo_s)
-        opt.addWidget(QLabel("Model:")); self.combo_m = QComboBox()
-        self.combo_m.addItems([
-            "realesrgan-x4plus", 
-            "realesrgan-x4plus-anime", 
-            "realesr-general-x4v3.pth"
-        ])
-        opt.addWidget(self.combo_m); right.addLayout(opt)
-
-        # Buttons
-        right.addSpacing(10)
-        proc = QHBoxLayout()
-        b_sel = QPushButton("Upscale (Selected)"); b_sel.clicked.connect(self.proc_sel)
-        b_all = QPushButton("Upscale (All)"); b_all.clicked.connect(self.proc_all)
-        proc.addWidget(b_sel); proc.addWidget(b_all); right.addLayout(proc)
-        right.addStretch()
-
-        # Footer
+        # 4. Pixel Bar
         bot = QFrame(); bot.setObjectName("PixelBar")
-        bl = QHBoxLayout(bot); bl.setContentsMargins(10,3,10,4); bl.setSpacing(18)
-        font = QFont("Consolas", 9)
-        for _ in range(10):
+        bl = QHBoxLayout(bot); bl.setContentsMargins(5,2,5,2); bl.setSpacing(10)
+        font = QFont("Consolas", 8)
+        for _ in range(5):
             l = QLabel("0.000000α"); l.setFont(font); self.pixel_labels.append(l); bl.addWidget(l)
-        outer.addWidget(bot)
+        layout.addWidget(bot)
+
+    def dragEnterEvent(self, event):
+        if event.mimeData().hasUrls(): event.accept()
+        else: event.ignore()
+
+    def dropEvent(self, event):
+        files = [u.toLocalFile() for u in event.mimeData().urls()]
+        self.add_files(files)
+
+    def add_files(self, files):
+        for f in files:
+            p = Path(f)
+            if p.suffix.lower() in ['.jpg', '.jpeg', '.png', '.bmp', '.webp', '.tif', '.tiff']:
+                if p not in self.image_paths:
+                    self.image_paths.append(p)
+                    item = QListWidgetItem(p.name); item.setData(Qt.UserRole, p)
+                    self.list_w.addItem(item)
+        if self.list_w.count()>0: self.list_w.setCurrentRow(0)
 
     def run_python_inference(self, img_path, out_path, model_name):
         if not HAS_TORCH:
@@ -502,68 +624,18 @@ class UpscalerTab(QWidget):
             import traceback; traceback.print_exc()
             return False
 
-    def _create_box(self, title):
-        f = QFrame()
-        f.setObjectName("PreviewFrame")
-        f.setFrameShape(QFrame.StyledPanel)
-
-        l = QVBoxLayout(f)
-        l.setContentsMargins(0, 0, 0, 0)
-        l.setSpacing(0)
-
-        lbl_title = QLabel(title)
-        lbl_title.setStyleSheet("border: none; background: transparent; color: #1c2333; font-weight: bold; padding: 6px 0 6px 8px;")
-        l.addWidget(lbl_title)
-
-        line = QFrame()
-        line.setFrameShape(QFrame.HLine)
-        line.setFrameShadow(QFrame.Sunken)
-        line.setStyleSheet("border: none; background-color: #b3bcd1; min-height: 1px; max-height: 1px;") 
-        l.addWidget(line)
-
-        content_widget = QWidget() 
-        content_widget.setStyleSheet("border: none; background: transparent;")
-        cl = QVBoxLayout(content_widget)
-        cl.setContentsMargins(0, 0, 0, 0)
-        
-        img = QLabel()
-        img.setAlignment(Qt.AlignCenter)
-        img.setMinimumSize(QSize(200, 200))
-        img.setObjectName("PreviewImage")
-        
-        cl.addWidget(img)
-        l.addWidget(content_widget, 1) 
-
-        f.img_lbl = img
-
-        f.setStyleSheet("""
-            #PreviewFrame {
-                border: 1px solid #b3bcd1; 
-                border-radius: 4px;        
-                background-color: #f7f9fc; 
-            }
-        """)
-        return f
-
     def _init_running_text(self):
-        for l in self.pixel_labels: l.setText(random.choice(RUNNING_VALUES) + "  •")
+        for l in self.pixel_labels: l.setText(random.choice(RUNNING_VALUES) + " •")
         self.timer = QTimer(self); self.timer.timeout.connect(self._update_text)
         self.timer.start(1000)
 
     def _update_text(self):
         idx = self._running_index % len(self.pixel_labels); self._running_index += 1
-        self.pixel_labels[idx].setText(random.choice(RUNNING_VALUES) + "  •")
+        self.pixel_labels[idx].setText(random.choice(RUNNING_VALUES) + " •")
 
     def add_images(self):
         files, _ = QFileDialog.getOpenFileNames(self, "Select Images", "", IMAGE_FILTER)
-        if not files: return
-        for f in files:
-            p = Path(f)
-            if p not in self.image_paths:
-                self.image_paths.append(p)
-                item = QListWidgetItem(p.name); item.setData(Qt.UserRole, p)
-                self.list_w.addItem(item)
-        if self.list_w.count()>0: self.list_w.setCurrentRow(0)
+        if files: self.add_files(files)
 
     def clear_list(self):
         self.image_paths.clear(); self.output_map.clear(); self.list_w.clear()
@@ -574,41 +646,53 @@ class UpscalerTab(QWidget):
         else: self._update_prev(curr.data(Qt.UserRole))
 
     def _update_prev(self, path):
-        self.view_path = path
-        orig, res = self.lbl_orig.img_lbl, self.lbl_res.img_lbl
+        self._current_view_path = path
+        self.btn_compare.setEnabled(False)
+        self.btn_compare.setText("Hold to Compare")
+
         if not path:
-            orig.setPixmap(QPixmap()); orig.setText("(no image)")
-            res.setPixmap(QPixmap()); res.setText("(no result)")
+            self.img_lbl.setText("Drag & Drop Images Here")
+            self.img_lbl.setPixmap(QPixmap())
             return
-        
-        pix = QPixmap(str(path))
-        if not pix.isNull():
-            orig.setPixmap(pix.scaled(orig.size(), Qt.KeepAspectRatio, Qt.SmoothTransformation))
-            orig.setText("")
-        else: orig.setText("(error)")
 
         out = self.output_map.get(path)
         if out and out.exists():
-            rpix = QPixmap(str(out))
-            res.setPixmap(rpix.scaled(res.size(), Qt.KeepAspectRatio, Qt.SmoothTransformation))
-            res.setText("")
-        else: res.setPixmap(QPixmap()); res.setText("(no result)")
+            self.show_result()
+            self.btn_compare.setEnabled(True)
+        else:
+            self.show_original()
+
+    def show_original(self):
+        if not self._current_view_path: return
+        pix = QPixmap(str(self._current_view_path))
+        if not pix.isNull():
+            self.img_lbl.setPixmap(pix.scaled(self.img_lbl.size(), Qt.KeepAspectRatio, Qt.SmoothTransformation))
+            self.img_lbl.setText("")
+
+    def show_result(self):
+        if not self._current_view_path: return
+        out = self.output_map.get(self._current_view_path)
+        if out and out.exists():
+            pix = QPixmap(str(out))
+            self.img_lbl.setPixmap(pix.scaled(self.img_lbl.size(), Qt.KeepAspectRatio, Qt.SmoothTransformation))
+            self.img_lbl.setText("")
+        else: self.show_original()
 
     def resizeEvent(self, e):
         super().resizeEvent(e)
-        if self.view_path: self._update_prev(self.view_path)
+        if self._current_view_path: self._update_prev(self._current_view_path)
 
     def ensure_out(self, sample):
         if not self.output_dir:
             self.output_dir = sample.parent / "LABOKit_UP"; self.output_dir.mkdir(exist_ok=True)
-            self.out_lbl.setText(f"UPSCALE OUTPUT FOLDER: {self.output_dir}")
+            self.out_lbl.setText(f"Output: {self.output_dir.name}")
             QMessageBox.information(self, "Info", f"Output folder set to:\n{self.output_dir}")
         return self.output_dir
     
     def change_output_folder(self):
         d = QFileDialog.getExistingDirectory(self, "Select Folder")
         if d:
-            self.output_dir = Path(d); self.out_lbl.setText(f"UPSCALE OUTPUT FOLDER: {self.output_dir}")
+            self.output_dir = Path(d); self.out_lbl.setText(f"Output: {self.output_dir.name}")
 
     def proc_sel(self):
         sel = [i.data(Qt.UserRole) for i in self.list_w.selectedItems()]
@@ -620,7 +704,9 @@ class UpscalerTab(QWidget):
         self._run(self.image_paths)
 
     def _run(self, paths):
-        model_name = self.combo_m.currentText()
+        display_name = self.combo_m.currentText()
+        model_name = self.MODEL_MAP.get(display_name, "realesrgan-x4plus")
+
         is_python_mode = model_name.endswith(".pth")
 
         if not is_python_mode and not REALESRGAN_EXE.exists():
@@ -677,17 +763,13 @@ class UpscalerTab(QWidget):
             "<p>Powered by <b>Real-ESRGAN</b> (NCNN Vulkan).</p>"
             "<hr>"
             "<b>1. Add Images</b><br>"
-            "Load low-resolution images you want to enhance.<br><br>"
+            "Drag & drop files or use the 'Add Images' button.<br><br>"
             "<b>2. Model Selection</b>"
             "<ul>"
-            "<li><b>realesrgan-x4plus:</b> Best for photos, realistic textures, and general images.</li>"
-            "<li><b>realesrgan-x4plus-anime:</b> Optimized for 2D illustration, anime, and line art (faster & sharper lines).</li>"
-            "<li><b>realesr-general-x4v3:</b> Optimized for Low-End/Non Vulkan/Integrated GPU PC.</li>"
+            "<li><b>General:</b> Best for photos, realistic textures (Standard x4plus).</li>"
+            "<li><b>Anime/2D:</b> Optimized for 2D illustration/line art (x4plus-anime).</li>"
+            "<li><b>General - Performance:</b> CPU optimized (x4v3).</li>"
             "</ul>"
-            "<b>3. Scale Factor</b><br>"
-            "Choose <b>4x</b> for maximum detail or <b>2x</b> for a quicker resize.<br><br>"
-            "<b>⚠️ Hardware Note:</b><br>"
-            "This feature requires a Vulkan-compatible GPU. On first run, it might take a few seconds to initialize."
         )
         QMessageBox.information(self, "Help – Upscaler", text)
         
@@ -854,19 +936,8 @@ class LABOKitMainWindow(QMainWindow):
     def __init__(self):
         super().__init__()
         self.setWindowTitle("LABOKit")
-        
-        screen = QApplication.primaryScreen().geometry()
-        screen_height = screen.height()
-        base_height_ref = 1440
-        base_w_ref = 1200
-        base_h_ref = 800
-        scale_factor = screen_height / base_height_ref
-        new_w = int(base_w_ref * scale_factor)
-        new_h = int(base_h_ref * scale_factor)
-        final_w = max(900, new_w) 
-        final_h = max(600, new_h)
-        self.setFixedSize(final_w, final_h)
-        
+        self.resize(450, 850) # Portrait Mode (Default)
+        self.setMinimumSize(400, 600)
         self.setWindowFlags(Qt.FramelessWindowHint)
         
         self.central_container = QWidget()
@@ -874,40 +945,47 @@ class LABOKitMainWindow(QMainWindow):
         
         self.outer_layout = QVBoxLayout(self.central_container)
         self.outer_layout.setContentsMargins(0, 0, 0, 0)
+        self.outer_layout.setSpacing(0)
         
+        # Main Frame (Background)
         self.main_frame = QFrame()
         self.main_frame.setObjectName("MainFrame")
-        self.main_frame.setStyleSheet("""
-            #MainFrame {
-                background-color: #e9edf5;
-                border-radius: 10px; 
-                border: 1px solid #999; 
-            }
-        """)
-        
         self.outer_layout.addWidget(self.main_frame)
         
         self.main_layout = QVBoxLayout(self.main_frame)
         self.main_layout.setContentsMargins(0, 0, 0, 0)
         self.main_layout.setSpacing(0)
 
+        # 1. Custom Title Bar
         self.custom_title_bar = CustomTitleBar(self)
         self.main_layout.addWidget(self.custom_title_bar)
 
-        self.tabs = QTabWidget()
+        # 2. Content Area (Stacked)
+        self.stack = QStackedWidget()
         self.bg_tab = BgRemoverTab(self)
         self.up_tab = UpscalerTab(self)
-        self.tabs.addTab(self.bg_tab, "BG Remover")
-        self.tabs.addTab(self.up_tab, "Upscaler")
         
-        self.main_layout.addWidget(self.tabs)
-        self.main_layout.addSpacing(5) 
+        self.stack.addWidget(self.bg_tab) # Index 0
+        self.stack.addWidget(self.up_tab) # Index 1
+
+        self.main_layout.addWidget(self.stack)
+
+        # 3. Bottom Navigation
+        self.navbar = BottomNavBar()
+        self.navbar.add_tab("BG Remove", 0, checked=True)
+        self.navbar.add_tab("Upscale", 1)
+        self.navbar.tab_changed.connect(self.switch_tab)
+
+        self.main_layout.addWidget(self.navbar)
 
         self.loaded_plugins = []
         self._setup_menu()
         self._load_plugins()
         self.check_app_updates()
         self.check_plugin_updates()
+
+    def switch_tab(self, index):
+        self.stack.setCurrentIndex(index)
 
     def resizeEvent(self, event):
         path = QPainterPath()
@@ -917,17 +995,22 @@ class LABOKitMainWindow(QMainWindow):
         self.setMask(region)
         
         super().resizeEvent(event)
+
     def _load_plugins(self):
         if not PLUGIN_DIR.exists(): PLUGIN_DIR.mkdir(parents=True, exist_ok=True)
         
-        # Remove old tabs
-        for p in self.loaded_plugins:
-            if p.get("tab"): 
-                idx = self.tabs.indexOf(p["tab"])
-                if idx != -1: self.tabs.removeTab(idx)
+        # Remove old plugins from Stack and Navbar
+        # Note: Index 0 and 1 are fixed (BG, Upscale)
+        while self.stack.count() > 2:
+            w = self.stack.widget(2)
+            self.stack.removeWidget(w)
+            w.deleteLater()
+
+        self.navbar.clear_plugins()
         self.loaded_plugins.clear()
 
         # Load new
+        plugin_index = 2
         for f in PLUGIN_DIR.glob("*.kit"):
             try:
                 mod_name = f"plugin_{f.stem}"
@@ -939,8 +1022,12 @@ class LABOKitMainWindow(QMainWindow):
                 if hasattr(mod, "create_tab"):
                     tab = mod.create_tab(self)
                     name = getattr(mod, "PLUGIN_NAME", f.stem)
-                    self.tabs.addTab(tab, name)
+
+                    self.stack.addWidget(tab)
+                    self.navbar.add_tab(name, plugin_index)
+
                     self.loaded_plugins.append({"name": name, "tab": tab, "help": getattr(mod, "HELP_TEXT", "")})
+                    plugin_index += 1
             except Exception as e: print(f"Plugin Error {f.name}: {e}")
 
         self._refresh_plugin_menu()
@@ -1026,11 +1113,11 @@ class LABOKitMainWindow(QMainWindow):
         supp.addAction("Get Plugins (Ko-fi)", lambda: self.open_url("https://ko-fi.com/s/a367e473fe"))
 
     def add_images_curr(self):
-        w = self.tabs.currentWidget()
+        w = self.stack.currentWidget()
         if hasattr(w, "add_images"): w.add_images()
 
     def change_out_curr(self):
-        w = self.tabs.currentWidget()
+        w = self.stack.currentWidget()
         if hasattr(w, "change_output_folder"): w.change_output_folder()
 
     def show_bg_help(self): self.bg_tab.show_help()
@@ -1117,33 +1204,72 @@ def main():
 
     # Style
     app.setStyleSheet("""
-        QMainWindow { background-color: #e9edf5; }
-        QTabWidget::pane { border: 1px solid #b3bcd1; border-radius: 4px; top: -1px; }
-        QTabBar::tab { background-color: #dde4f5; border: 1px solid #b3bcd1; padding: 4px 12px; border-top-left-radius: 4px; border-top-right-radius: 4px; color: #1c2333; }
-        QTabBar::tab:selected { background-color: #f5f7fb; }
-        QMenuBar { background-color: #dbe2f2; color: #1c2333; border-bottom: 1px solid #b3bcd1; }
-        QMenuBar::item { background: transparent; padding: 3px 8px; color: #1c2333; }
-        QMenuBar::item:selected { background-color: #cfe2ff; color: #101522; }
-        QMenu { background-color: #f7f9fc; border: 1px solid #b3bcd1; }
-        QMenu::item { padding: 4px 20px; color: #1c2333; }
-        QMenu::item:selected { background-color: #cfe2ff; color: #101522; }
-        QListWidget { background-color: #f7f9fc; border: 1px solid #b3bcd1; border-radius: 4px; }
-        QListWidget::item { padding: 4px 6px; color: #1c2333; }
-        QListWidget::item:selected { color: #102039; }
-        QFrame { background-color: #f5f7fb; border: 1px solid #b3bcd1; border-radius: 6px; }
-        #PixelBar { background-color: #dde4f5; border-radius: 6px; border: 1px solid #b3bcd1; }
-        #PixelBar QLabel { color: #4b556b; }
-        QLabel { color: #1c2333; }
-        QPushButton { color: #1c2333; background-color: qlineargradient(x1:0, y1:0, x2:0, y2:1, stop:0 #ffffff, stop:1 #d8dfee); border: 1px solid #9ca7c2; border-radius: 5px; padding: 4px 12px; }
-        QPushButton:hover { background-color: qlineargradient(x1:0, y1:0, x2:0, y2:1, stop:0 #ffffff, stop:1 #e6ecf7); }
-        QPushButton:pressed { background-color: qlineargradient(x1:0, y1:0, x2:0, y2:1, stop:0 #cfd6e8, stop:1 #b0bdd7); }
-        QProgressDialog { background-color: #f5f7fb; }
-        QDialog, QMessageBox { background-color: #f5f7fb; }
-        QDialog QLabel, QMessageBox QLabel { color: #1c2333; }
-        QDialog QPushButton, QMessageBox QPushButton { color: #1c2333; background-color: qlineargradient(x1:0, y1:0, x2:0, y2:1, stop:0 #ffffff, stop:1 #d8dfee); border: 1px solid #9ca7c2; border-radius: 5px; padding: 4px 12px; }
-        QPlainTextEdit { background-color: #f5f7fb; color: #1c2333; border: 1px solid #b3bcd1; border-radius: 4px; }
-        QComboBox { background-color: #f7f9fc; border: 1px solid #b3bcd1; border-radius: 4px; padding: 2px 6px; color: #1c2333; }
-        QComboBox QAbstractItemView { background-color: #ffffff; border: 1px solid #b3bcd1; selection-background-color: #cfe2ff; color: #1c2333; selection-color: #101522; }
+        QMainWindow { background-color: #f0f2f5; }
+
+        /* Menu Bar */
+        QMenuBar { background-color: #ffffff; color: #333; border-bottom: 1px solid #eee; }
+        QMenuBar::item { background: transparent; padding: 6px 12px; color: #444; }
+        QMenuBar::item:selected { background-color: #f0f0f0; color: #000; border-radius: 4px; }
+
+        /* Menu */
+        QMenu { background-color: #ffffff; border: 1px solid #ddd; border-radius: 6px; padding: 4px; }
+        QMenu::item { padding: 6px 24px 6px 12px; color: #333; border-radius: 4px; }
+        QMenu::item:selected { background-color: #e6efff; color: #0066ff; }
+
+        /* List Widget */
+        QListWidget { background-color: #ffffff; border: 1px solid #e0e0e0; border-radius: 8px; outline: none; }
+        QListWidget::item { padding: 8px 10px; color: #333; border-bottom: 1px solid #f5f5f5; }
+        QListWidget::item:selected { background-color: #e6efff; color: #0066ff; border-radius: 4px; }
+
+        /* Frames */
+        QFrame { border: none; }
+        #MainFrame { background-color: #f0f2f5; border: 1px solid #ccc; border-radius: 12px; }
+        #PreviewFrame { background-color: #e3e6eb; border-radius: 8px; border: 1px solid #d0d0d0; }
+        #ControlFrame { background-color: #ffffff; border-radius: 8px; border: 1px solid #e0e0e0; }
+        #BottomNavBar { background-color: #ffffff; border-top: 1px solid #e0e0e0; border-bottom-left-radius: 12px; border-bottom-right-radius: 12px; }
+        #PixelBar { background-color: #2b303b; border-radius: 0px; }
+        #PixelBar QLabel { color: #d00000; font-family: "Consolas"; font-weight: bold; }
+
+        /* Buttons */
+        QPushButton {
+            color: #333;
+            background-color: #ffffff;
+            border: 1px solid #d0d0d0;
+            border-radius: 6px;
+            padding: 6px 16px;
+            font-weight: 500;
+        }
+        QPushButton:hover { background-color: #f8f9fa; border-color: #b0b0b0; }
+        QPushButton:pressed { background-color: #e9ecef; border-color: #a0a0a0; }
+
+        /* Nav Button Specifics */
+        #NavButton {
+            background-color: transparent;
+            border: none;
+            color: #888;
+            font-size: 11px;
+            text-align: center;
+        }
+        #NavButton:checked {
+            color: #0066ff;
+            background-color: #f0f7ff;
+            font-weight: bold;
+        }
+        #NavButton:hover {
+            color: #555;
+            background-color: #f5f5f5;
+        }
+
+        /* Labels */
+        QLabel { color: #333; }
+
+        /* Inputs */
+        QComboBox { background-color: #ffffff; border: 1px solid #d0d0d0; border-radius: 6px; padding: 4px 8px; color: #333; }
+        QComboBox::drop-down { border: none; }
+        QComboBox QAbstractItemView { background-color: #ffffff; border: 1px solid #d0d0d0; selection-background-color: #e6efff; selection-color: #0066ff; }
+
+        QProgressDialog { background-color: #f0f2f5; }
+        QDialog, QMessageBox { background-color: #f0f2f5; }
     """)
 
     win = LABOKitMainWindow()
