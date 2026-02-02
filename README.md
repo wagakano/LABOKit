@@ -1,4 +1,4 @@
-# LABOKit ⌀ v2.0 [DOWNLOAD](https://github.com/wagakano/LABOKit?tab=readme-ov-file#-download-portable-version)
+# LABOKit ⌀ v2.0 [DOWNLOAD](https://github.com/wagakano/LABOKit?tab=readme-ov-file#-download)
 
 <img width="1365" height="416" alt="Banner" src="https://github.com/user-attachments/assets/f4ab1e1b-de1c-4a0f-a648-25b210f0ea4f" />
 
@@ -33,7 +33,7 @@
     * **Image Converter:** Fixed Transparency Glitch when converting PNG to JPG.
 * **General:** Minor bug fixes and performance improvements.
 
-## 📥 Download (Portable Version)
+## 📥 Download
 
 **(Windows)**
 1.  Go to the **[Releases](https://github.com/wagakano/LABOKit/releases/tag/v2.0)** page.
@@ -42,6 +42,10 @@
 
 **(Linux)**
 * **[Source Code](https://github.com/wagakano/LABOKit/tree/main_linux)**
+
+**LABOKit Electron Ver - Alternative UI**
+Contributed by: **Chizzui**
+* **[Download v1.3](https://github.com/Chizuui/labokit-electron)**
 
 ## ⚠️ Hardware Requirement
 > LABOKit processes everything locally using advanced AI models.
