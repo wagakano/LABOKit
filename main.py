@@ -207,6 +207,9 @@ class BgRemoverTab(QWidget):
         self.out_lbl = QLabel("(auto)"); self.out_lbl.setWordWrap(True)
         self.out_lbl.setStyleSheet("color: #666; margin-bottom: 5px; border: none; background: transparent;")
         left.addWidget(self.out_lbl)
+
+        b_change = QPushButton("Change Folder"); b_change.clicked.connect(self.change_output_folder)
+        left.addWidget(b_change)
         
         pres_row = QVBoxLayout() 
         pres_row.setSpacing(5)
@@ -436,6 +439,9 @@ class UpscalerTab(QWidget):
         self.out_lbl = QLabel("(auto)"); self.out_lbl.setWordWrap(True)
         self.out_lbl.setStyleSheet("color: #666; margin-bottom: 5px; border: none; background: transparent;")
         left.addWidget(self.out_lbl)
+
+        b_change = QPushButton("Change Folder"); b_change.clicked.connect(self.change_output_folder)
+        left.addWidget(b_change)
         
         opt_layout = QVBoxLayout()
         opt_layout.setSpacing(5)
@@ -1092,6 +1098,10 @@ class LABOKitMainWindow(QMainWindow):
         except Exception as e:
             print(f"Auto-update failed for {name}: {e}")
 
+class StartupWorker(QThread):
+    def run(self):
+        deploy_assets()
+
 def main():
     app = QApplication(sys.argv)
     app.setApplicationName("LABOKit")
@@ -1107,43 +1117,53 @@ def main():
     splash = QSplashScreen(pix.scaledToWidth(400, Qt.SmoothTransformation), Qt.WindowStaysOnTopHint)
     splash.show(); app.processEvents()
 
-    # Silent Deploy
-    deploy_assets()
+    # Worker Setup
+    worker = StartupWorker()
 
-    # Style
-    app.setStyleSheet("""
-        QMainWindow { background-color: #e9edf5; }
-        QTabWidget::pane { border: 1px solid #b3bcd1; border-radius: 4px; top: -1px; }
-        QTabBar::tab { background-color: #dde4f5; border: 1px solid #b3bcd1; padding: 4px 12px; border-top-left-radius: 4px; border-top-right-radius: 4px; color: #1c2333; }
-        QTabBar::tab:selected { background-color: #f5f7fb; }
-        QMenuBar { background-color: #dbe2f2; color: #1c2333; border-bottom: 1px solid #b3bcd1; }
-        QMenuBar::item { background: transparent; padding: 3px 8px; color: #1c2333; }
-        QMenuBar::item:selected { background-color: #cfe2ff; color: #101522; }
-        QMenu { background-color: #f7f9fc; border: 1px solid #b3bcd1; }
-        QMenu::item { padding: 4px 20px; color: #1c2333; }
-        QMenu::item:selected { background-color: #cfe2ff; color: #101522; }
-        QListWidget { background-color: #f7f9fc; border: 1px solid #b3bcd1; border-radius: 4px; }
-        QListWidget::item { padding: 4px 6px; color: #1c2333; }
-        QListWidget::item:selected { color: #102039; }
-        QFrame { background-color: #f5f7fb; border: 1px solid #b3bcd1; border-radius: 6px; }
-        #PixelBar { background-color: #dde4f5; border-radius: 6px; border: 1px solid #b3bcd1; }
-        #PixelBar QLabel { color: #4b556b; }
-        QLabel { color: #1c2333; }
-        QPushButton { color: #1c2333; background-color: qlineargradient(x1:0, y1:0, x2:0, y2:1, stop:0 #ffffff, stop:1 #d8dfee); border: 1px solid #9ca7c2; border-radius: 5px; padding: 4px 12px; }
-        QPushButton:hover { background-color: qlineargradient(x1:0, y1:0, x2:0, y2:1, stop:0 #ffffff, stop:1 #e6ecf7); }
-        QPushButton:pressed { background-color: qlineargradient(x1:0, y1:0, x2:0, y2:1, stop:0 #cfd6e8, stop:1 #b0bdd7); }
-        QProgressDialog { background-color: #f5f7fb; }
-        QDialog, QMessageBox { background-color: #f5f7fb; }
-        QDialog QLabel, QMessageBox QLabel { color: #1c2333; }
-        QDialog QPushButton, QMessageBox QPushButton { color: #1c2333; background-color: qlineargradient(x1:0, y1:0, x2:0, y2:1, stop:0 #ffffff, stop:1 #d8dfee); border: 1px solid #9ca7c2; border-radius: 5px; padding: 4px 12px; }
-        QPlainTextEdit { background-color: #f5f7fb; color: #1c2333; border: 1px solid #b3bcd1; border-radius: 4px; }
-        QComboBox { background-color: #f7f9fc; border: 1px solid #b3bcd1; border-radius: 4px; padding: 2px 6px; color: #1c2333; }
-        QComboBox QAbstractItemView { background-color: #ffffff; border: 1px solid #b3bcd1; selection-background-color: #cfe2ff; color: #1c2333; selection-color: #101522; }
-    """)
+    def on_complete():
+        # Warmup
+        try:
+            # Style
+            app.setStyleSheet("""
+                QMainWindow { background-color: #e9edf5; }
+                QTabWidget::pane { border: 1px solid #b3bcd1; border-radius: 4px; top: -1px; }
+                QTabBar::tab { background-color: #dde4f5; border: 1px solid #b3bcd1; padding: 4px 12px; border-top-left-radius: 4px; border-top-right-radius: 4px; color: #1c2333; }
+                QTabBar::tab:selected { background-color: #f5f7fb; }
+                QMenuBar { background-color: #dbe2f2; color: #1c2333; border-bottom: 1px solid #b3bcd1; }
+                QMenuBar::item { background: transparent; padding: 3px 8px; color: #1c2333; }
+                QMenuBar::item:selected { background-color: #cfe2ff; color: #101522; }
+                QMenu { background-color: #f7f9fc; border: 1px solid #b3bcd1; }
+                QMenu::item { padding: 4px 20px; color: #1c2333; }
+                QMenu::item:selected { background-color: #cfe2ff; color: #101522; }
+                QListWidget { background-color: #f7f9fc; border: 1px solid #b3bcd1; border-radius: 4px; }
+                QListWidget::item { padding: 4px 6px; color: #1c2333; }
+                QListWidget::item:selected { color: #102039; }
+                QFrame { background-color: #f5f7fb; border: 1px solid #b3bcd1; border-radius: 6px; }
+                #PixelBar { background-color: #dde4f5; border-radius: 6px; border: 1px solid #b3bcd1; }
+                #PixelBar QLabel { color: #4b556b; }
+                QLabel { color: #1c2333; }
+                QPushButton { color: #1c2333; background-color: qlineargradient(x1:0, y1:0, x2:0, y2:1, stop:0 #ffffff, stop:1 #d8dfee); border: 1px solid #9ca7c2; border-radius: 5px; padding: 4px 12px; }
+                QPushButton:hover { background-color: qlineargradient(x1:0, y1:0, x2:0, y2:1, stop:0 #ffffff, stop:1 #e6ecf7); }
+                QPushButton:pressed { background-color: qlineargradient(x1:0, y1:0, x2:0, y2:1, stop:0 #cfd6e8, stop:1 #b0bdd7); }
+                QProgressDialog { background-color: #f5f7fb; }
+                QDialog, QMessageBox { background-color: #f5f7fb; }
+                QDialog QLabel, QMessageBox QLabel { color: #1c2333; }
+                QDialog QPushButton, QMessageBox QPushButton { color: #1c2333; background-color: qlineargradient(x1:0, y1:0, x2:0, y2:1, stop:0 #ffffff, stop:1 #d8dfee); border: 1px solid #9ca7c2; border-radius: 5px; padding: 4px 12px; }
+                QPlainTextEdit { background-color: #f5f7fb; color: #1c2333; border: 1px solid #b3bcd1; border-radius: 4px; }
+                QComboBox { background-color: #f7f9fc; border: 1px solid #b3bcd1; border-radius: 4px; padding: 2px 6px; color: #1c2333; }
+                QComboBox QAbstractItemView { background-color: #ffffff; border: 1px solid #b3bcd1; selection-background-color: #cfe2ff; color: #1c2333; selection-color: #101522; }
+            """)
 
-    win = LABOKitMainWindow()
-    win.show()
-    splash.finish(win)
+            # Attach to app to prevent GC
+            app.main_window = LABOKitMainWindow()
+            app.main_window.show()
+            splash.finish(app.main_window)
+        except Exception as e:
+            print(f"Error during startup: {e}")
+
+    worker.finished.connect(on_complete, Qt.QueuedConnection)
+    worker.start()
+
     sys.exit(app.exec())
 
 if __name__ == "__main__":
