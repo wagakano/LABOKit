@@ -22,7 +22,7 @@ from ui_shared import FileDropListWidget, create_plus_icon
 
 PLUGIN_ID = "labokit.video_upscaler"
 PLUGIN_NAME = "Video Upscaler"
-PLUGIN_VERSION = "1.2"
+PLUGIN_VERSION = "1.3"
 HELP_TEXT = (
     "<h3>Video Upscaler</h3>"
     "<p>Upscale video files using Real-ESRGAN & FFmpeg.</p>"
@@ -186,15 +186,15 @@ class VideoUpscalerTab(QWidget):
         left_layout.addWidget(self.output_label)
 
         # Settings
-        left_layout.addWidget(QLabel("Settings:", styleSheet="font-weight: bold; border: none; background: transparent;"))
+        # REMOVED "Settings:" label
 
-        left_layout.addWidget(QLabel("Scale Factor:"))
+        left_layout.addWidget(QLabel("Scale Factor:", styleSheet="font-weight: bold; border: none; background: transparent;"))
         self.combo_scale = QComboBox()
         self.combo_scale.addItems(["2x", "3x", "4x"])
         self.combo_scale.setCurrentText("2x")
         left_layout.addWidget(self.combo_scale)
 
-        left_layout.addWidget(QLabel("AI Model:"))
+        left_layout.addWidget(QLabel("AI Model:", styleSheet="font-weight: bold; border: none; background: transparent;"))
         self.combo_model = QComboBox()
         self.combo_model.addItems(["realesrgan-x4plus", "realesrgan-x4plus-anime", "realesr-animevideov3"])
         self.combo_model.setCurrentText("realesr-animevideov3")

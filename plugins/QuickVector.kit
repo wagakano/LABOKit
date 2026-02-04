@@ -20,7 +20,7 @@ from ui_shared import FileDropListWidget, ZoomableImageWidget, create_plus_icon
 
 PLUGIN_ID = "labokit.vector"
 PLUGIN_NAME = "Quick Vector"
-PLUGIN_VERSION = "1.5"
+PLUGIN_VERSION = "1.6"
 HELP_TEXT = (
     "<h3>Quick Vector</h3>"
     "<p>Convert raster images to SVG vectors using contour tracing.</p>"
@@ -43,6 +43,12 @@ class VectorTab(QWidget):
         self.output_dir = None
         self.current_preview_path = None
         self.cached_pil_img = None
+
+        # Debounce Timer
+        self.debounce_timer = QTimer()
+        self.debounce_timer.setSingleShot(True)
+        self.debounce_timer.setInterval(200) # 200ms delay
+        self.debounce_timer.timeout.connect(self.update_preview)
 
         self._setup_ui()
 
@@ -112,7 +118,7 @@ class VectorTab(QWidget):
         h_smooth = QHBoxLayout()
         self.smooth_slider = QSlider(Qt.Horizontal); self.smooth_slider.setRange(0, 100); self.smooth_slider.setValue(10)
         self.smooth_slider.valueChanged.connect(self.update_smooth_label)
-        self.smooth_slider.sliderReleased.connect(self.update_preview)
+        self.smooth_slider.sliderReleased.connect(self.trigger_update)
         self.lbl_smooth = QLabel("10"); self.lbl_smooth.setFixedWidth(30)
         h_smooth.addWidget(self.smooth_slider); h_smooth.addWidget(self.lbl_smooth)
         controls.addLayout(h_smooth)
@@ -125,12 +131,12 @@ class VectorTab(QWidget):
             QCheckBox::indicator:checked { background-color: #5a6b8c; border: 1px solid #5a6b8c; }
         """
         self.chk_invert = QCheckBox("Invert Input"); self.chk_invert.setStyleSheet(chk_style)
-        self.chk_invert.stateChanged.connect(lambda: self.update_preview())
+        self.chk_invert.stateChanged.connect(self.trigger_update)
         controls.addWidget(self.chk_invert)
 
         self.chk_fill = QCheckBox("Fill Shapes"); self.chk_fill.setStyleSheet(chk_style)
         self.chk_fill.setChecked(True)
-        self.chk_fill.stateChanged.connect(lambda: self.update_preview())
+        self.chk_fill.stateChanged.connect(self.trigger_update)
         controls.addWidget(self.chk_fill)
 
         left_layout.addLayout(controls)
@@ -155,7 +161,7 @@ class VectorTab(QWidget):
 
     def on_param_change(self):
         self.lbl_thresh.setText(str(self.thresh_slider.value()))
-        self.update_preview()
+        self.trigger_update()
 
     def update_smooth_label(self, val):
         self.lbl_smooth.setText(str(val))
@@ -283,6 +289,11 @@ class VectorTab(QWidget):
                 self._cache_image(p)
                 self.update_preview()
                 break
+
+    def trigger_update(self):
+        # Debounce the update
+        self.debounce_timer.start()
+        if self.meter: self.meter.set_message("Processing...")
 
     def update_preview(self):
         if self.cached_pil_img is None: return

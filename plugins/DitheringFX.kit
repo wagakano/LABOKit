@@ -1,4 +1,4 @@
-# LABOKit Plugin: Dithering FX v2.0
+# LABOKit Plugin: Dithering FX v2.2
 # ID: labokit.dithering
 # Author: Kano
 
@@ -6,20 +6,20 @@ import os
 import shutil
 import random
 from pathlib import Path
-from PIL import Image, ImageOps, ImageFilter, ImageChops
-from PySide6.QtCore import Qt, QSize, QTimer
+from PIL import Image, ImageOps, ImageFilter, ImageChops, ImageSequence
+from PySide6.QtCore import Qt, QSize, QTimer, QThread, Signal
 from PySide6.QtGui import QPixmap, QFont, QColor, QImage
 from PySide6.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QListWidgetItem,
     QLabel, QPushButton, QFileDialog, QMessageBox, QProgressDialog,
     QFrame, QComboBox, QCheckBox, QApplication, QSlider,
-    QColorDialog
+    QColorDialog, QToolBox
 )
 from ui_shared import FileDropListWidget, ZoomableImageWidget, create_plus_icon
 
 PLUGIN_ID = "labokit.dithering"
 PLUGIN_NAME = "Dithering FX"
-PLUGIN_VERSION = "2.1"
+PLUGIN_VERSION = "2.2"
 HELP_TEXT = (
     "<h3>Dithering FX</h3>"
     "<p>Retro dithering effects for your images.</p>"
@@ -29,12 +29,14 @@ HELP_TEXT = (
     "<li><b>Palettes:</b> Choose from classic console palettes or define custom colors.</li>"
     "<li><b>Algorithms:</b> Floyd-Steinberg, Bayer, Cluster, Lines, and more.</li>"
     "<li><b>Pixel Strength:</b> Adjust the 'crunchiness' of the pixels.</li>"
+    "<li><b>Bloom:</b> Add a retro glow effect before dithering.</li>"
+    "<li><b>GIF Support:</b> Import and dither animated GIFs.</li>"
     "</ul>"
 )
 
-IMAGE_FILTER = "Images (*.jpg *.png *.bmp *.webp)"
+IMAGE_FILTER = "Images (*.jpg *.png *.bmp *.webp *.gif)"
 CACHE_DIR = Path(os.getenv('APPDATA')) / "LABOKit" / "temp_cache"
-PREVIEW_MAX_SIZE = 800 # Increased for ZoomableWidget
+PREVIEW_MAX_SIZE = 800
 
 # --- ASSETS ---
 PALETTES = {
@@ -54,167 +56,84 @@ LINES_DIAG = [[10,20,30,40],[40,10,20,30],[30,40,10,20],[20,30,40,10]]
 LINES_HORZ = [[0, 0, 0, 0],[32, 32, 32, 32],[48, 48, 48, 48],[16, 16, 16, 16]]
 LINES_VERT = [[0, 32, 48, 16],[0, 32, 48, 16],[0, 32, 48, 16],[0, 32, 48, 16]]
 
-class DitheringTab(QWidget):
+# --- WORKER FOR PREVIEW ---
+class PreviewWorker(QThread):
+    finished = Signal(object) # Returns QPixmap or None
+
     def __init__(self, parent=None):
         super().__init__(parent)
-        self.meter = None
-        self.image_paths = []
-        self.path_map = {}
-        self.output_dir = None
-        self.current_preview_path = None
+        self.img_proxy = None
+        self.params = {}
+        self.custom_cols = None
 
-        self.preview_proxy_img = None
-        self.loaded_proxy_path = ""
+    def set_data(self, img_proxy, params, custom_cols):
+        self.img_proxy = img_proxy
+        self.params = params
+        self.custom_cols = custom_cols
 
-        self.custom_col_1 = [0, 0, 0]
-        self.custom_col_2 = [255, 255, 255]
+    def run(self):
+        if not self.img_proxy:
+            self.finished.emit(None)
+            return
 
-        CACHE_DIR.mkdir(parents=True, exist_ok=True)
-        self._setup_ui()
+        try:
+            work_img = self.img_proxy.copy()
 
-    def set_meter(self, meter):
-        self.meter = meter
+            # Apply Dither (which includes Bloom now)
+            res = self.apply_advanced_dither(work_img)
 
-    def _setup_ui(self):
-        outer = QVBoxLayout(self)
-        outer.setContentsMargins(8, 8, 8, 8); outer.setSpacing(6)
-        main_layout = QHBoxLayout(); outer.addLayout(main_layout)
+            display_img = res.convert("RGBA")
+            data = display_img.tobytes("raw", "RGBA")
+            qim = QImage(data, display_img.width, display_img.height, QImage.Format_RGBA8888)
+            pix_res = QPixmap.fromImage(qim)
 
-        # LEFT (Controls) - Swapped to match standard layout (Left Controls, Right Preview)
-        left_layout = QVBoxLayout(); main_layout.addLayout(left_layout, 1)
+            self.finished.emit(pix_res)
+        except Exception as e:
+            print(f"Preview Error: {e}")
+            self.finished.emit(None)
 
-        lbl_list = QLabel("LOADED IMAGES:"); lbl_list.setStyleSheet("border:none; background:transparent;")
-        left_layout.addWidget(lbl_list)
-
-        self.file_list = FileDropListWidget()
-        self.file_list.files_dropped.connect(self.add_dropped_files)
-        self.file_list.currentItemChanged.connect(self.on_file_selected)
-        left_layout.addWidget(self.file_list)
-
-        btn_row = QHBoxLayout()
-        btn_add = QPushButton("Add Images…"); btn_add.setIcon(create_plus_icon()); btn_add.clicked.connect(self.add_images)
-        btn_clear = QPushButton("Clear List"); btn_clear.clicked.connect(self.clear_list)
-        btn_row.addWidget(btn_add); btn_row.addWidget(btn_clear)
-        left_layout.addLayout(btn_row)
-
-        # Divider
-        line = QFrame()
-        line.setFrameShape(QFrame.HLine); line.setFrameShadow(QFrame.Sunken)
-        line.setStyleSheet("border: none; background-color: #b3bcd1; min-height: 1px; max-height: 1px; margin: 10px 0;")
-        left_layout.addWidget(line)
-
-        # Output Folder
-        l_out = QLabel("Output Folder:"); l_out.setStyleSheet("font-weight: bold; border: none; background: transparent;")
-        left_layout.addWidget(l_out)
-        self.output_label = QLabel("(auto)"); self.output_label.setWordWrap(True)
-        self.output_label.setStyleSheet("color: #666; margin-bottom: 5px; border: none; background: transparent;")
-        left_layout.addWidget(self.output_label)
-        btn_change = QPushButton("Change Folder"); btn_change.clicked.connect(self.change_output_folder)
-        left_layout.addWidget(btn_change)
-
-        # Controls
-        controls = QVBoxLayout(); controls.setSpacing(5)
-
-        controls.addWidget(QLabel("Palette:", styleSheet="font-weight: bold; border: none; background: transparent;"))
-        self.palette_combo = QComboBox()
-        self.palette_combo.addItems(list(PALETTES.keys()))
-        self.palette_combo.currentTextChanged.connect(self.on_palette_change)
-        controls.addWidget(self.palette_combo)
-
-        self.btn_pick_color = QPushButton("Pick Custom Colors")
-        self.btn_pick_color.clicked.connect(self.pick_custom_colors)
-        self.btn_pick_color.setVisible(False)
-        controls.addWidget(self.btn_pick_color)
-
-        controls.addWidget(QLabel("Dither Mode:", styleSheet="font-weight: bold; border: none; background: transparent;"))
-        self.mode_combo = QComboBox()
-        self.mode_combo.addItems([
-            "Floyd-Steinberg (Diffusion)", "Bayer 4x4 (Ordered)",
-            "Cluster (Newspaper)", "Lines (Diagonal)", "Lines (Horizontal)", "Lines (Vertical)", "Halftone (Dot)",
-            "Noise (Random)", "None (Threshold)"
-        ])
-        self.mode_combo.currentTextChanged.connect(self.update_preview)
-        controls.addWidget(self.mode_combo)
-
-        controls.addWidget(QLabel("Pixel Strength:", styleSheet="font-weight: bold; border: none; background: transparent;"))
-        h_slide = QHBoxLayout()
-        self.scale_slider = QSlider(Qt.Horizontal); self.scale_slider.setRange(1, 16); self.scale_slider.setValue(4)
-        self.scale_slider.valueChanged.connect(self.update_scale_label)
-        self.scale_slider.sliderReleased.connect(self.update_preview)
-        self.lbl_scale = QLabel("4x"); self.lbl_scale.setFixedWidth(30)
-        h_slide.addWidget(self.scale_slider); h_slide.addWidget(self.lbl_scale)
-        controls.addLayout(h_slide)
-
-        left_layout.addLayout(controls)
-        left_layout.addStretch()
-
-        btn_sel = QPushButton("Process Selected"); btn_sel.clicked.connect(self.process_selected)
-        btn_all = QPushButton("Process All"); btn_all.clicked.connect(self.process_all)
-        left_layout.addWidget(btn_sel)
-        left_layout.addWidget(btn_all)
-
-        # RIGHT (Preview)
-        right_layout = QVBoxLayout(); main_layout.addLayout(right_layout, 3)
-        self.preview_widget = ZoomableImageWidget()
-        right_layout.addWidget(self.preview_widget)
-
-    # --- LOGIC ---
-
-    def change_output_folder(self):
-        d = QFileDialog.getExistingDirectory(self, "Select Output Folder")
-        if d:
-            self.output_dir = Path(d)
-            self.output_label.setText(f"{self.output_dir}")
-            QMessageBox.information(self, "Success", f"Output folder changed to:\n{self.output_dir}")
-
-    def on_palette_change(self, text):
-        self.btn_pick_color.setVisible("Custom" in text)
-        self.update_preview()
-
-    def pick_custom_colors(self):
-        c1 = QColorDialog.getColor(QColor(*self.custom_col_1), self, "Pick Foreground")
-        if c1.isValid():
-            self.custom_col_1 = [c1.red(), c1.green(), c1.blue()]
-            c2 = QColorDialog.getColor(QColor(*self.custom_col_2), self, "Pick Background")
-            if c2.isValid():
-                self.custom_col_2 = [c2.red(), c2.green(), c2.blue()]
-                self.update_preview()
-
-    def apply_advanced_dither(self, img_pil, is_output=False):
+    def apply_advanced_dither(self, img_pil):
+        # 1. Resize Down (Pixel Strength)
         original_w, original_h = img_pil.size
-
+        scale_factor = self.params.get("scale", 1)
         target_w, target_h = original_w, original_h
 
-        if is_output:
-            # Simulate preview resolution for output if desired?
-            # Original code did:
-            if max(original_w, original_h) > PREVIEW_MAX_SIZE:
-                 ratio = min(PREVIEW_MAX_SIZE/original_w, PREVIEW_MAX_SIZE/original_h)
-                 target_w = int(original_w * ratio)
-                 target_h = int(original_h * ratio)
-        else:
-            # For preview, we are already working on a resized proxy
-            pass
-
-        scale_factor = self.scale_slider.value()
         if scale_factor > 1:
             target_w = max(1, target_w // scale_factor)
             target_h = max(1, target_h // scale_factor)
-
-        if (target_w, target_h) != (original_w, original_h):
             img_pil = img_pil.resize((target_w, target_h), Image.Resampling.LANCZOS)
 
-        palette_name = self.palette_combo.currentText()
-        if "Custom" in palette_name:
-            rgb = self.custom_col_1 + self.custom_col_2
+        # 2. Bloom (Pre-Dither)
+        bloom_int = self.params.get("bloom_intensity", 0)
+        bloom_rad = self.params.get("bloom_radius", 0)
+
+        if bloom_int > 0:
+            # Create glow layer
+            glow = img_pil.filter(ImageFilter.GaussianBlur(bloom_rad))
+            # Blend (Screen)
+            # Pillow Screen: 1 - (1-a)*(1-b)
+            # Simpler approach: Add
+            # We use blend with alpha to control intensity
+            glow = ImageEnhance_Brightness(glow).enhance(bloom_int / 50.0)
+
+            # Blend: img = img + glow (Add is better for bloom)
+            if img_pil.mode != 'RGB': img_pil = img_pil.convert('RGB')
+            if glow.mode != 'RGB': glow = glow.convert('RGB')
+            img_pil = ImageChops.add(img_pil, glow)
+
+        # 3. Palette
+        palette_name = self.params.get("palette", "1-Bit (B&W)")
+        if "Custom" in palette_name and self.custom_cols:
+            rgb = self.custom_cols[0] + self.custom_cols[1]
         else:
             rgb = PALETTES.get(palette_name, PALETTES["1-Bit (B&W)"])
 
         full_pal = rgb + [0] * (768 - len(rgb))
         p_img = Image.new('P', (1, 1)); p_img.putpalette(full_pal)
 
+        # 4. Dither
         img_gray = img_pil.convert("L")
-        mode = self.mode_combo.currentText()
+        mode = self.params.get("mode", "Floyd")
 
         if "Floyd" in mode:
             working_img = img_pil.convert("RGB")
@@ -230,6 +149,7 @@ class DitheringTab(QWidget):
             working_img = img_pil.convert("RGB")
             result = working_img.quantize(palette=p_img, dither=Image.Dither.NONE)
 
+        # 5. Restore Size (Nearest Neighbor for Sharp Pixels)
         if result.size != (original_w, original_h):
              result = result.resize((original_w, original_h), Image.Resampling.NEAREST)
 
@@ -240,6 +160,13 @@ class DitheringTab(QWidget):
         pat = Image.new("L", (w, h))
         data = []
 
+        # Optimization: Pre-calculate pattern rows
+        # But for simplicity & speed in Python, small loops are okay for preview proxy.
+        # For full res, it might be slow.
+        # Since we use PIL, we can use tile.
+
+        # Using lists is slow for large images. But Preview is small (800px).
+        # We will keep the original logic for consistency.
         if p_type == "bayer4":
             for y in range(h):
                 for x in range(w): data.append(BAYER_4x4[y%4][x%4] * 4)
@@ -267,7 +194,172 @@ class DitheringTab(QWidget):
         dithered = ImageChops.add(gray, ImageChops.subtract(pat, Image.new("L", (w,h), 128)))
         return dithered.convert("RGB").quantize(palette=pal_img, dither=Image.Dither.NONE)
 
+# Helper for Brightness
+from PIL.ImageEnhance import Brightness as ImageEnhance_Brightness
+
+class DitheringTab(QWidget):
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        self.meter = None
+        self.image_paths = []
+        self.path_map = {}
+        self.output_dir = None
+        self.current_preview_path = None
+
+        self.preview_proxy_img = None
+        self.loaded_proxy_path = ""
+
+        self.custom_col_1 = [0, 0, 0]
+        self.custom_col_2 = [255, 255, 255]
+
+        # Threading
+        self.preview_worker = PreviewWorker()
+        self.preview_worker.finished.connect(self.on_preview_ready)
+
+        # Debounce
+        self.debounce_timer = QTimer()
+        self.debounce_timer.setSingleShot(True)
+        self.debounce_timer.setInterval(200) # 200ms
+        self.debounce_timer.timeout.connect(self.start_preview_worker)
+
+        CACHE_DIR.mkdir(parents=True, exist_ok=True)
+        self._setup_ui()
+
+    def set_meter(self, meter):
+        self.meter = meter
+
+    def _setup_ui(self):
+        outer = QVBoxLayout(self)
+        outer.setContentsMargins(8, 8, 8, 8); outer.setSpacing(6)
+        main_layout = QHBoxLayout(); outer.addLayout(main_layout)
+
+        # LEFT (Controls)
+        left_layout = QVBoxLayout(); main_layout.addLayout(left_layout, 1)
+
+        lbl_list = QLabel("LOADED IMAGES:"); lbl_list.setStyleSheet("border:none; background:transparent;")
+        left_layout.addWidget(lbl_list)
+
+        self.file_list = FileDropListWidget()
+        self.file_list.files_dropped.connect(self.add_dropped_files)
+        self.file_list.currentItemChanged.connect(self.on_file_selected)
+        left_layout.addWidget(self.file_list)
+
+        btn_row = QHBoxLayout()
+        btn_add = QPushButton("Add Images…"); btn_add.setIcon(create_plus_icon()); btn_add.clicked.connect(self.add_images)
+        btn_clear = QPushButton("Clear List"); btn_clear.clicked.connect(self.clear_list)
+        btn_row.addWidget(btn_add); btn_row.addWidget(btn_clear)
+        left_layout.addLayout(btn_row)
+
+        # Output Folder
+        l_out = QLabel("Output Folder:"); l_out.setStyleSheet("font-weight: bold; border: none; background: transparent; margin-top: 10px;")
+        left_layout.addWidget(l_out)
+        self.output_label = QLabel("(auto)"); self.output_label.setWordWrap(True)
+        self.output_label.setStyleSheet("color: #666; margin-bottom: 5px; border: none; background: transparent;")
+        left_layout.addWidget(self.output_label)
+        btn_change = QPushButton("Change Folder"); btn_change.clicked.connect(self.change_output_folder)
+        left_layout.addWidget(btn_change)
+
+        # --- TOOLBOX FOR CONTROLS ---
+        self.toolbox = QToolBox()
+        self.toolbox.setStyleSheet("QToolBox::tab { font-weight: bold; }")
+
+        # Page 1: Dither Settings
+        page_dither = QWidget(); lay_dither = QVBoxLayout(page_dither)
+
+        lay_dither.addWidget(QLabel("Palette:"))
+        self.palette_combo = QComboBox()
+        self.palette_combo.addItems(list(PALETTES.keys()))
+        self.palette_combo.currentTextChanged.connect(self.on_palette_change)
+        lay_dither.addWidget(self.palette_combo)
+
+        self.btn_pick_color = QPushButton("Pick Custom Colors")
+        self.btn_pick_color.clicked.connect(self.pick_custom_colors)
+        self.btn_pick_color.setVisible(False)
+        lay_dither.addWidget(self.btn_pick_color)
+
+        lay_dither.addWidget(QLabel("Dither Mode:"))
+        self.mode_combo = QComboBox()
+        self.mode_combo.addItems([
+            "Floyd-Steinberg (Diffusion)", "Bayer 4x4 (Ordered)",
+            "Cluster (Newspaper)", "Lines (Diagonal)", "Lines (Horizontal)", "Lines (Vertical)", "Halftone (Dot)",
+            "Noise (Random)", "None (Threshold)"
+        ])
+        self.mode_combo.currentTextChanged.connect(self.trigger_update)
+        lay_dither.addWidget(self.mode_combo)
+
+        lay_dither.addWidget(QLabel("Pixel Strength:"))
+        h_slide = QHBoxLayout()
+        self.scale_slider = QSlider(Qt.Horizontal); self.scale_slider.setRange(1, 16); self.scale_slider.setValue(4)
+        self.scale_slider.valueChanged.connect(self.update_scale_label)
+        self.scale_slider.sliderReleased.connect(self.trigger_update)
+        self.lbl_scale = QLabel("4x"); self.lbl_scale.setFixedWidth(30)
+        h_slide.addWidget(self.scale_slider); h_slide.addWidget(self.lbl_scale)
+        lay_dither.addLayout(h_slide)
+
+        lay_dither.addStretch()
+        self.toolbox.addItem(page_dither, "1. Dither Settings")
+
+        # Page 2: Effects (Bloom)
+        page_fx = QWidget(); lay_fx = QVBoxLayout(page_fx)
+
+        lay_fx.addWidget(QLabel("Bloom Intensity:"))
+        h_bloom = QHBoxLayout()
+        self.bloom_int_slider = QSlider(Qt.Horizontal); self.bloom_int_slider.setRange(0, 100); self.bloom_int_slider.setValue(0)
+        self.bloom_int_slider.valueChanged.connect(self.update_bloom_label)
+        self.bloom_int_slider.sliderReleased.connect(self.trigger_update)
+        self.lbl_bloom_int = QLabel("0"); self.lbl_bloom_int.setFixedWidth(30)
+        h_bloom.addWidget(self.bloom_int_slider); h_bloom.addWidget(self.lbl_bloom_int)
+        lay_fx.addLayout(h_bloom)
+
+        lay_fx.addWidget(QLabel("Bloom Radius:"))
+        h_rad = QHBoxLayout()
+        self.bloom_rad_slider = QSlider(Qt.Horizontal); self.bloom_rad_slider.setRange(1, 50); self.bloom_rad_slider.setValue(10)
+        self.bloom_rad_slider.valueChanged.connect(self.update_rad_label)
+        self.bloom_rad_slider.sliderReleased.connect(self.trigger_update)
+        self.lbl_bloom_rad = QLabel("10"); self.lbl_bloom_rad.setFixedWidth(30)
+        h_rad.addWidget(self.bloom_rad_slider); h_rad.addWidget(self.lbl_bloom_rad)
+        lay_fx.addLayout(h_rad)
+
+        lay_fx.addStretch()
+        self.toolbox.addItem(page_fx, "2. Glow / Bloom")
+
+        left_layout.addWidget(self.toolbox)
+
+        btn_sel = QPushButton("Process Selected"); btn_sel.clicked.connect(self.process_selected)
+        btn_all = QPushButton("Process All"); btn_all.clicked.connect(self.process_all)
+        left_layout.addWidget(btn_sel)
+        left_layout.addWidget(btn_all)
+
+        # RIGHT (Preview)
+        right_layout = QVBoxLayout(); main_layout.addLayout(right_layout, 3)
+        self.preview_widget = ZoomableImageWidget()
+        right_layout.addWidget(self.preview_widget)
+
+    # --- LOGIC ---
+
+    def change_output_folder(self):
+        d = QFileDialog.getExistingDirectory(self, "Select Output Folder")
+        if d:
+            self.output_dir = Path(d)
+            self.output_label.setText(f"{self.output_dir}")
+            QMessageBox.information(self, "Success", f"Output folder changed to:\n{self.output_dir}")
+
+    def on_palette_change(self, text):
+        self.btn_pick_color.setVisible("Custom" in text)
+        self.trigger_update()
+
+    def pick_custom_colors(self):
+        c1 = QColorDialog.getColor(QColor(*self.custom_col_1), self, "Pick Foreground")
+        if c1.isValid():
+            self.custom_col_1 = [c1.red(), c1.green(), c1.blue()]
+            c2 = QColorDialog.getColor(QColor(*self.custom_col_2), self, "Pick Background")
+            if c2.isValid():
+                self.custom_col_2 = [c2.red(), c2.green(), c2.blue()]
+                self.trigger_update()
+
     def update_scale_label(self, val): self.lbl_scale.setText(f"{val}x")
+    def update_bloom_label(self, val): self.lbl_bloom_int.setText(str(val))
+    def update_rad_label(self, val): self.lbl_bloom_rad.setText(str(val))
 
     def add_dropped_files(self, files):
         self.add_files(files)
@@ -278,9 +370,10 @@ class DitheringTab(QWidget):
         self.add_files([Path(f) for f in files])
 
     def add_files(self, paths):
-        # 1. SCAN & ASK
+        # 1. SCAN & ASK (Only for non-GIFs)
         large_files = []
         for p in paths:
+            if p.suffix.lower() == ".gif": continue
             try:
                 with Image.open(p) as tmp:
                     tmp = ImageOps.exif_transpose(tmp)
@@ -303,6 +396,14 @@ class DitheringTab(QWidget):
             prog.setWindowModality(Qt.ApplicationModal); prog.show()
 
         for i, p in enumerate(paths):
+            if p.suffix.lower() == ".gif":
+                item = QListWidgetItem(p.name)
+                item.setData(Qt.UserRole, p)
+                self.file_list.addItem(item)
+                self.image_paths.append(p)
+                self.path_map[p] = p
+                continue
+
             if do_downscale and p in large_files:
                 try:
                     with Image.open(p) as img:
@@ -351,6 +452,11 @@ class DitheringTab(QWidget):
             self.current_preview_path = real_path
             try:
                 temp_img = Image.open(real_path)
+
+                # Handle GIF: use first frame
+                if getattr(temp_img, "is_animated", False):
+                    temp_img.seek(0)
+
                 temp_img = ImageOps.exif_transpose(temp_img)
                 full_img = temp_img.convert("RGBA")
 
@@ -365,37 +471,39 @@ class DitheringTab(QWidget):
 
                 self.loaded_proxy_path = str(real_path)
 
-                self.update_preview()
+                # Set Original in Widget
+                raw_orig = self.preview_proxy_img.tobytes("raw", "RGBA")
+                qorig = QImage(raw_orig, self.preview_proxy_img.width, self.preview_proxy_img.height, QImage.Format_RGBA8888)
+                self.preview_widget.original_pixmap = QPixmap.fromImage(qorig)
+
+                self.trigger_update()
             except Exception as e:
                 print(f"Load Error: {e}")
 
-    def update_preview(self):
+    def trigger_update(self):
+        self.debounce_timer.start()
+        if self.meter: self.meter.set_message("Processing...")
+
+    def start_preview_worker(self):
         if not self.preview_proxy_img: return
 
-        if self.meter: self.meter.set_message("Previewing Dither...")
-        QApplication.setOverrideCursor(Qt.WaitCursor)
+        # Collect Params
+        params = {
+            "scale": self.scale_slider.value(),
+            "palette": self.palette_combo.currentText(),
+            "mode": self.mode_combo.currentText(),
+            "bloom_intensity": self.bloom_int_slider.value(),
+            "bloom_radius": self.bloom_rad_slider.value()
+        }
 
-        try:
-            # 1. Prepare Original Pixmap
-            raw_orig = self.preview_proxy_img.tobytes("raw", "RGBA")
-            qorig = QImage(raw_orig, self.preview_proxy_img.width, self.preview_proxy_img.height, QImage.Format_RGBA8888)
-            pix_orig = QPixmap.fromImage(qorig)
+        self.preview_worker.set_data(self.preview_proxy_img, params, [self.custom_col_1, self.custom_col_2])
+        self.preview_worker.start()
 
-            # 2. Process Dithering on Proxy
-            work_img = self.preview_proxy_img.copy()
-            res = self.apply_advanced_dither(work_img, is_output=False)
-
-            display_img = res.convert("RGBA")
-            data = display_img.tobytes("raw", "RGBA")
-            qim = QImage(data, display_img.width, display_img.height, QImage.Format_RGBA8888)
-            pix_res = QPixmap.fromImage(qim)
-
-            self.preview_widget.set_image_pixmaps(pix_orig, pix_res, preserve_zoom=True)
-
-        except Exception as e: print(e)
-        finally:
-            QApplication.restoreOverrideCursor()
-            if self.meter: self.meter.set_message(None)
+    def on_preview_ready(self, pix_res):
+        if pix_res:
+            orig = self.preview_widget.original_pixmap
+            self.preview_widget.set_image_pixmaps(orig, pix_res, preserve_zoom=True)
+        if self.meter: self.meter.set_message(None)
 
     def ensure_output_dir(self, sample):
         if not self.output_dir:
@@ -418,26 +526,76 @@ class DitheringTab(QWidget):
     def _run_process(self, paths):
         if not paths: return
         out = self.ensure_output_dir(paths[0])
+
+        # Determine total work (frames for GIF)
+        # We'll just step progress per file for simplicity
         dlg = QProgressDialog("Processing...", "Cancel", 0, len(paths), self)
         dlg.setWindowModality(Qt.ApplicationModal); dlg.show()
 
-        pal = self.palette_combo.currentText().split()[0]
-        mode = self.mode_combo.currentText().split()[0]
-        suffix = f"{pal}_{mode}_{self.scale_slider.value()}x"
+        # Prepare params needed for worker-like logic
+        # We reuse the logic in PreviewWorker but apply it synchronously here for full res
+        worker = self.preview_worker # Just to access helper method
+
+        # Collect Params
+        params = {
+            "scale": self.scale_slider.value(),
+            "palette": self.palette_combo.currentText(),
+            "mode": self.mode_combo.currentText(),
+            "bloom_intensity": self.bloom_int_slider.value(),
+            "bloom_radius": self.bloom_rad_slider.value()
+        }
+        worker.params = params
+        worker.custom_cols = [self.custom_col_1, self.custom_col_2]
+
+        pal_name = self.palette_combo.currentText().split()[0]
+        mode_name = self.mode_combo.currentText().split()[0]
+        suffix = f"{pal_name}_{mode_name}_{self.scale_slider.value()}x"
 
         for i, p in enumerate(paths):
             if dlg.wasCanceled(): break
             if self.meter: self.meter.set_message(f"Processing {p.name}...")
-            try:
-                with Image.open(p) as img:
-                    img = ImageOps.exif_transpose(img)
-                    res = self.apply_advanced_dither(img, is_output=True)
+            QApplication.processEvents()
 
-                    original_p = self.path_map.get(p, p)
-                    out_name = f"{original_p.stem}_dither_{suffix}.png"
-                    res.save(out / out_name)
-            except: pass
+            try:
+                original_p = self.path_map.get(p, p)
+                is_gif = p.suffix.lower() == ".gif"
+
+                if is_gif:
+                    with Image.open(p) as im:
+                        frames = []
+                        durations = []
+
+                        # Iterate frames
+                        for frame in ImageSequence.Iterator(im):
+                            frame = frame.convert("RGBA")
+                            # Apply effect
+                            res = worker.apply_advanced_dither(frame)
+                            frames.append(res)
+                            durations.append(im.info.get('duration', 100))
+
+                        # Save Animated GIF
+                        out_name = f"{original_p.stem}_dither_{suffix}.gif"
+                        save_path = out / out_name
+
+                        frames[0].save(
+                            save_path,
+                            save_all=True,
+                            append_images=frames[1:],
+                            duration=durations,
+                            loop=0
+                        )
+                else:
+                    with Image.open(p) as img:
+                        img = ImageOps.exif_transpose(img)
+                        res = worker.apply_advanced_dither(img)
+                        out_name = f"{original_p.stem}_dither_{suffix}.png"
+                        res.save(out / out_name)
+
+            except Exception as e:
+                print(f"Error {p.name}: {e}")
+
             dlg.setValue(i+1)
+
         dlg.close()
         if self.meter: self.meter.set_message(None)
         QMessageBox.information(self, "Done", f"Saved to: {out}")
