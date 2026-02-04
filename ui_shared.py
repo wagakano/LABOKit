@@ -44,9 +44,6 @@ class FileDropListWidget(QListWidget):
             event.ignore()
 
 class ZoomableImageWidget(QScrollArea):
-    # Callback for eyedropper: sends QColor
-    color_picked = Signal(QColor)
-
     def __init__(self, parent=None):
         super().__init__(parent)
         self.setWidgetResizable(True)
@@ -61,7 +58,6 @@ class ZoomableImageWidget(QScrollArea):
         self.result_pixmap = None
         self.current_target_pixmap = None
         self.scale_factor = 1.0
-        self.eyedropper_active = False
         
         # Toggle Button (Top-Right)
         self.btn_toggle = QPushButton("Show Original", self)
@@ -141,60 +137,9 @@ class ZoomableImageWidget(QScrollArea):
         self.image_label.setPixmap(scaled)
         self.image_label.adjustSize()
         
-    def enable_eyedropper_mode(self):
-        self.eyedropper_active = True
-        QApplication.setOverrideCursor(Qt.CrossCursor)
-        self.grabMouse() # Capture global mouse events
-        self.setFocus()
-        
-        # Force show original for picking if available
-        if self.original_pixmap:
-            self.btn_toggle.setChecked(True)
-            self.update_display()
-
-    def cancel_eyedropper(self):
-        if self.eyedropper_active:
-            self.eyedropper_active = False
-            self.releaseMouse()
-            QApplication.restoreOverrideCursor()
-            self.btn_toggle.setChecked(False)
-            self.update_display()
-
-    def keyPressEvent(self, event):
-        if self.eyedropper_active and event.key() == Qt.Key_Escape:
-            self.cancel_eyedropper()
-        else:
-            super().keyPressEvent(event)
-
     def set_zoom_level(self, zoom_float):
         self.scale_factor = zoom_float
         self._refresh_view()
-
-    def mousePressEvent(self, event):
-        if self.eyedropper_active:
-            if event.button() == Qt.RightButton:
-                self.cancel_eyedropper()
-                return
-
-            try:
-                # Global Color Picking
-                global_pos = event.globalPosition().toPoint()
-                screen = QGuiApplication.screenAt(global_pos)
-                if not screen: screen = QGuiApplication.primaryScreen()
-                
-                if screen:
-                    # Grab 1x1 pixel at cursor
-                    pix = screen.grabWindow(0, global_pos.x(), global_pos.y(), 1, 1)
-                    if not pix.isNull():
-                        img = pix.toImage()
-                        color = img.pixelColor(0, 0)
-                        self.color_picked.emit(color)
-            except Exception as e:
-                print(f"Eyedropper Error: {e}")
-            finally:
-                self.cancel_eyedropper()
-        else:
-            super().mousePressEvent(event)
 
     def wheelEvent(self, event):
         if event.modifiers() & Qt.ControlModifier:

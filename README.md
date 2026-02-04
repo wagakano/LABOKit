@@ -1,4 +1,4 @@
-# LABOKit ⌀ v2.0 [DOWNLOAD](https://github.com/wagakano/LABOKit?tab=readme-ov-file#-download)
+# LABOKit ⌀ v2.0 (3.0 Upcoming - 10 February) [DOWNLOAD](https://github.com/wagakano/LABOKit?tab=readme-ov-file#-download)
 
 <img width="1365" height="416" alt="Banner" src="https://github.com/user-attachments/assets/f4ab1e1b-de1c-4a0f-a648-25b210f0ea4f" />
 
@@ -32,6 +32,20 @@
     * **Quick Vector:** Added **Zoom** feature to inspect vector details.
     * **Image Converter:** Fixed Transparency Glitch when converting PNG to JPG.
 * **General:** Minor bug fixes and performance improvements.
+
+## What's New in 3.0 (UPCOMING)
+* **Improved BG Remover:** Optimized for anime-style illustrations with cleaner edge detection. Now even more precise for digital art.
+* **New Feature: ASCII Lab (for ImageLAB):** A dedicated playground for ASCII art generation.
+    * **Advanced Tone Control:** sliders for **Resolution** with basic adjustment like Contrast and Brightness to fine-tune your results.
+    * **8 ASCII Types:** Choose from 8 different character sets/styles.
+* **Major UI/UX Overhaul:** * **Drag & Drop:** Import your images instantly by dragging them into the app.
+    * **Flexible List Management:** You can now selectively remove specific images from the batch list instead of clearing all.
+    * **Resource Monitor:** Added a real-time **RAM Usage Status** to keep track of your system performance.
+* **Performance Boost:** * **Optimized Startup:** Refactored initialization for a significantly faster application launch.
+    * **Faster Batch Processing:** Faster processing times for both **Batch Upscaling** and **Batch Background Removal**.
+* **General:** Minor bug fixes and improved stability for long processing sessions.
+
+*Note: Additional features for v3.0 are currently in development (Dithering FX - GIF Support, New Plugin: GIF Maker) and will be announced soon.*
 
 ## 📥 Download
 
@@ -129,7 +143,7 @@ Batch convert WebP/JPG/PNG/ICO/BMP with quality control and transparency handlin
 **Donate & Get the Plugins**
 
 [![Ko-fi](https://img.shields.io/badge/Ko--fi-F16063?style=for-the-badge&logo=ko-fi&logoColor=white)](https://ko-fi.com/s/a367e473fe)
-[![Trakteer](https://img.shields.io/badge/Trakteer-C32aa3?style=for-the-badge&logo=trakteer&logoColor=white)](https://trakteer.id/kano-bbif7/showcase/labokit-advanced-plugins-m84J6)
+[![Trakteer](https://img.shields.io/badge/Trakteer-C32aa3?style=for-the-badge&logo=trakteer&logoColor=white)](https://trakteer.id/kano-bbif7/reward/labokit-advanced-plugins-m84J6)
 
 LABOKit is free and open-source. By purchasing this bundle (Pay What You Want), you directly support the maintenance of the app and the creation of future tools. Thank you! ( ´∀｀ )b
 

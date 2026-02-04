@@ -337,15 +337,24 @@ class ImageLabTab(QWidget):
         super().__init__(parent)
         self.meter = None # Global meter reference
         
-        self.setStyleSheet("""
-            QWidget { background: transparent; }
-            QLabel, QCheckBox, QGroupBox, QRadioButton { color: #1c2333; }
+        # We wrap content in a frame to apply scoped styles
+        self.content_frame = QFrame(self)
+        self.content_frame.setObjectName("ImageLABContent")
+        
+        # Scoped Stylesheet to fix Dark Mode issues and not affect QColorDialog
+        self.content_frame.setStyleSheet("""
+            #ImageLABContent { background: transparent; }
+            
+            #ImageLABContent QLabel, 
+            #ImageLABContent QCheckBox, 
+            #ImageLABContent QGroupBox, 
+            #ImageLABContent QRadioButton { color: #1c2333; }
             
             /* Clean Bold Labels */
-            QLabel { font-weight: bold; border: none; }
+            #ImageLABContent QLabel { font-weight: bold; border: none; }
             
             /* Styled Numbers */
-            QLabel[role="value"] {
+            #ImageLABContent QLabel[role="value"] {
                 border: 1px solid #b3bcd1;
                 border-radius: 3px;
                 background-color: #ffffff;
@@ -354,39 +363,56 @@ class ImageLabTab(QWidget):
                 min-width: 30px;
                 qproperty-alignment: AlignCenter;
             }
+            
+            #ImageLABContent QCheckBox::indicator {
+                width: 14px; height: 14px;
+                border: 1px solid #999;
+                border-radius: 3px;
+                background-color: white;
+            }
+            #ImageLABContent QCheckBox::indicator:checked {
+                background-color: #2c3e50;
+                border: 1px solid #2c3e50;
+            }
 
-            QComboBox { 
+            #ImageLABContent QComboBox { 
                 background-color: #ffffff; color: #1c2333;
                 border: 1px solid #b3bcd1; border-radius: 4px; padding: 4px;
             }
-            QComboBox QAbstractItemView {
+            #ImageLABContent QComboBox QAbstractItemView {
                 background-color: #ffffff; color: #1c2333;
                 selection-background-color: #d4e3fc; outline: none;
             }
-            QToolBox::tab {
+            
+            /* Enforce Light Background on Toolbox Pages for Text Visibility */
+            #ImageLABContent QToolBox QWidget { 
+                background-color: #f7f9fc; 
+                border-radius: 4px; 
+            }
+            
+            #ImageLABContent QToolBox::tab {
                 color: #1c2333; font-weight: bold; background-color: #e1e6f0;
                 border: 1px solid #b3bcd1; border-radius: 4px;
             }
-            QToolBox::tab:selected { background-color: #d4e3fc; font-style: italic; }
-            .QWidget { background-color: #f7f9fc; border-radius: 4px; } 
+            #ImageLABContent QToolBox::tab:selected { background-color: #d4e3fc; font-style: italic; }
             
             /* Shared Button Style */
-            QPushButton {
+            #ImageLABContent QPushButton {
                 background-color: qlineargradient(x1:0, y1:0, x2:0, y2:1, stop:0 #ffffff, stop:1 #d8dfee);
                 border: 1px solid #9ca7c2; border-radius: 5px; padding: 4px 12px; font-weight: bold; color: #1c2333;
             }
-            QPushButton:hover { background-color: qlineargradient(x1:0, y1:0, x2:0, y2:1, stop:0 #ffffff, stop:1 #e6ecf7); }
-            QPushButton:pressed { background-color: qlineargradient(x1:0, y1:0, x2:0, y2:1, stop:0 #cfd6e8, stop:1 #b0bdd7); }
+            #ImageLABContent QPushButton:hover { background-color: qlineargradient(x1:0, y1:0, x2:0, y2:1, stop:0 #ffffff, stop:1 #e6ecf7); }
+            #ImageLABContent QPushButton:pressed { background-color: qlineargradient(x1:0, y1:0, x2:0, y2:1, stop:0 #cfd6e8, stop:1 #b0bdd7); }
 
             /* Dark Slider Handle */
-            QSlider::handle:horizontal { 
+            #ImageLABContent QSlider::handle:horizontal { 
                 background: #2c3e50; 
                 border: 1px solid #2c3e50; 
                 width: 14px; 
                 margin: -4px 0; 
                 border-radius: 7px; 
             }
-            QSlider::groove:horizontal {
+            #ImageLABContent QSlider::groove:horizontal {
                 border: 1px solid #999999;
                 height: 6px;
                 background: qlineargradient(x1:0, y1:0, x2:0, y2:1, stop:0 #B1B1B1, stop:1 #c4c4c4);
@@ -399,7 +425,6 @@ class ImageLabTab(QWidget):
         self.img_preview = None   
         self.original_preview = None 
         self.active_file_path = None
-        self.picking_color = False
         
         # Async Processing
         self.worker_thread = QThread()
@@ -421,7 +446,13 @@ class ImageLabTab(QWidget):
         self.meter = meter
 
     def _setup_ui(self):
-        outer = QVBoxLayout(self)
+        # Master Layout (no margin on self to let frame fill)
+        master_layout = QVBoxLayout(self)
+        master_layout.setContentsMargins(0,0,0,0)
+        master_layout.addWidget(self.content_frame)
+
+        # Main Layout inside Frame
+        outer = QVBoxLayout(self.content_frame)
         outer.setContentsMargins(8,8,8,8); outer.setSpacing(6)
         
         main_layout = QHBoxLayout(); outer.addLayout(main_layout)
@@ -430,7 +461,6 @@ class ImageLabTab(QWidget):
         left_layout = QVBoxLayout()
         
         self.preview_widget = ZoomableImageWidget()
-        self.preview_widget.color_picked.connect(self.on_color_picked)
         left_layout.addWidget(self.preview_widget)
         
         main_layout.addLayout(left_layout, stretch=3)
@@ -439,12 +469,7 @@ class ImageLabTab(QWidget):
         right_panel = QVBoxLayout()
         main_layout.addLayout(right_panel, stretch=1)
         
-        # Top Buttons
-        top_btns = QHBoxLayout()
-        btn_open = QPushButton("Open Image"); btn_open.clicked.connect(self.open_image)
-        btn_clear = QPushButton("Close"); btn_clear.clicked.connect(self.clear_image)
-        top_btns.addWidget(btn_open); top_btns.addWidget(btn_clear)
-        right_panel.addLayout(top_btns)
+        # (Top Buttons moved to bottom)
 
         self.toolbox = QToolBox()
         
@@ -484,7 +509,7 @@ class ImageLabTab(QWidget):
         page_part = QWidget(); lay_part = QVBoxLayout(page_part)
         self.chk_part = QCheckBox("Enable Partial Color"); self.chk_part.stateChanged.connect(self.trigger_update); lay_part.addWidget(self.chk_part)
         h_pcol = QHBoxLayout(); h_pcol.addWidget(QLabel("Keep Color:"))
-        self.btn_part_col = SolidColorBtn(99, "#ff0000"); self.btn_part_col.colorChanged.connect(self.start_eyedropper)
+        self.btn_part_col = SolidColorBtn(99, "#ff0000"); self.btn_part_col.colorChanged.connect(self.open_color_picker)
         h_pcol.addWidget(self.btn_part_col); lay_part.addLayout(h_pcol)
         self.sl_part_fuzz = self._add_slider(lay_part, "Color Range", 1, 100, 40)
         self.sl_part_sat = self._add_slider(lay_part, "Saturation Boost", 0, 100, 20) 
@@ -516,6 +541,13 @@ class ImageLabTab(QWidget):
 
         right_panel.addWidget(self.toolbox)
         
+        # Action Buttons (Open/Close moved here)
+        btns_io = QHBoxLayout()
+        btn_open = QPushButton("Open Image"); btn_open.clicked.connect(self.open_image)
+        btn_clear = QPushButton("Close"); btn_clear.clicked.connect(self.clear_image)
+        btns_io.addWidget(btn_open); btns_io.addWidget(btn_clear)
+        right_panel.addLayout(btns_io)
+
         # Save Button at Bottom
         btn_save = QPushButton("Save Result"); btn_save.clicked.connect(self.save_image)
         btn_save.setFixedHeight(40)
@@ -541,18 +573,13 @@ class ImageLabTab(QWidget):
         return s
 
     # --- LOGIC ---
-    def start_eyedropper(self, idx, _):
-        if not self.img_preview is None:
-            self.picking_color = True
-            if self.meter: self.meter.set_message("Click image to pick color...")
-            self.preview_widget.enable_eyedropper_mode()
-
-    def on_color_picked(self, color):
-        self.picking_color = False
-        if self.meter: self.meter.set_message(f"Selected Color: {color.name()}")
-        self.btn_part_col.set_color(color)
-        self.trigger_update()
-        if self.meter: QTimer.singleShot(1500, lambda: self.meter.set_message(None))
+    def open_color_picker(self, idx, _):
+        color = QColorDialog.getColor(self.btn_part_col.current_color, self, "Select Color")
+        if color.isValid():
+            self.btn_part_col.set_color(color)
+            if self.meter: self.meter.set_message(f"Selected Color: {color.name()}")
+            self.trigger_update()
+            if self.meter: QTimer.singleShot(1500, lambda: self.meter.set_message(None))
 
     def force_fit_next(self):
         # If ASCII res changed, next display should fit
