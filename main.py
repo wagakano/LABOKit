@@ -468,58 +468,6 @@ class UpscalerTab(QWidget):
         self.preview_widget = ZoomableImageWidget()
         right.addWidget(self.preview_widget)
 
-    def init_upsampler(self, model_name):
-        ai = load_ai_engine()
-        if not ai:
-            QMessageBox.critical(self, "Error", "(torch/basicsr/realesrgan) is not ready.")
-            return None
-
-        # Unpack
-        SRVGGNetCompact = ai["SRVGGNetCompact"]
-        RealESRGANer = ai["RealESRGANer"]
-
-        try:
-            model_path = REALESRGAN_DIR / "models" / model_name 
-            if not model_path.exists():
-                model_path = MODEL_DIR / model_name
-                if not model_path.exists(): return None
-
-            model = SRVGGNetCompact(num_in_ch=3, num_out_ch=3, num_feat=64, num_conv=32, upscale=4, act_type='prelu')
-            
-            upsampler = RealESRGANer(
-                scale=4,
-                model_path=str(model_path),
-                model=model,
-                tile=400,       
-                tile_pad=10,
-                pre_pad=0,
-                half=False,   
-                gpu_id=None
-            )
-            return upsampler
-
-        except Exception as e:
-            print(f"Error: {e}")
-            import traceback; traceback.print_exc()
-            return None
-
-    def run_python_inference(self, img_path, out_path, upsampler):
-        ai = load_ai_engine()
-        if not ai: return False
-        
-        cv2 = ai["cv2"]
-
-        try:
-            img = cv2.imread(str(img_path), cv2.IMREAD_UNCHANGED)
-            output, _ = upsampler.enhance(img, outscale=4)
-            cv2.imwrite(str(out_path), output)
-            return True
-
-        except Exception as e:
-            print(f"Error: {e}")
-            import traceback; traceback.print_exc()
-            return False
-
     def add_images(self):
         files, _ = QFileDialog.getOpenFileNames(self, "Select Images", "", IMAGE_FILTER)
         if not files: return
@@ -619,61 +567,46 @@ class UpscalerTab(QWidget):
             return QMessageBox.warning(self, "Error", f"Executable not found at:\n{REALESRGAN_EXE}")
         
         out = self.ensure_out(paths[0])
-        dlg = QProgressDialog("Upscaling...", "Cancel", 0, len(paths), self)
-        dlg.setWindowModality(Qt.ApplicationModal)
-        dlg.setFixedWidth(350)
-        dlg.show()
-        dlg.setValue(0)
-        QApplication.processEvents()
+        self.dlg = QProgressDialog("Initializing Upscaler...", "Cancel", 0, len(paths), self)
+        self.dlg.setWindowModality(Qt.ApplicationModal)
+        self.dlg.setFixedWidth(350)
+        self.dlg.show()
+        self.dlg.setValue(0)
+
+        self.worker = UpscalerWorker(paths, out, model_name, is_python_mode, self)
+        self.worker.progress.connect(self.on_worker_progress)
+        self.worker.finished.connect(self.on_worker_finished)
+        self.worker.error.connect(self.on_worker_error)
         
-        cnt = 0
-        target_scale = 4 # Default model scale
+        self.dlg.canceled.connect(self.worker.stop)
 
-        upsampler = None
-        if is_python_mode:
-            upsampler = self.init_upsampler(model_name)
-            if not upsampler:
-                dlg.close()
-                return
+        self.worker.start()
 
-        for i, p in enumerate(paths):
-            if dlg.wasCanceled(): break
-            if self.meter: self.meter.set_message(f"Processing {i+1}/{len(paths)}")
-            dlg.setLabelText(f"Processing {p.name}...")
-            QApplication.processEvents()
-            
-            try:
-                opath = out / f"{p.stem}_up4x.png"
-                success = False
+    def on_worker_progress(self, i, msg):
+        if self.meter: self.meter.set_message(f"{msg}")
+        self.dlg.setLabelText(msg)
+        self.dlg.setValue(i)
 
-                if is_python_mode:
-                    success = self.run_python_inference(p, opath, upsampler)
-                
-                else:
-                    cmd = [
-                        str(REALESRGAN_EXE), 
-                        "-i", str(p), 
-                        "-o", str(opath), 
-                        "-n", model_name, 
-                        "-s", "4"
-                    ]
-                    flags = subprocess.CREATE_NO_WINDOW if sys.platform=="win32" else 0
-                    subprocess.run(cmd, capture_output=True, creationflags=flags, cwd=str(REALESRGAN_DIR))
-                    success = opath.exists()
-
-                if success:
-                    self.output_map[p] = opath
-                    cnt += 1
-                    
-            except Exception as e: 
-                print(f"Upscale Error: {e}")
-            
-            dlg.setValue(i+1)
-        
-        dlg.close()
+    def on_worker_finished(self, cnt):
+        self.dlg.close()
         if self.meter: self.meter.set_message(None)
-        QMessageBox.information(self, "Done", f"Upscaled {cnt} images.\nFolder: {out}")
+
+        # Use the directory the worker actually wrote to
+        actual_out_dir = self.worker.out_dir
+
+        # Update output map
+        for p in self.image_paths:
+             opath = actual_out_dir / f"{p.stem}_up4x.png"
+             if opath.exists():
+                 self.output_map[p] = opath
+
+        QMessageBox.information(self, "Done", f"Upscaled {cnt} images.\nFolder: {actual_out_dir}")
         if self.list_w.currentItem(): self.on_item(self.list_w.currentItem(), None)
+
+    def on_worker_error(self, err):
+        self.dlg.close()
+        if self.meter: self.meter.set_message(None)
+        QMessageBox.critical(self, "Error", f"Upscale Failed:\n{err}")
 
     def show_help(self):
         text = (
@@ -1098,6 +1031,118 @@ class LABOKitMainWindow(QMainWindow):
 class StartupWorker(QThread):
     def run(self):
         deploy_assets()
+
+class UpscalerWorker(QThread):
+    progress = Signal(int, str)
+    finished = Signal(int)
+    error = Signal(str)
+
+    def __init__(self, paths, out_dir, model_name, is_python_mode, parent=None):
+        super().__init__(parent)
+        self.paths = paths
+        self.out_dir = out_dir
+        self.model_name = model_name
+        self.is_python_mode = is_python_mode
+        self.is_running = True
+
+    def run(self):
+        try:
+            upsampler = None
+            if self.is_python_mode:
+                self.progress.emit(0, "Initializing AI Engine...")
+                upsampler = self.init_upsampler(self.model_name)
+                if not upsampler:
+                    self.error.emit("Failed to initialize upsampler.")
+                    return
+
+            cnt = 0
+            for i, p in enumerate(self.paths):
+                if not self.is_running: break
+
+                self.progress.emit(i, f"Processing {p.name}...")
+
+                try:
+                    opath = self.out_dir / f"{p.stem}_up4x.png"
+                    success = False
+
+                    if self.is_python_mode:
+                        success = self.run_python_inference(p, opath, upsampler)
+                    else:
+                        cmd = [
+                            str(REALESRGAN_EXE),
+                            "-i", str(p),
+                            "-o", str(opath),
+                            "-n", self.model_name,
+                            "-s", "4"
+                        ]
+                        flags = subprocess.CREATE_NO_WINDOW if sys.platform=="win32" else 0
+                        subprocess.run(cmd, capture_output=True, creationflags=flags, cwd=str(REALESRGAN_DIR))
+                        success = opath.exists()
+
+                    if success:
+                        cnt += 1
+
+                except Exception as e:
+                    print(f"Upscale Error: {e}")
+
+            self.finished.emit(cnt)
+
+        except Exception as e:
+            self.error.emit(str(e))
+
+    def init_upsampler(self, model_name):
+        ai = load_ai_engine()
+        if not ai:
+            return None
+
+        # Unpack
+        SRVGGNetCompact = ai["SRVGGNetCompact"]
+        RealESRGANer = ai["RealESRGANer"]
+
+        try:
+            model_path = REALESRGAN_DIR / "models" / model_name
+            if not model_path.exists():
+                model_path = MODEL_DIR / model_name
+                if not model_path.exists(): return None
+
+            model = SRVGGNetCompact(num_in_ch=3, num_out_ch=3, num_feat=64, num_conv=32, upscale=4, act_type='prelu')
+
+            upsampler = RealESRGANer(
+                scale=4,
+                model_path=str(model_path),
+                model=model,
+                tile=400,
+                tile_pad=10,
+                pre_pad=0,
+                half=False,
+                gpu_id=None
+            )
+            return upsampler
+
+        except Exception as e:
+            print(f"Error: {e}")
+            import traceback; traceback.print_exc()
+            return None
+
+    def run_python_inference(self, img_path, out_path, upsampler):
+        ai = load_ai_engine()
+        if not ai: return False
+
+        cv2 = ai["cv2"]
+
+        try:
+            img = cv2.imread(str(img_path), cv2.IMREAD_UNCHANGED)
+            output, _ = upsampler.enhance(img, outscale=4)
+            cv2.imwrite(str(out_path), output)
+            return True
+
+        except Exception as e:
+            print(f"Error: {e}")
+            import traceback; traceback.print_exc()
+            return False
+
+    def stop(self):
+        self.is_running = False
 
 class BgRemovalWorker(QThread):
     progress = Signal(int, str)
