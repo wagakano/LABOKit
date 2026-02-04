@@ -15,6 +15,7 @@ from PySide6.QtWidgets import (
     QComboBox, QSlider, QCheckBox, QApplication, QScrollArea,
     QToolBox, QColorDialog, QGroupBox, QButtonGroup
 )
+from ui_shared import ZoomableImageWidget
 
 PLUGIN_ID = "labokit.imagelab"
 PLUGIN_NAME = "ImageLAB"
@@ -92,32 +93,6 @@ def generate_pattern(shape, type_name, obj_scale=1.0, spacing_scale=1.0):
     return full_pattern[:h, :w]
 
 # --- UI COMPONENTS ---
-class ZoomPreviewLabel(QLabel):
-    def __init__(self, parent=None):
-        super().__init__(parent)
-        self.setAlignment(Qt.AlignCenter)
-        self.setStyleSheet("border: none; background: transparent;")
-        self._raw_pixmap = None
-        self._zoom_factor = 1.0
-
-    def set_raw_pixmap(self, pixmap):
-        self._raw_pixmap = pixmap
-        self._update_view()
-
-    def set_zoom(self, factor):
-        self._zoom_factor = factor
-        self._update_view()
-
-    def _update_view(self):
-        if not self._raw_pixmap: self.clear(); return
-        orig_w = self._raw_pixmap.width(); orig_h = self._raw_pixmap.height()
-        target_w = int(orig_w * self._zoom_factor); target_h = int(orig_h * self._zoom_factor)
-        if target_w <= 0: target_w = 1
-        if target_h <= 0: target_h = 1
-        scaled_pix = self._raw_pixmap.scaled(target_w, target_h, Qt.KeepAspectRatio, Qt.FastTransformation)
-        super().setPixmap(scaled_pix)
-        self.setFixedSize(scaled_pix.size())
-
 class SolidColorBtn(QPushButton):
     colorChanged = Signal(int, object) 
     def __init__(self, index, default_color, parent=None):
@@ -280,12 +255,10 @@ class ImageLabTab(QWidget):
         toolbar.addWidget(QLabel("Zoom:")); toolbar.addWidget(self.slider_zoom); toolbar.addWidget(self.lbl_zoom)
         left_layout.addLayout(toolbar)
 
-        self.scroll_area = QScrollArea()
-        self.scroll_area.setStyleSheet("background-color: transparent; border: 1px solid #b3bcd1; border-radius: 4px;")
-        self.scroll_area.setAlignment(Qt.AlignCenter)
-        self.preview_lbl = ZoomPreviewLabel()
-        self.scroll_area.setWidget(self.preview_lbl)
-        left_layout.addWidget(self.scroll_area)
+        self.preview_widget = ZoomableImageWidget()
+        self.preview_widget.setStyleSheet("background-color: transparent; border: 1px solid #b3bcd1; border-radius: 4px;")
+        self.preview_widget.color_picked.connect(self.on_eyedropper_picked)
+        left_layout.addWidget(self.preview_widget, stretch=1)
         main_layout.addLayout(left_layout, stretch=3)
 
         # RIGHT: TOOLBOX
@@ -331,7 +304,14 @@ class ImageLabTab(QWidget):
         self.chk_part = QCheckBox("Enable Partial Color"); self.chk_part.stateChanged.connect(lambda: self.mark_dirty("partial")); lay_part.addWidget(self.chk_part)
         h_pcol = QHBoxLayout(); h_pcol.addWidget(QLabel("Keep Color:"))
         self.btn_part_col = SolidColorBtn(99, "#ff0000"); self.btn_part_col.colorChanged.connect(self.on_partial_color_change)
-        h_pcol.addWidget(self.btn_part_col); lay_part.addLayout(h_pcol)
+        h_pcol.addWidget(self.btn_part_col)
+
+        btn_pick = QPushButton("Pick"); btn_pick.setFixedWidth(40); btn_pick.setCursor(Qt.PointingHandCursor)
+        btn_pick.setToolTip("Pick color from image")
+        btn_pick.clicked.connect(lambda: self.preview_widget.enable_eyedropper_mode())
+        h_pcol.addWidget(btn_pick)
+
+        lay_part.addLayout(h_pcol)
         self.sl_part_fuzz = self._add_slider(lay_part, "Color Area", 1, 100, 40, "partial")
         self.sl_part_sat = self._add_slider(lay_part, "Saturation Boost", 0, 100, 20, "partial") 
         lay_part.addStretch()
@@ -389,7 +369,7 @@ class ImageLabTab(QWidget):
 
     def clear_image(self):
         self.img_full = None; self.img_preview = None; self.active_file_path = None
-        self.preview_lbl.clear(); self.preview_lbl.setText("No Image")
+        self.preview_widget.set_image_pixmaps(None, None)
         for k in self.cache: self.cache[k] = None
 
     def open_image(self):
@@ -417,9 +397,13 @@ class ImageLabTab(QWidget):
             except Exception as e: QMessageBox.critical(self, "Error", f"Failed to load image:\n{e}")
 
     def on_zoom_change(self, val):
-        self.lbl_zoom.setText(f"{val}%"); self.preview_lbl.set_zoom(val / 100.0)
+        self.lbl_zoom.setText(f"{val}%"); self.preview_widget.set_zoom_level(val / 100.0)
 
     def on_partial_color_change(self, idx, color): self.mark_dirty("partial")
+
+    def on_eyedropper_picked(self, color):
+        self.btn_part_col.set_color_silent(color)
+        self.mark_dirty("partial")
 
     def process_preview(self):
         if self.img_preview is None: return
@@ -533,7 +517,17 @@ class ImageLabTab(QWidget):
         h, w, ch = rgb.shape
         bytes_per_line = ch * w
         qimg = QImage(rgb.data, w, h, bytes_per_line, QImage.Format_RGB888)
-        self.preview_lbl.set_raw_pixmap(QPixmap.fromImage(qimg))
+        res_pix = QPixmap.fromImage(qimg)
+
+        orig_pix = None
+        if self.img_preview is not None:
+             rgb_orig = cv2.cvtColor(self.img_preview, cv2.COLOR_BGR2RGB)
+             h_o, w_o, ch_o = rgb_orig.shape
+             bpl_o = ch_o * w_o
+             qo = QImage(rgb_orig.data, w_o, h_o, bpl_o, QImage.Format_RGB888)
+             orig_pix = QPixmap.fromImage(qo)
+
+        self.preview_widget.set_image_pixmaps(orig_pix, res_pix, preserve_zoom=True)
 
     # --- EFFECTS ---
     def _apply_basic(self, img):

@@ -143,14 +143,37 @@ class ZoomableImageWidget(QScrollArea):
         self.eyedropper_active = True
         QApplication.setOverrideCursor(Qt.CrossCursor)
         self.grabMouse() # Capture global mouse events
+        self.setFocus()
         
         # Force show original for picking if available
         if self.original_pixmap:
             self.btn_toggle.setChecked(True)
             self.update_display()
 
+    def cancel_eyedropper(self):
+        if self.eyedropper_active:
+            self.eyedropper_active = False
+            self.releaseMouse()
+            QApplication.restoreOverrideCursor()
+            self.btn_toggle.setChecked(False)
+            self.update_display()
+
+    def keyPressEvent(self, event):
+        if self.eyedropper_active and event.key() == Qt.Key_Escape:
+            self.cancel_eyedropper()
+        else:
+            super().keyPressEvent(event)
+
+    def set_zoom_level(self, zoom_float):
+        self.scale_factor = zoom_float
+        self._refresh_view()
+
     def mousePressEvent(self, event):
         if self.eyedropper_active:
+            if event.button() == Qt.RightButton:
+                self.cancel_eyedropper()
+                return
+
             # Global Color Picking
             global_pos = event.globalPosition().toPoint()
             screen = QGuiApplication.screenAt(global_pos)
@@ -162,14 +185,7 @@ class ZoomableImageWidget(QScrollArea):
             color = img.pixelColor(0, 0)
             
             self.color_picked.emit(color)
-                
-            # Disable mode
-            self.eyedropper_active = False
-            self.releaseMouse()
-            QApplication.restoreOverrideCursor()
-            
-            self.btn_toggle.setChecked(False) # Revert view
-            self.update_display()
+            self.cancel_eyedropper()
         else:
             super().mousePressEvent(event)
 
@@ -209,7 +225,6 @@ class DivergenceMeter(QFrame):
                 border: 1px solid #94a3b8; 
                 border-radius: 4px;
                 color: #334155;
-                font-weight: bold;
                 padding-left: 8px;
             }
         """)
@@ -259,7 +274,7 @@ class DivergenceMeter(QFrame):
                 process = psutil.Process(os.getpid())
                 mem_bytes = process.memory_info().rss
                 ram_mb = mem_bytes / (1024 * 1024)
-                self.status_label.setText(f"APP MEM: {ram_mb:.1f} MB")
+                self.status_label.setText(f"App Memory Usage: {ram_mb:.1f} MB")
             except:
                 self.status_label.setText("SYSTEM READY")
             self.status_label.setStyleSheet("")
