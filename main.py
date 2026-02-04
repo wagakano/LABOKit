@@ -449,15 +449,13 @@ class UpscalerTab(QWidget):
         self.preview_widget = ZoomableImageWidget()
         right.addWidget(self.preview_widget)
 
-    def run_python_inference(self, img_path, out_path, model_name):
+    def init_upsampler(self, model_name):
         ai = load_ai_engine()
         if not ai:
             QMessageBox.critical(self, "Error", "(torch/basicsr/realesrgan) is not ready.")
-            return False
+            return None
 
         # Unpack
-        torch = ai["torch"]
-        cv2 = ai["cv2"]
         SRVGGNetCompact = ai["SRVGGNetCompact"]
         RealESRGANer = ai["RealESRGANer"]
 
@@ -465,7 +463,7 @@ class UpscalerTab(QWidget):
             model_path = REALESRGAN_DIR / "models" / model_name 
             if not model_path.exists():
                 model_path = MODEL_DIR / model_name
-                if not model_path.exists(): return False
+                if not model_path.exists(): return None
 
             model = SRVGGNetCompact(num_in_ch=3, num_out_ch=3, num_feat=64, num_conv=32, upscale=4, act_type='prelu')
             
@@ -479,7 +477,20 @@ class UpscalerTab(QWidget):
                 half=False,   
                 gpu_id=None
             )
+            return upsampler
 
+        except Exception as e:
+            print(f"Error: {e}")
+            import traceback; traceback.print_exc()
+            return None
+
+    def run_python_inference(self, img_path, out_path, upsampler):
+        ai = load_ai_engine()
+        if not ai: return False
+        
+        cv2 = ai["cv2"]
+
+        try:
             img = cv2.imread(str(img_path), cv2.IMREAD_UNCHANGED)
             output, _ = upsampler.enhance(img, outscale=4)
             cv2.imwrite(str(out_path), output)
@@ -598,7 +609,14 @@ class UpscalerTab(QWidget):
         
         cnt = 0
         target_scale = 4 # Default model scale
-        
+
+        upsampler = None
+        if is_python_mode:
+            upsampler = self.init_upsampler(model_name)
+            if not upsampler:
+                dlg.close()
+                return
+
         for i, p in enumerate(paths):
             if dlg.wasCanceled(): break
             if self.meter: self.meter.set_message(f"Processing {i+1}/{len(paths)}")
@@ -610,7 +628,7 @@ class UpscalerTab(QWidget):
                 success = False
 
                 if is_python_mode:
-                    success = self.run_python_inference(p, opath, model_name)
+                    success = self.run_python_inference(p, opath, upsampler)
                 
                 else:
                     cmd = [
