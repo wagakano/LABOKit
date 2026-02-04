@@ -144,20 +144,22 @@ class ZoomableImageWidget(QScrollArea):
     def enable_eyedropper_mode(self):
         self.eyedropper_active = True
         QApplication.setOverrideCursor(Qt.CrossCursor)
-        self.grabMouse() # Capture global mouse events
+        # GrabMouse removed to prevent system lock-ups and allow UI interaction
         self.setFocus()
         
         # Force show original for picking if available
         if self.original_pixmap:
             self.btn_toggle.setChecked(True)
+            self.btn_toggle.setEnabled(False) # Lock view to original
             self.update_display()
 
     def cancel_eyedropper(self):
         if self.eyedropper_active:
             self.eyedropper_active = False
-            self.releaseMouse()
             QApplication.restoreOverrideCursor()
-            self.btn_toggle.setChecked(False)
+
+            self.btn_toggle.setEnabled(True) # Unlock view
+            self.btn_toggle.setChecked(False) # Return to result
             self.update_display()
 
     def keyPressEvent(self, event):
@@ -176,23 +178,27 @@ class ZoomableImageWidget(QScrollArea):
                 self.cancel_eyedropper()
                 return
 
-            try:
-                # Global Color Picking
-                global_pos = event.globalPosition().toPoint()
-                screen = QGuiApplication.screenAt(global_pos)
-                if not screen: screen = QGuiApplication.primaryScreen()
-                
-                if screen:
-                    # Grab 1x1 pixel at cursor
-                    pix = screen.grabWindow(0, global_pos.x(), global_pos.y(), 1, 1)
-                    if not pix.isNull():
-                        img = pix.toImage()
-                        color = img.pixelColor(0, 0)
-                        self.color_picked.emit(color)
-            except Exception as e:
-                print(f"Eyedropper Error: {e}")
-            finally:
-                self.cancel_eyedropper()
+            if event.button() == Qt.LeftButton:
+                try:
+                    # Local Coordinate Picking
+                    # Map global mouse position to image_label local coordinates
+                    local_pos = self.image_label.mapFromGlobal(event.globalPosition().toPoint())
+
+                    # Check if click is within the image bounds
+                    if self.image_label.rect().contains(local_pos):
+                        # Calculate original pixmap coordinates
+                        x = int(local_pos.x() / self.scale_factor)
+                        y = int(local_pos.y() / self.scale_factor)
+
+                        if self.current_target_pixmap and not self.current_target_pixmap.isNull():
+                            img = self.current_target_pixmap.toImage()
+                            if 0 <= x < img.width() and 0 <= y < img.height():
+                                color = img.pixelColor(x, y)
+                                self.color_picked.emit(color)
+                                self.cancel_eyedropper()
+                except Exception as e:
+                    print(f"Eyedropper Error: {e}")
+                    self.cancel_eyedropper()
         else:
             super().mousePressEvent(event)
 
