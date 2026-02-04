@@ -1,0 +1,268 @@
+# LABOKit Plugin: ONNXLoader
+# ID: labokit.onnx
+# Author: Kano
+
+import os
+import cv2
+import numpy as np
+import random
+from pathlib import Path
+from PySide6.QtWidgets import (
+    QWidget, QVBoxLayout, QHBoxLayout, QPushButton, QLabel,
+    QFileDialog, QMessageBox, QFrame, QProgressDialog, QListWidgetItem,
+    QApplication
+)
+from PySide6.QtCore import Qt, QThread, Signal, QTimer, QSize
+from PySide6.QtGui import QPixmap, QFont
+from ui_shared import FileDropListWidget, ZoomableImageWidget, create_plus_icon
+
+PLUGIN_NAME = "ONNX Loader"
+HELP_TEXT = "Load your own .onnx upscaler models directly!"
+PLUGIN_VERSION = "1.1"
+
+# --- CONSTANTS & STYLING ---
+IMAGE_FILTER = "Images (*.png *.jpg *.jpeg *.webp *.bmp)"
+
+# --- WORKER THREAD ---
+class OnnxWorker(QThread):
+    finished = Signal(object, object) # Msg, Error
+    progress = Signal(int)
+
+    def __init__(self, model_path, image_paths, output_dir):
+        super().__init__()
+        self.model_path = model_path
+        self.image_paths = image_paths
+        self.output_dir = output_dir
+
+    def run(self):
+        try:
+            import onnxruntime as ort
+        except ImportError:
+            self.finished.emit(None, "Library 'onnxruntime' is missing.\nPlease install it: pip install onnxruntime")
+            return
+
+        try:
+            session = ort.InferenceSession(self.model_path, providers=['CPUExecutionProvider'])
+            input_name = session.get_inputs()[0].name
+
+            count = 0
+            for img_path in self.image_paths:
+                img = cv2.imread(str(img_path), cv2.IMREAD_UNCHANGED).astype(np.float32) / 255.0
+
+                # Ubah urutan channel dari HWC (Height,Width,Channel) ke CHW (Channel,Height,Width)
+                img = np.transpose(img, (2, 0, 1))
+                img = np.expand_dims(img, 0) # Tambah batch dimension
+
+                # 3. Inference
+                output = session.run(None, {input_name: img})[0]
+
+                # 4. Post-process
+                output = np.squeeze(output) # Hapus batch dimension
+                output = np.transpose(output, (1, 2, 0)) # Balikin ke HWC
+                output = np.clip(output * 255.0, 0, 255).astype(np.uint8) # Denormalize
+
+                # 5. Save
+                save_path = self.output_dir / f"{img_path.stem}_custom.png"
+                cv2.imwrite(str(save_path), output)
+
+                count += 1
+                self.progress.emit(count)
+
+            self.finished.emit(f"Processed {count} images.", None)
+
+        except Exception as e:
+            self.finished.emit(None, str(e))
+
+# --- UI TAB ---
+class CustomOnnxTab(QWidget):
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        self.meter = None
+        self.model_path = None
+        self.image_paths = []
+        self.output_dir = None
+        self.output_map = {} # Mapping input path -> output path
+
+        self._setup_ui()
+
+    def set_meter(self, meter):
+        self.meter = meter
+
+    def _setup_ui(self):
+        outer = QVBoxLayout(self)
+        outer.setContentsMargins(8, 8, 8, 8); outer.setSpacing(6)
+        main_layout = QHBoxLayout(); outer.addLayout(main_layout)
+
+        # LEFT (Controls)
+        left_layout = QVBoxLayout(); main_layout.addLayout(left_layout, 1)
+
+        lbl_list = QLabel("LOADED IMAGES (ONNX):"); lbl_list.setStyleSheet("border:none; background:transparent;")
+        left_layout.addWidget(lbl_list)
+
+        self.file_list = FileDropListWidget()
+        self.file_list.files_dropped.connect(self.add_dropped_files)
+        self.file_list.currentItemChanged.connect(self.on_file_selected)
+        left_layout.addWidget(self.file_list)
+
+        btn_row = QHBoxLayout()
+        btn_add = QPushButton("Add Images…"); btn_add.setIcon(create_plus_icon()); btn_add.clicked.connect(self.add_images)
+        btn_clear = QPushButton("Clear List"); btn_clear.clicked.connect(self.clear_list)
+        btn_row.addWidget(btn_add); btn_row.addWidget(btn_clear)
+        left_layout.addLayout(btn_row)
+
+        # Divider
+        line = QFrame()
+        line.setFrameShape(QFrame.HLine); line.setFrameShadow(QFrame.Sunken)
+        line.setStyleSheet("border: none; background-color: #b3bcd1; min-height: 1px; max-height: 1px; margin: 10px 0;")
+        left_layout.addWidget(line)
+
+        # Output
+        l_out = QLabel("Output Folder:"); l_out.setStyleSheet("font-weight: bold; border: none; background: transparent;")
+        left_layout.addWidget(l_out)
+        self.output_label = QLabel("(auto)"); self.output_label.setWordWrap(True)
+        self.output_label.setStyleSheet("color: #666; margin-bottom: 5px; border: none; background: transparent;")
+        left_layout.addWidget(self.output_label)
+        btn_change = QPushButton("Change Folder"); btn_change.clicked.connect(self.change_output_folder)
+        left_layout.addWidget(btn_change)
+
+        # Controls
+        left_layout.addWidget(QLabel("Active Model:", styleSheet="font-weight: bold; border: none; background: transparent; margin-top: 10px;"))
+        self.lbl_model = QLabel("No model selected (.onnx)")
+        self.lbl_model.setStyleSheet("color: #555; border: 1px solid #b3bcd1; border-radius: 4px; padding: 4px; background: rgba(255,255,255,0.5);")
+        left_layout.addWidget(self.lbl_model)
+
+        btn_mod = QPushButton("Browse ONNX Model...")
+        btn_mod.clicked.connect(self.browse_model)
+        left_layout.addWidget(btn_mod)
+
+        left_layout.addStretch()
+
+        btn_sel = QPushButton("Upscale Selected"); btn_sel.clicked.connect(self.process_selected)
+        btn_all = QPushButton("Upscale All"); btn_all.clicked.connect(self.process_all)
+        left_layout.addWidget(btn_sel)
+        left_layout.addWidget(btn_all)
+
+        # RIGHT (Preview)
+        right_layout = QVBoxLayout(); main_layout.addLayout(right_layout, 3)
+        self.preview_widget = ZoomableImageWidget()
+        right_layout.addWidget(self.preview_widget)
+
+    def change_output_folder(self):
+        d = QFileDialog.getExistingDirectory(self, "Select Output Folder")
+        if d:
+            self.output_dir = Path(d)
+            self.output_label.setText(f"{self.output_dir}")
+            QMessageBox.information(self, "Success", f"Output folder changed to:\n{self.output_dir}")
+
+    # --- LOGIC ---
+    def browse_model(self):
+        f, _ = QFileDialog.getOpenFileName(self, "Select ONNX Model", "", "ONNX Model (*.onnx)")
+        if f:
+            self.model_path = f
+            self.lbl_model.setText(Path(f).name)
+
+    def add_dropped_files(self, files):
+        for path in files:
+             if path not in self.image_paths:
+                self.image_paths.append(path)
+                item = QListWidgetItem(path.name)
+                item.setData(Qt.UserRole, path)
+                self.file_list.addItem(item)
+        if self.file_list.count() > 0 and self.file_list.currentRow() < 0:
+            self.file_list.setCurrentRow(0)
+
+    def add_images(self):
+        files, _ = QFileDialog.getOpenFileNames(self, "Select Images", "", IMAGE_FILTER)
+        if not files: return
+        for f in files:
+            path = Path(f)
+            if path not in self.image_paths:
+                self.image_paths.append(path)
+                item = QListWidgetItem(path.name)
+                item.setData(Qt.UserRole, path)
+                self.file_list.addItem(item)
+        if self.file_list.count() > 0: self.file_list.setCurrentRow(0)
+
+    def clear_list(self):
+        self.image_paths.clear()
+        self.file_list.clear()
+        self.output_map.clear()
+        self._update_preview(None)
+
+    def on_file_selected(self, item, prev):
+        if not item:
+            self._update_preview(None)
+        else:
+            path = item.data(Qt.UserRole)
+            self._update_preview(path)
+
+    def _update_preview(self, path):
+        if not path:
+            self.preview_widget.set_image_pixmaps(None, None)
+            return
+
+        pix_orig = QPixmap(str(path))
+        pix_res = None
+
+        # Show Result (if exists)
+        out_path = self.output_map.get(path)
+        if out_path and out_path.exists():
+            pix_res = QPixmap(str(out_path))
+
+        self.preview_widget.set_image_pixmaps(pix_orig, pix_res)
+
+    def ensure_output_dir(self, sample):
+        if not self.output_dir:
+            self.output_dir = sample.parent / "LABOKit_CustomONNX"
+            self.output_dir.mkdir(exist_ok=True)
+            self.output_label.setText(f"{self.output_dir}")
+        return self.output_dir
+
+    def process_selected(self):
+        sel = self.file_list.selectedItems()
+        if not sel: return QMessageBox.warning(self, "Info", "Select images first.")
+        targets = [item.data(Qt.UserRole) for item in sel]
+        self._run_process(targets)
+
+    def process_all(self):
+        if not self.image_paths: return QMessageBox.warning(self, "Info", "Add images first.")
+        self._run_process(self.image_paths)
+
+    def _run_process(self, paths):
+        if not self.model_path:
+            return QMessageBox.warning(self, "Error", "Please select an .onnx model first!")
+
+        out_dir = self.ensure_output_dir(paths[0])
+
+        # UI Progress
+        self.dlg = QProgressDialog("Running ONNX Inference...", "Cancel", 0, len(paths), self)
+        self.dlg.setWindowModality(Qt.ApplicationModal)
+        self.dlg.show()
+
+        if self.meter: self.meter.set_message("Running Inference...")
+
+        # Threading
+        self.worker = OnnxWorker(self.model_path, paths, out_dir)
+        self.worker.progress.connect(self.dlg.setValue)
+        self.worker.finished.connect(lambda msg, err: self.on_finished(msg, err, paths))
+        self.worker.start()
+
+    def on_finished(self, msg, error, processed_paths):
+        self.dlg.close()
+        if self.meter: self.meter.set_message(None)
+
+        if error:
+            QMessageBox.critical(self, "Error", f"Upscale Failed:\n{error}")
+        else:
+            # Update output map so preview works
+            for p in processed_paths:
+                self.output_map[p] = self.output_dir / f"{p.stem}_custom.png"
+
+            # Refresh current preview
+            curr = self.file_list.currentItem()
+            if curr: self.on_file_selected(curr, None)
+
+            QMessageBox.information(self, "Success", f"{msg}")
+
+def create_tab(parent):
+    return CustomOnnxTab(parent)

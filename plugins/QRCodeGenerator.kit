@@ -1,0 +1,207 @@
+# LABOKit Plugin: QR Code Generator
+# ID: labokit.qrcode
+# Author: Kano
+
+import io
+import os
+import re
+import random
+import qrcode
+from PIL import Image
+from PySide6.QtCore import Qt, QTimer
+from PySide6.QtGui import QPixmap, QImage, QFont
+from PySide6.QtWidgets import (
+    QWidget, QVBoxLayout, QHBoxLayout, QLabel, QLineEdit,
+    QPushButton, QFileDialog, QMessageBox, QFrame,
+    QProgressBar, QScrollArea, QApplication, QPlainTextEdit
+)
+from ui_shared import ZoomableImageWidget
+
+# --- STANDARD PLUGIN VARIABLES ---
+PLUGIN_ID = "labokit.qrcode"
+PLUGIN_NAME = "QR Generator"
+PLUGIN_VERSION = "1.7"
+
+# --- HELP TEXT ---
+HELP_TEXT = (
+    "<h3>QR Code Generator Guide</h3>"
+    "<p>Create standard black & white QR Codes instantly.</p>"
+    "<hr>"
+    "<b>How to Use:</b>"
+    "<ol>"
+    "<li><b>Single Generator:</b> Input text to preview. Click 'Save Current QR' to export.</li>"
+    "<li><b>Batch Generator:</b> Paste list (one per line) and click 'Run Batch Export'.</li>"
+    "</ol>"
+)
+
+class QRCodePlugin(QWidget):
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        self.meter = None
+        self.current_image = None
+
+        self.init_ui()
+
+    def set_meter(self, meter):
+        self.meter = meter
+
+    def init_ui(self):
+        # Layout Utama
+        outer_layout = QVBoxLayout(self)
+        outer_layout.setContentsMargins(8, 8, 8, 8)
+        outer_layout.setSpacing(6)
+
+        # Layout Split (Kiri Kanan)
+        main_layout = QHBoxLayout()
+        outer_layout.addLayout(main_layout, stretch=1)
+
+        # --- LEFT PANEL (CONTROLS) ---
+        left_layout = QVBoxLayout()
+        main_layout.addLayout(left_layout, 1)
+
+        # === TITLE: SINGLE GENERATOR ===
+        lbl_single = QLabel("Single Generator", styleSheet="font-weight: bold; border: none; background: transparent;")
+        left_layout.addWidget(lbl_single)
+
+        # Input Box
+        self.input_text = QLineEdit()
+        self.input_text.setPlaceholderText("Input your Text or Link")
+        self.input_text.setFixedHeight(35)
+        self.input_text.textChanged.connect(self.generate_preview)
+        left_layout.addWidget(self.input_text)
+
+        # Save Button
+        self.btn_save_single = QPushButton("Save Current QR")
+        self.btn_save_single.setFixedHeight(40)
+        self.btn_save_single.clicked.connect(self.save_single)
+        left_layout.addWidget(self.btn_save_single)
+
+        # Spacer
+        left_layout.addSpacing(10)
+
+        # Divider
+        line1 = QFrame()
+        line1.setFrameShape(QFrame.HLine); line1.setFrameShadow(QFrame.Sunken)
+        line1.setStyleSheet("border: none; background-color: #b3bcd1; min-height: 1px; max-height: 1px; margin: 10px 0;")
+        left_layout.addWidget(line1)
+
+        # === TITLE: BATCH GENERATOR ===
+        lbl_batch = QLabel("Batch Generator", styleSheet="font-weight: bold; border: none; background: transparent;")
+        left_layout.addWidget(lbl_batch)
+
+        lbl_instr = QLabel("Paste list below (1 line = 1 QR):", styleSheet="color: #555; border: none; background: transparent;")
+        left_layout.addWidget(lbl_instr)
+
+        # Input Text Area
+        self.txt_batch_input = QPlainTextEdit()
+        self.txt_batch_input.setPlaceholderText("Item 1\nItem 2\nhttps://example.com\n...")
+        left_layout.addWidget(self.txt_batch_input)
+
+        # Progress & Button
+        self.progress_bar = QProgressBar()
+        self.progress_bar.setValue(0)
+        self.progress_bar.setTextVisible(False)
+        self.progress_bar.setFixedHeight(5)
+        self.progress_bar.setStyleSheet("QProgressBar { border: 1px solid #dbe2f2; border-radius: 3px; background: white; height: 10px; } QProgressBar::chunk { background-color: #5a6b8c; }")
+        left_layout.addWidget(self.progress_bar)
+
+        self.btn_run_batch = QPushButton("Run Batch Export")
+        self.btn_run_batch.setFixedHeight(40)
+        self.btn_run_batch.clicked.connect(self.run_batch_process)
+        left_layout.addWidget(self.btn_run_batch)
+
+        # --- RIGHT PANEL (PREVIEW) ---
+        right_layout = QVBoxLayout()
+        main_layout.addLayout(right_layout, 2)
+
+        self.preview_widget = ZoomableImageWidget()
+        right_layout.addWidget(self.preview_widget)
+
+    # --- LOGIC ---
+    def get_qrcode_object(self, data):
+        qr = qrcode.QRCode(
+            version=1,
+            error_correction=qrcode.constants.ERROR_CORRECT_M,
+            box_size=10,
+            border=4,
+        )
+        qr.add_data(data)
+        qr.make(fit=True)
+        return qr.make_image(fill_color="black", back_color="white")
+
+    def generate_preview(self):
+        data = self.input_text.text()
+        if not data:
+            self.preview_widget.set_image_pixmaps(None, None)
+            self.current_image = None
+            return
+
+        try:
+            img = self.get_qrcode_object(data)
+            self.current_image = img
+
+            im_data = io.BytesIO()
+            img.save(im_data, format='PNG')
+            qimg = QImage.fromData(im_data.getvalue())
+            pixmap = QPixmap.fromImage(qimg)
+
+            self.preview_widget.set_image_pixmaps(pixmap, None)
+
+        except Exception as e:
+            print(f"Error: {e}")
+
+    def save_single(self):
+        if not self.current_image: return
+        file_path, _ = QFileDialog.getSaveFileName(self, "Save QR", "qrcode.png", "Images (*.png)")
+        if file_path:
+            self.current_image.save(file_path)
+            QMessageBox.information(self, "Saved", "QR Code saved!")
+
+    def run_batch_process(self):
+        raw_text = self.txt_batch_input.toPlainText()
+        batch_data = [line.strip() for line in raw_text.split('\n') if line.strip()]
+
+        if not batch_data:
+            QMessageBox.warning(self, "Empty", "Please paste or type content in the list box first.")
+            return
+
+        folder_path = QFileDialog.getExistingDirectory(self, "Select Output Folder")
+        if not folder_path: return
+
+        self.progress_bar.setValue(0)
+        self.progress_bar.setMaximum(len(batch_data))
+        if self.meter: self.meter.set_message("Batch Processing...")
+
+        success_count = 0
+
+        for i, data in enumerate(batch_data):
+            try:
+                img = self.get_qrcode_object(data)
+
+                safe_name = re.sub(r'[\\/*?:"<>|]', '_', data)[:30]
+                if not safe_name: safe_name = f"qrcode_{i}"
+
+                filename = f"{safe_name}.png"
+                full_path = os.path.join(folder_path, filename)
+
+                counter = 1
+                while os.path.exists(full_path):
+                    full_path = os.path.join(folder_path, f"{safe_name}_{counter}.png")
+                    counter += 1
+
+                img.save(full_path)
+                success_count += 1
+                self.progress_bar.setValue(i + 1)
+
+                QApplication.processEvents()
+
+            except Exception as e:
+                print(f"Failed to process {data}: {e}")
+
+        if self.meter: self.meter.set_message(None)
+        QMessageBox.information(self, "Done", f"Batch processing complete!\nGenerated {success_count} QR Codes.")
+        self.progress_bar.setValue(0)
+
+# --- ENTRY POINT ---
+def create_tab(parent=None):
+    return QRCodePlugin(parent)
