@@ -969,12 +969,6 @@ class LABOKitMainWindow(QMainWindow):
         
         self.custom_title_bar.menu_layout.addWidget(mb)
 
-        file = mb.addMenu("&File")
-        file.addAction("Add Images...", self.add_images_curr)
-        file.addAction("Change Output Folder...", self.change_out_curr)
-        file.addSeparator()
-        file.addAction("Exit", self.close)
-
         conf = mb.addMenu("&Config")
         conf.addAction("Load Plugin (.kit)...", self.load_plugin_file)
         conf.addAction("Open Plugins Folder", lambda: QDesktopServices.openUrl(QUrl.fromLocalFile(str(PLUGIN_DIR))))
@@ -986,17 +980,9 @@ class LABOKitMainWindow(QMainWindow):
         help.addAction("Licenses / NOTICE", self.show_notice)
         self.menu_plugins = help.addMenu("Plugins")
 
-        supp = mb.addMenu("&Support")
-        supp.addAction("Get Plugins (Trakteer ID)", lambda: self.open_url("https://trakteer.id/kano-bbif7/showcase/labokit-advanced-plugins-m84J6"))
+        supp = mb.addMenu("♥ Support")
+        supp.addAction("Get Plugins (Trakteer ID)", lambda: self.open_url("https://trakteer.id/kano-bbif7/reward/labokit-advanced-plugins-m84J6"))
         supp.addAction("Get Plugins (Ko-fi)", lambda: self.open_url("https://ko-fi.com/s/a367e473fe"))
-
-    def add_images_curr(self):
-        w = self.tabs.currentWidget()
-        if hasattr(w, "add_images"): w.add_images()
-
-    def change_out_curr(self):
-        w = self.tabs.currentWidget()
-        if hasattr(w, "change_output_folder"): w.change_output_folder()
 
     def show_bg_help(self): self.bg_tab.show_help()
     def show_upscale_help(self): self.up_tab.show_help()
