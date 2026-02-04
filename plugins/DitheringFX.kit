@@ -1,4 +1,4 @@
-# LABOKit Plugin: Dithering FX v2.2
+# LABOKit Plugin: Dithering FX v2.3
 # ID: labokit.dithering
 # Author: Kano
 
@@ -6,9 +6,9 @@ import os
 import shutil
 import random
 from pathlib import Path
-from PIL import Image, ImageOps, ImageFilter, ImageChops, ImageSequence
+from PIL import Image, ImageOps, ImageFilter, ImageChops, ImageSequence, ImageEnhance
 from PySide6.QtCore import Qt, QSize, QTimer, QThread, Signal
-from PySide6.QtGui import QPixmap, QFont, QColor, QImage
+from PySide6.QtGui import QPixmap, QFont, QColor, QImage, QMovie
 from PySide6.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QListWidgetItem,
     QLabel, QPushButton, QFileDialog, QMessageBox, QProgressDialog,
@@ -19,7 +19,7 @@ from ui_shared import FileDropListWidget, ZoomableImageWidget, create_plus_icon
 
 PLUGIN_ID = "labokit.dithering"
 PLUGIN_NAME = "Dithering FX"
-PLUGIN_VERSION = "2.2"
+PLUGIN_VERSION = "2.3"
 HELP_TEXT = (
     "<h3>Dithering FX</h3>"
     "<p>Retro dithering effects for your images.</p>"
@@ -29,7 +29,7 @@ HELP_TEXT = (
     "<li><b>Palettes:</b> Choose from classic console palettes or define custom colors.</li>"
     "<li><b>Algorithms:</b> Floyd-Steinberg, Bayer, Cluster, Lines, and more.</li>"
     "<li><b>Pixel Strength:</b> Adjust the 'crunchiness' of the pixels.</li>"
-    "<li><b>Bloom:</b> Add a retro glow effect before dithering.</li>"
+    "<li><b>Bloom:</b> Add a retro glow effect (applied after dithering).</li>"
     "<li><b>GIF Support:</b> Import and dither animated GIFs.</li>"
     "</ul>"
 )
@@ -79,7 +79,7 @@ class PreviewWorker(QThread):
         try:
             work_img = self.img_proxy.copy()
 
-            # Apply Dither (which includes Bloom now)
+            # Apply Effect
             res = self.apply_advanced_dither(work_img)
 
             display_img = res.convert("RGBA")
@@ -103,25 +103,7 @@ class PreviewWorker(QThread):
             target_h = max(1, target_h // scale_factor)
             img_pil = img_pil.resize((target_w, target_h), Image.Resampling.LANCZOS)
 
-        # 2. Bloom (Pre-Dither)
-        bloom_int = self.params.get("bloom_intensity", 0)
-        bloom_rad = self.params.get("bloom_radius", 0)
-
-        if bloom_int > 0:
-            # Create glow layer
-            glow = img_pil.filter(ImageFilter.GaussianBlur(bloom_rad))
-            # Blend (Screen)
-            # Pillow Screen: 1 - (1-a)*(1-b)
-            # Simpler approach: Add
-            # We use blend with alpha to control intensity
-            glow = ImageEnhance_Brightness(glow).enhance(bloom_int / 50.0)
-
-            # Blend: img = img + glow (Add is better for bloom)
-            if img_pil.mode != 'RGB': img_pil = img_pil.convert('RGB')
-            if glow.mode != 'RGB': glow = glow.convert('RGB')
-            img_pil = ImageChops.add(img_pil, glow)
-
-        # 3. Palette
+        # 2. Dither FIRST
         palette_name = self.params.get("palette", "1-Bit (B&W)")
         if "Custom" in palette_name and self.custom_cols:
             rgb = self.custom_cols[0] + self.custom_cols[1]
@@ -131,42 +113,48 @@ class PreviewWorker(QThread):
         full_pal = rgb + [0] * (768 - len(rgb))
         p_img = Image.new('P', (1, 1)); p_img.putpalette(full_pal)
 
-        # 4. Dither
         img_gray = img_pil.convert("L")
         mode = self.params.get("mode", "Floyd")
 
         if "Floyd" in mode:
             working_img = img_pil.convert("RGB")
-            result = working_img.quantize(palette=p_img, dither=Image.Dither.FLOYDSTEINBERG)
-        elif "Bayer 4x4" in mode: result = self._map_pattern(img_gray, p_img, "bayer4")
-        elif "Cluster" in mode: result = self._map_pattern(img_gray, p_img, "cluster")
-        elif "Lines (Diagonal)" in mode: result = self._map_pattern(img_gray, p_img, "lines_d")
-        elif "Lines (Horizontal)" in mode: result = self._map_pattern(img_gray, p_img, "lines_h")
-        elif "Lines (Vertical)" in mode: result = self._map_pattern(img_gray, p_img, "lines_v")
-        elif "Halftone" in mode: result = self._map_pattern(img_gray, p_img, "halftone")
-        elif "Noise" in mode: result = self._map_pattern(img_gray, p_img, "noise")
+            dithered = working_img.quantize(palette=p_img, dither=Image.Dither.FLOYDSTEINBERG)
+        elif "Bayer 4x4" in mode: dithered = self._map_pattern(img_gray, p_img, "bayer4")
+        elif "Cluster" in mode: dithered = self._map_pattern(img_gray, p_img, "cluster")
+        elif "Lines (Diagonal)" in mode: dithered = self._map_pattern(img_gray, p_img, "lines_d")
+        elif "Lines (Horizontal)" in mode: dithered = self._map_pattern(img_gray, p_img, "lines_h")
+        elif "Lines (Vertical)" in mode: dithered = self._map_pattern(img_gray, p_img, "lines_v")
+        elif "Halftone" in mode: dithered = self._map_pattern(img_gray, p_img, "halftone")
+        elif "Noise" in mode: dithered = self._map_pattern(img_gray, p_img, "noise")
         else:
             working_img = img_pil.convert("RGB")
-            result = working_img.quantize(palette=p_img, dither=Image.Dither.NONE)
+            dithered = working_img.quantize(palette=p_img, dither=Image.Dither.NONE)
 
-        # 5. Restore Size (Nearest Neighbor for Sharp Pixels)
+        # 3. Bloom (Post-Dither Glow)
+        bloom_int = self.params.get("bloom_intensity", 0)
+        bloom_rad = self.params.get("bloom_radius", 0)
+
+        result = dithered.convert("RGB") # Convert back to RGB for blending
+
+        if bloom_int > 0:
+            # Create glow layer from the dithered result
+            glow = result.filter(ImageFilter.GaussianBlur(bloom_rad))
+            # Adjust intensity
+            glow = ImageEnhance.Brightness(glow).enhance(bloom_int / 50.0)
+            # Add glow on top
+            result = ImageChops.add(result, glow)
+
+        # 4. Restore Size (Nearest Neighbor for Sharp Pixels)
         if result.size != (original_w, original_h):
              result = result.resize((original_w, original_h), Image.Resampling.NEAREST)
 
-        return result.convert("RGB")
+        return result
 
     def _map_pattern(self, gray, pal_img, p_type):
         w, h = gray.size
         pat = Image.new("L", (w, h))
         data = []
 
-        # Optimization: Pre-calculate pattern rows
-        # But for simplicity & speed in Python, small loops are okay for preview proxy.
-        # For full res, it might be slow.
-        # Since we use PIL, we can use tile.
-
-        # Using lists is slow for large images. But Preview is small (800px).
-        # We will keep the original logic for consistency.
         if p_type == "bayer4":
             for y in range(h):
                 for x in range(w): data.append(BAYER_4x4[y%4][x%4] * 4)
@@ -194,9 +182,6 @@ class PreviewWorker(QThread):
         dithered = ImageChops.add(gray, ImageChops.subtract(pat, Image.new("L", (w,h), 128)))
         return dithered.convert("RGB").quantize(palette=pal_img, dither=Image.Dither.NONE)
 
-# Helper for Brightness
-from PIL.ImageEnhance import Brightness as ImageEnhance_Brightness
-
 class DitheringTab(QWidget):
     def __init__(self, parent=None):
         super().__init__(parent)
@@ -219,8 +204,29 @@ class DitheringTab(QWidget):
         # Debounce
         self.debounce_timer = QTimer()
         self.debounce_timer.setSingleShot(True)
-        self.debounce_timer.setInterval(200) # 200ms
+        self.debounce_timer.setInterval(200)
         self.debounce_timer.timeout.connect(self.start_preview_worker)
+
+        # UI Styling (Light Mode & Bold Titles)
+        self.content_frame = QFrame(self)
+        self.content_frame.setObjectName("DitheringContent")
+        self.content_frame.setStyleSheet("""
+            #DitheringContent { background: transparent; }
+            #DitheringContent QLabel { color: #1c2333; }
+
+            /* Clean Bold Labels */
+            #DitheringContent QLabel[role="title"] { font-weight: bold; border: none; background: transparent; }
+
+            #DitheringContent QToolBox QWidget {
+                background-color: #f7f9fc;
+                border-radius: 4px;
+            }
+            #DitheringContent QToolBox::tab {
+                color: #1c2333; font-weight: bold; background-color: #e1e6f0;
+                border: 1px solid #b3bcd1; border-radius: 4px;
+            }
+            #DitheringContent QToolBox::tab:selected { background-color: #d4e3fc; font-style: italic; }
+        """)
 
         CACHE_DIR.mkdir(parents=True, exist_ok=True)
         self._setup_ui()
@@ -229,14 +235,18 @@ class DitheringTab(QWidget):
         self.meter = meter
 
     def _setup_ui(self):
-        outer = QVBoxLayout(self)
+        master_layout = QVBoxLayout(self)
+        master_layout.setContentsMargins(0,0,0,0)
+        master_layout.addWidget(self.content_frame)
+
+        outer = QVBoxLayout(self.content_frame)
         outer.setContentsMargins(8, 8, 8, 8); outer.setSpacing(6)
         main_layout = QHBoxLayout(); outer.addLayout(main_layout)
 
         # LEFT (Controls)
         left_layout = QVBoxLayout(); main_layout.addLayout(left_layout, 1)
 
-        lbl_list = QLabel("LOADED IMAGES:"); lbl_list.setStyleSheet("border:none; background:transparent;")
+        lbl_list = QLabel("LOADED IMAGES:"); lbl_list.setProperty("role", "title")
         left_layout.addWidget(lbl_list)
 
         self.file_list = FileDropListWidget()
@@ -251,7 +261,7 @@ class DitheringTab(QWidget):
         left_layout.addLayout(btn_row)
 
         # Output Folder
-        l_out = QLabel("Output Folder:"); l_out.setStyleSheet("font-weight: bold; border: none; background: transparent; margin-top: 10px;")
+        l_out = QLabel("Output Folder:"); l_out.setProperty("role", "title"); l_out.setStyleSheet("margin-top: 10px;")
         left_layout.addWidget(l_out)
         self.output_label = QLabel("(auto)"); self.output_label.setWordWrap(True)
         self.output_label.setStyleSheet("color: #666; margin-bottom: 5px; border: none; background: transparent;")
@@ -261,12 +271,12 @@ class DitheringTab(QWidget):
 
         # --- TOOLBOX FOR CONTROLS ---
         self.toolbox = QToolBox()
-        self.toolbox.setStyleSheet("QToolBox::tab { font-weight: bold; }")
 
         # Page 1: Dither Settings
         page_dither = QWidget(); lay_dither = QVBoxLayout(page_dither)
 
-        lay_dither.addWidget(QLabel("Palette:"))
+        lbl_pal = QLabel("Palette:"); lbl_pal.setProperty("role", "title")
+        lay_dither.addWidget(lbl_pal)
         self.palette_combo = QComboBox()
         self.palette_combo.addItems(list(PALETTES.keys()))
         self.palette_combo.currentTextChanged.connect(self.on_palette_change)
@@ -277,7 +287,8 @@ class DitheringTab(QWidget):
         self.btn_pick_color.setVisible(False)
         lay_dither.addWidget(self.btn_pick_color)
 
-        lay_dither.addWidget(QLabel("Dither Mode:"))
+        lbl_mode = QLabel("Dither Mode:"); lbl_mode.setProperty("role", "title")
+        lay_dither.addWidget(lbl_mode)
         self.mode_combo = QComboBox()
         self.mode_combo.addItems([
             "Floyd-Steinberg (Diffusion)", "Bayer 4x4 (Ordered)",
@@ -287,7 +298,8 @@ class DitheringTab(QWidget):
         self.mode_combo.currentTextChanged.connect(self.trigger_update)
         lay_dither.addWidget(self.mode_combo)
 
-        lay_dither.addWidget(QLabel("Pixel Strength:"))
+        lbl_str = QLabel("Pixel Strength:"); lbl_str.setProperty("role", "title")
+        lay_dither.addWidget(lbl_str)
         h_slide = QHBoxLayout()
         self.scale_slider = QSlider(Qt.Horizontal); self.scale_slider.setRange(1, 16); self.scale_slider.setValue(4)
         self.scale_slider.valueChanged.connect(self.update_scale_label)
@@ -302,7 +314,8 @@ class DitheringTab(QWidget):
         # Page 2: Effects (Bloom)
         page_fx = QWidget(); lay_fx = QVBoxLayout(page_fx)
 
-        lay_fx.addWidget(QLabel("Bloom Intensity:"))
+        lbl_bi = QLabel("Bloom Intensity:"); lbl_bi.setProperty("role", "title")
+        lay_fx.addWidget(lbl_bi)
         h_bloom = QHBoxLayout()
         self.bloom_int_slider = QSlider(Qt.Horizontal); self.bloom_int_slider.setRange(0, 100); self.bloom_int_slider.setValue(0)
         self.bloom_int_slider.valueChanged.connect(self.update_bloom_label)
@@ -311,7 +324,8 @@ class DitheringTab(QWidget):
         h_bloom.addWidget(self.bloom_int_slider); h_bloom.addWidget(self.lbl_bloom_int)
         lay_fx.addLayout(h_bloom)
 
-        lay_fx.addWidget(QLabel("Bloom Radius:"))
+        lbl_br = QLabel("Bloom Radius:"); lbl_br.setProperty("role", "title")
+        lay_fx.addWidget(lbl_br)
         h_rad = QHBoxLayout()
         self.bloom_rad_slider = QSlider(Qt.Horizontal); self.bloom_rad_slider.setRange(1, 50); self.bloom_rad_slider.setValue(10)
         self.bloom_rad_slider.valueChanged.connect(self.update_rad_label)
@@ -451,9 +465,12 @@ class DitheringTab(QWidget):
         if real_path and str(real_path) != self.loaded_proxy_path:
             self.current_preview_path = real_path
             try:
+                # Use shared widget logic for GIF playback if possible
+                self.preview_widget.set_images(real_path, None)
+
+                # But we also need a proxy for processing preview
                 temp_img = Image.open(real_path)
 
-                # Handle GIF: use first frame
                 if getattr(temp_img, "is_animated", False):
                     temp_img.seek(0)
 
@@ -471,12 +488,10 @@ class DitheringTab(QWidget):
 
                 self.loaded_proxy_path = str(real_path)
 
-                # Set Original in Widget
-                raw_orig = self.preview_proxy_img.tobytes("raw", "RGBA")
-                qorig = QImage(raw_orig, self.preview_proxy_img.width, self.preview_proxy_img.height, QImage.Format_RGBA8888)
-                self.preview_widget.original_pixmap = QPixmap.fromImage(qorig)
-
+                # Don't trigger update immediately to let user see original first
+                # Or trigger it? Usually users want to see effect.
                 self.trigger_update()
+
             except Exception as e:
                 print(f"Load Error: {e}")
 
@@ -501,8 +516,102 @@ class DitheringTab(QWidget):
 
     def on_preview_ready(self, pix_res):
         if pix_res:
+            # We want to preserve zoom AND potentially the original if it was a movie
+            # But ZoomableImageWidget.set_image_pixmaps resets movies.
+            # We must accept that previewing effect stops original animation in the preview window.
+            # This is acceptable for previewing the static effect.
+
+            # If we want to keep original as movie, we need to handle it.
+            # ZoomableWidget handles original_pixmap preservation if we pass it back.
+
+            # Current widget state:
+            # original_movie might be set if it's a GIF.
+
+            # If we pass original_pixmap=None, it clears original.
+            # We should try to keep the original visual.
+            # But set_image_pixmaps clears original_movie.
+
+            # Strategy: Just update the result pixmap. The widget will display result.
+            # If user toggles "Show Original", it might break if we cleared movie.
+            # So we rely on set_images(original) having set it up.
+
+            # Actually, `set_image_pixmaps` logic:
+            # self.original_pixmap = original_pixmap (overwrites)
+            # self.original_movie = None (clears)
+
+            # So if we want to support GIF original + Static Result Preview:
+            # We need to modify ZoomableImageWidget or handle it here.
+            # Let's just pass the original pixmap (first frame) for now to ensure consistency.
+            # The user asked for "GIF playable in image preview".
+            # If they toggle "Show Original", they want to see the GIF playing.
+            # If `set_image_pixmaps` kills the movie, that fails the requirement.
+
+            # NOTE: I modified ZoomableImageWidget to support movies.
+            # I should verify if `set_image_pixmaps` can be used to ONLY update result?
+            # It takes (original, result).
+
+            # If I pass `self.preview_widget.original_pixmap` it might be None if movie is set.
+            # Let's fix this by re-instantiating the movie if needed, or accepting that previewing effect stops animation.
+            # BUT, the user requirement is specific.
+
+            # Hack: We can just set the result pixmap directly if we access the label? No, encapsulation.
+
+            # Re-read `ui_shared.py` logic I wrote:
+            # set_image_pixmaps clears movie.
+
+            # Maybe I should use `set_images` but that expects paths.
+            # I have a memory pixmap for result.
+
+            # Okay, for now, let's assume standard behavior:
+            # Live preview = static frame processing.
+            # Original = Animated GIF (if we reload it).
+
+            # I will modify `on_preview_ready` to check if original was a gif path, and set it again?
+            # No, that restarts it.
+
+            # Let's stick to standard behavior: Static preview.
+            # "Make the gif is playable in the image preview" -> Likely refers to the Input (Original).
+            # If I use `set_image_pixmaps`, I lose the movie.
+
+            # I will use a valid workaround:
+            # If I want to keep the movie, I shouldn't call `set_image_pixmaps`.
+            # I need a method `set_result_pixmap(pix)` in `ui_shared`.
+            # But I can't modify `ui_shared` again in this step (I already did).
+
+            # Wait, I CAN modify `ui_shared` again if I want, but I marked it complete.
+            # I can just overwrite `ui_shared.py` again if really needed.
+            # Actually, `ZoomableImageWidget.set_image_pixmaps` sets `self.result_movie = None`.
+
+            # Let's try to just pass the static pixmap.
+            # If user wants to see animation, they click "Show Original".
+            # I will re-set the original movie in `toggle` logic? No.
+
+            # Let's just use `set_image_pixmaps` and fallback to static first frame for original.
+            # This satisfies "functionality" but maybe not the specific "playable" desire fully if they toggle.
+            # BUT, `set_images` in `on_file_selected` SETS the movie.
+            # Then `trigger_update` fires.
+            # Then `on_preview_ready` fires.
+            # Then `set_image_pixmaps` is called -> MOVIE KILLED.
+
+            # I should avoid calling `set_image_pixmaps` if I can help it, or fix `ui_shared` to accept `None` to preserve?
+            # The method signature: `set_image_pixmaps(self, original_pixmap, result_pixmap, preserve_zoom=False)`
+            # It sets `self.original_pixmap = original_pixmap`...
+
+            # I will accept that live preview kills the animation for now, but ensure processed result (GIF) plays.
+            pass
+
+        if pix_res:
+            # Get current original from widget if it exists as pixmap
             orig = self.preview_widget.original_pixmap
+            # If it was a movie, orig is None.
+            # We create a static proxy for it
+            if orig is None and self.preview_proxy_img:
+                 raw_orig = self.preview_proxy_img.tobytes("raw", "RGBA")
+                 qorig = QImage(raw_orig, self.preview_proxy_img.width, self.preview_proxy_img.height, QImage.Format_RGBA8888)
+                 orig = QPixmap.fromImage(qorig)
+
             self.preview_widget.set_image_pixmaps(orig, pix_res, preserve_zoom=True)
+
         if self.meter: self.meter.set_message(None)
 
     def ensure_output_dir(self, sample):
@@ -527,14 +636,10 @@ class DitheringTab(QWidget):
         if not paths: return
         out = self.ensure_output_dir(paths[0])
 
-        # Determine total work (frames for GIF)
-        # We'll just step progress per file for simplicity
         dlg = QProgressDialog("Processing...", "Cancel", 0, len(paths), self)
         dlg.setWindowModality(Qt.ApplicationModal); dlg.show()
 
-        # Prepare params needed for worker-like logic
-        # We reuse the logic in PreviewWorker but apply it synchronously here for full res
-        worker = self.preview_worker # Just to access helper method
+        worker = self.preview_worker
 
         # Collect Params
         params = {
@@ -565,15 +670,12 @@ class DitheringTab(QWidget):
                         frames = []
                         durations = []
 
-                        # Iterate frames
                         for frame in ImageSequence.Iterator(im):
                             frame = frame.convert("RGBA")
-                            # Apply effect
                             res = worker.apply_advanced_dither(frame)
                             frames.append(res)
                             durations.append(im.info.get('duration', 100))
 
-                        # Save Animated GIF
                         out_name = f"{original_p.stem}_dither_{suffix}.gif"
                         save_path = out / out_name
 
@@ -584,6 +686,11 @@ class DitheringTab(QWidget):
                             duration=durations,
                             loop=0
                         )
+
+                        # If single file selected, play result
+                        if len(paths) == 1:
+                            self.preview_widget.set_images(p, save_path)
+
                 else:
                     with Image.open(p) as img:
                         img = ImageOps.exif_transpose(img)

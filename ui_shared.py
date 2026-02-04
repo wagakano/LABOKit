@@ -1,5 +1,5 @@
-from PySide6.QtCore import Qt, Signal, QTimer, QPoint
-from PySide6.QtGui import QPixmap, QPainter, QColor, QPen, QIcon, QAction, QFont, QCursor, QGuiApplication
+from PySide6.QtCore import Qt, Signal, QTimer, QPoint, QSize
+from PySide6.QtGui import QPixmap, QPainter, QColor, QPen, QIcon, QAction, QFont, QCursor, QGuiApplication, QMovie
 from PySide6.QtWidgets import (
     QListWidget, QScrollArea, QLabel, QPushButton, QMenu, QFrame, QHBoxLayout, QApplication
 )
@@ -55,8 +55,14 @@ class ZoomableImageWidget(QScrollArea):
         self.setWidget(self.image_label)
         
         self.original_pixmap = None
+        self.original_movie = None # NEW: Support for GIF/Movie
+
         self.result_pixmap = None
+        self.result_movie = None   # NEW: Support for GIF/Movie in result
+
         self.current_target_pixmap = None
+        self.current_target_movie = None
+
         self.scale_factor = 1.0
         
         # Toggle Button (Top-Right)
@@ -84,17 +90,49 @@ class ZoomableImageWidget(QScrollArea):
         self.setFocusPolicy(Qt.StrongFocus)
 
     def set_images(self, original_path, result_path):
-        self.original_pixmap = QPixmap(str(original_path)) if original_path and Path(original_path).exists() else None
-        self.result_pixmap = QPixmap(str(result_path)) if result_path and Path(result_path).exists() else None
+        # Reset current state
+        self.original_pixmap = None
+        self.original_movie = None
+        self.result_pixmap = None
+        self.result_movie = None
+
+        # Load Original
+        if original_path:
+            p = Path(original_path)
+            if p.exists():
+                if p.suffix.lower() == ".gif":
+                    self.original_movie = QMovie(str(p))
+                    self.original_movie.start()
+                else:
+                    self.original_pixmap = QPixmap(str(p))
+
+        # Load Result
+        if result_path:
+            p = Path(result_path)
+            if p.exists():
+                if p.suffix.lower() == ".gif":
+                    self.result_movie = QMovie(str(p))
+                    self.result_movie.start()
+                else:
+                    self.result_pixmap = QPixmap(str(p))
         
         self.fit_to_view()
         self.btn_toggle.setChecked(False)
-        self.btn_toggle.setVisible(bool(self.original_pixmap and self.result_pixmap))
+
+        # Determine visibility of toggle
+        has_orig = bool(self.original_pixmap or self.original_movie)
+        has_res = bool(self.result_pixmap or self.result_movie)
+        self.btn_toggle.setVisible(has_orig and has_res)
+
         self.update_display()
 
     def set_image_pixmaps(self, original_pixmap, result_pixmap, preserve_zoom=False):
+        # This method is primarily for static pixmaps (memory based)
         self.original_pixmap = original_pixmap
+        self.original_movie = None
+
         self.result_pixmap = result_pixmap
+        self.result_movie = None
         
         if not preserve_zoom:
             self.fit_to_view()
@@ -104,38 +142,82 @@ class ZoomableImageWidget(QScrollArea):
         self.update_display()
 
     def fit_to_view(self):
-        target = self.original_pixmap if self.original_pixmap else self.result_pixmap
-        if target and not target.isNull():
-            w_ratio = self.width() / target.width()
-            h_ratio = self.height() / target.height()
+        # Determine target for size calculation
+        target_size = QSize(0,0)
+
+        if self.original_pixmap: target_size = self.original_pixmap.size()
+        elif self.original_movie: target_size = self.original_movie.currentImage().size() # Approximation
+        elif self.result_pixmap: target_size = self.result_pixmap.size()
+        elif self.result_movie: target_size = self.result_movie.currentImage().size()
+
+        if target_size.isValid():
+            w_ratio = self.width() / target_size.width()
+            h_ratio = self.height() / target_size.height()
             fit_scale = min(w_ratio, h_ratio)
             self.scale_factor = min(fit_scale, 1.0) * 0.95 
         else:
             self.scale_factor = 1.0
 
     def update_display(self):
-        if self.btn_toggle.isChecked() and self.original_pixmap:
-            target = self.original_pixmap
-        elif self.result_pixmap:
-            target = self.result_pixmap
+        # Stop previous movie if playing
+        if self.current_target_movie:
+            # We don't stop it because we might toggle back, but we clear label
+            pass
+
+        self.current_target_pixmap = None
+        self.current_target_movie = None
+
+        if self.btn_toggle.isChecked():
+            if self.original_movie: self.current_target_movie = self.original_movie
+            else: self.current_target_pixmap = self.original_pixmap
         else:
-            target = self.original_pixmap
+            # Default to Result, fallback to Original
+            if self.result_movie: self.current_target_movie = self.result_movie
+            elif self.result_pixmap: self.current_target_pixmap = self.result_pixmap
+            elif self.original_movie: self.current_target_movie = self.original_movie
+            else: self.current_target_pixmap = self.original_pixmap
         
-        self.current_target_pixmap = target
         self._refresh_view()
 
     def _refresh_view(self):
-        if not self.current_target_pixmap or self.current_target_pixmap.isNull():
+        if self.current_target_movie:
+            # Movie Logic
+            movie = self.current_target_movie
+            if not movie.isValid():
+                self.image_label.setText("Invalid Movie")
+                return
+
+            # Helper to scale movie frames
+            # QMovie doesn't auto-scale nicely in QLabel without setScaledSize
+            base_size = movie.format() # Wait, format() returns string. We need size.
+            # QMovie.currentImage().size() might vary, but usually consistent.
+            # We assume initial size is representative.
+
+            # Hack: Get size from current pixmap or jump to 0
+            if movie.currentPixmap().isNull():
+                movie.jumpToFrame(0)
+
+            orig_size = movie.currentPixmap().size()
+            if orig_size.isValid():
+                new_size = orig_size * self.scale_factor
+                movie.setScaledSize(new_size)
+
+            self.image_label.setMovie(movie)
+            # Ensure movie is running (it might have been paused or not started)
+            if movie.state() != QMovie.Running:
+                movie.start()
+
+        elif self.current_target_pixmap and not self.current_target_pixmap.isNull():
+            # Pixmap Logic
+            new_size = self.current_target_pixmap.size() * self.scale_factor
+            scaled = self.current_target_pixmap.scaled(
+                new_size, Qt.KeepAspectRatio, Qt.SmoothTransformation
+            )
+            self.image_label.setPixmap(scaled)
+            self.image_label.adjustSize()
+        else:
             self.image_label.setPixmap(QPixmap())
             self.image_label.setText("No Image")
-            return
-            
-        new_size = self.current_target_pixmap.size() * self.scale_factor
-        scaled = self.current_target_pixmap.scaled(
-            new_size, Qt.KeepAspectRatio, Qt.SmoothTransformation
-        )
-        self.image_label.setPixmap(scaled)
-        self.image_label.adjustSize()
         
     def set_zoom_level(self, zoom_float):
         self.scale_factor = zoom_float
