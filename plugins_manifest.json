@@ -24,6 +24,11 @@
         "url_encoded": "aHR0cHM6Ly9naXRodWIuY29tL3dhZ2FrYW5vL0xBQk9LaXQtYXNzZXRzL3JlbGVhc2VzL2Rvd25sb2FkL3VwZGF0ZTEvT05OWExvYWRlci5raXQ=",
         "changelog": "- Initial Release"
     },
+    "QRCodeGenerator": {
+        "version": "1.6",
+        "url_encoded": "aHR0cHM6Ly9naXRodWIuY29tL3dhZ2FrYW5vL0xBQk9LaXQvcmVsZWFzZXMvZG93bmxvYWQvdjIuMC9RUkNvZGVHZW5lcmF0b3Iua2l0",
+        "changelog": "- Initial Release"
+    },
     "_message": "If you are able to decode the links, congratulation you get the plugins for free~!"
 }
 
