@@ -5,22 +5,23 @@
 import cv2
 import numpy as np
 import random
+import time
 from pathlib import Path
-from PIL import Image, ImageDraw
-from PySide6.QtCore import Qt, Signal, QTimer
-from PySide6.QtGui import QPixmap, QImage, QColor, QPainter, QBrush, QPen
+from PIL import Image, ImageDraw, ImageFont, ImageOps
+from PySide6.QtCore import Qt, Signal, QTimer, QThread, QObject, QMutex, QWaitCondition
+from PySide6.QtGui import QPixmap, QImage, QColor, QPainter, QBrush, QPen, QFont
 from PySide6.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QLabel, QPushButton, 
     QFileDialog, QMessageBox, QProgressDialog, QFrame, 
     QComboBox, QSlider, QCheckBox, QApplication, QScrollArea,
-    QToolBox, QColorDialog, QGroupBox, QButtonGroup
+    QToolBox, QColorDialog, QGroupBox, QButtonGroup, QSizePolicy
 )
 from ui_shared import ZoomableImageWidget
 
 PLUGIN_ID = "labokit.imagelab"
 PLUGIN_NAME = "ImageLAB"
-PLUGIN_VERSION = "2.9"
-HELP_TEXT = "<h3>ImageLAB Editor</h3><p>Built-in creative image editor.</p>"
+PLUGIN_VERSION = "3.5"
+HELP_TEXT = "<h3>ImageLAB Editor</h3><p>Advanced creative image editor with ASCII Lab.</p>"
 
 # --- UTILS: BLENDING ---
 def blend_images(bottom, top, mode, opacity):
@@ -92,7 +93,208 @@ def generate_pattern(shape, type_name, obj_scale=1.0, spacing_scale=1.0):
     
     return full_pattern[:h, :w]
 
-# --- UI COMPONENTS ---
+# --- UTILS: ASCII RENDERER ---
+def render_ascii(img_bgr, charset_name, resolution, color_mode, bg_color):
+    # Charsets
+    CHARSETS = {
+        "Standard": "@%#*+=-:. ",
+        "Matrix": "01",
+        "Block": "█▓▒░ ",
+        "Binary": "10 ",
+        "Slant": "/\\ ",
+        "Minimal": " .",
+        "Code": "<>{}[]()/*",
+        "Hex": "0123456789ABCDEF"
+    }
+    
+    chars = CHARSETS.get(charset_name, CHARSETS["Standard"])
+    
+    h, w = img_bgr.shape[:2]
+    aspect = h / w
+    
+    cols = max(20, resolution)
+    char_w = 10 
+    char_h = 18 
+    char_aspect = char_h / char_w 
+    
+    rows = int(cols * aspect * (char_w/char_h))
+    
+    gray = cv2.cvtColor(img_bgr, cv2.COLOR_BGR2GRAY)
+    small_gray = cv2.resize(gray, (cols, rows), interpolation=cv2.INTER_AREA)
+    
+    if "Color" in color_mode:
+        small_color = cv2.resize(img_bgr, (cols, rows), interpolation=cv2.INTER_AREA)
+    
+    out_w = cols * char_w
+    out_h = rows * char_h
+    
+    bg_rgb = (0,0,0) if bg_color == "Black" else (255,255,255)
+    fg_rgb = (255,255,255) if bg_color == "Black" else (0,0,0)
+    
+    if color_mode == "Matrix Green": fg_rgb = (0, 255, 0)
+    elif color_mode == "Cyber Cyan": fg_rgb = (0, 255, 255)
+    elif color_mode == "Hacker Red": fg_rgb = (255, 0, 0)
+    
+    canvas = Image.new("RGB", (out_w, out_h), bg_rgb)
+    draw = ImageDraw.Draw(canvas)
+    
+    num_chars = len(chars)
+    range_step = 255.0 / (num_chars - 1)
+    
+    for y in range(rows):
+        for x in range(cols):
+            lum = small_gray[y, x]
+            char_idx = int(lum / range_step)
+            
+            final_idx = char_idx
+            if bg_color == "Black": 
+                final_idx = num_chars - 1 - char_idx 
+            else:
+                final_idx = char_idx
+                
+            final_idx = max(0, min(final_idx, num_chars - 1))
+            char = chars[final_idx]
+            
+            pos_x = x * char_w
+            pos_y = y * char_h
+            
+            color = fg_rgb
+            if "Color" in color_mode:
+                b, g, r = small_color[y, x]
+                color = (r, g, b)
+                
+            draw.text((pos_x, pos_y), char, fill=color)
+            
+    return np.array(canvas)[:, :, ::-1] # RGB to BGR
+
+# --- STANDALONE EFFECT FUNCTIONS ---
+
+def apply_basic(img, params):
+    b, c, s = params.get("b", 0), params.get("c", 0), params.get("s", 0)
+    res = img
+    if b != 0 or c != 0:
+        alpha = (c + 100.0) / 100.0
+        res = cv2.convertScaleAbs(res, alpha=alpha, beta=b)
+    if s != 0:
+        hsv = cv2.cvtColor(res, cv2.COLOR_BGR2HSV).astype(np.float32)
+        hsv[:,:,1] *= ((s + 100.0) / 100.0)
+        hsv[:,:,1] = np.clip(hsv[:,:,1], 0, 255)
+        hsv = hsv.astype(np.uint8)
+        res = cv2.cvtColor(hsv, cv2.COLOR_HSV2BGR)
+    return res
+
+def apply_glitch(img, params):
+    amount = params.get("amount", 0)
+    if amount == 0: return img
+    
+    res = img.copy()
+    h, w = res.shape[:2]
+    seed = params.get("seed", 0); np.random.seed(seed)
+    
+    if params.get("rgb"):
+        shift = int((amount/100)*(w*0.05))
+        res[:,:,2] = np.roll(res[:,:,2], shift, axis=1)
+        res[:,:,0] = np.roll(res[:,:,0], -shift, axis=1)
+    
+    if params.get("scan"):
+        noise = np.random.normal(0, amount, (h,w,3)).astype(np.uint8)
+        for y in range(0, h, 4): res[y:min(y+2,h), :] = cv2.add(res[y:min(y+2,h), :], noise[y:min(y+2,h), :])
+        
+    return res
+
+def apply_partial(img, params):
+    if not params.get("enabled"): return img
+    
+    target = params.get("color") # QColor
+    fuzz = params.get("fuzz", 40)
+    sat_boost = params.get("sat", 0)
+    
+    tgt_bgr = np.uint8([[[target.blue(), target.green(), target.red()]]])
+    tgt_hsv = cv2.cvtColor(tgt_bgr, cv2.COLOR_BGR2HSV)[0][0]
+    hue = tgt_hsv[0]
+    
+    img_hsv = cv2.cvtColor(img, cv2.COLOR_BGR2HSV)
+    l1 = np.array([max(0, hue-fuzz), 20, 20])
+    u1 = np.array([min(180, hue+fuzz), 255, 255])
+    mask = cv2.inRange(img_hsv, l1, u1)
+    if hue < fuzz:
+        mask2 = cv2.inRange(img_hsv, np.array([180-(fuzz-hue),20,20]), np.array([180,255,255]))
+        mask = cv2.bitwise_or(mask, mask2)
+    elif hue > 180-fuzz:
+        mask2 = cv2.inRange(img_hsv, np.array([0,20,20]), np.array([hue+fuzz-180,255,255]))
+        mask = cv2.bitwise_or(mask, mask2)
+    
+    gray = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
+    gray_bgr = cv2.cvtColor(gray, cv2.COLOR_GRAY2BGR)
+    
+    boosted = img
+    if sat_boost > 0:
+        bf = img_hsv.astype(np.float32)
+        bf[:,:,1] *= (1.0 + sat_boost/50.0)
+        bf[:,:,1] = np.clip(bf[:,:,1], 0, 255)
+        boosted = cv2.cvtColor(bf.astype(np.uint8), cv2.COLOR_HSV2BGR)
+    
+    return cv2.add(cv2.bitwise_and(boosted, boosted, mask=mask), 
+                  cv2.bitwise_and(gray_bgr, gray_bgr, mask=cv2.bitwise_not(mask)))
+
+def apply_pattern(img, params):
+    if not params.get("enabled"): return img
+    
+    pat_type = params.get("type"); mode = params.get("blend"); mask_mode = params.get("mask")
+    scale = params.get("scale"); space = params.get("space"); opacity = params.get("opacity")
+    
+    h, w = img.shape[:2]
+    overlay = generate_pattern((h,w,3), pat_type, scale, space)
+    
+    alpha_mask = None
+    if mask_mode != "Whole Image":
+        g = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
+        if mask_mode == "Dark Areas Only": alpha_mask = 255 - g
+        else: alpha_mask = g
+        alpha_mask = alpha_mask.astype(float) / 255.0
+        alpha_mask = cv2.merge([alpha_mask, alpha_mask, alpha_mask])
+    
+    blended = blend_images(img, overlay, mode, 1.0)
+    if alpha_mask is not None:
+        f = alpha_mask * opacity
+        return (img * (1.0 - f) + blended * f).astype(np.uint8)
+    else:
+        return cv2.addWeighted(blended, opacity, img, 1.0-opacity, 0)
+
+# --- WORKER THREAD ---
+class EffectWorker(QObject):
+    finished = Signal(object) 
+    
+    def __init__(self):
+        super().__init__()
+        self.img = None
+        self.params = {}
+    
+    def run(self):
+        if self.img is None: return
+        try:
+            res = self.img.copy()
+            
+            res = apply_basic(res, self.params.get("basic", {}))
+            res = apply_glitch(res, self.params.get("glitch", {}))
+            res = apply_partial(res, self.params.get("partial", {}))
+            res = apply_pattern(res, self.params.get("pattern", {}))
+
+            p_ascii = self.params.get("ascii", {})
+            if p_ascii.get("enabled"):
+                res = render_ascii(
+                    res, 
+                    p_ascii.get("charset"), 
+                    p_ascii.get("res"), 
+                    p_ascii.get("color"), 
+                    p_ascii.get("bg")
+                )
+
+            self.finished.emit(res)
+        except Exception as e:
+            print(f"Worker Error: {e}")
+            self.finished.emit(None)
+
 class SolidColorBtn(QPushButton):
     colorChanged = Signal(int, object) 
     def __init__(self, index, default_color, parent=None):
@@ -109,11 +311,11 @@ class SolidColorBtn(QPushButton):
         self.update_look()
 
     def pick_color(self):
-        c = QColorDialog.getColor(self.current_color, self, "Select Color")
-        if c.isValid():
-            self.current_color = c
-            self.update_look()
-            self.colorChanged.emit(self.index, c)
+        self.colorChanged.emit(self.index, None) # Signal parent to start eyedropper
+
+    def set_color(self, color):
+        self.current_color = color
+        self.update_look()
 
     def update_look(self):
         self.setStyleSheet(f"""
@@ -129,253 +331,298 @@ class SolidColorBtn(QPushButton):
 # MAIN TAB CLASS
 # ==========================================
 class ImageLabTab(QWidget):
+    start_worker = Signal()
+
     def __init__(self, parent=None):
         super().__init__(parent)
+        self.meter = None # Global meter reference
         
-        # --- SOLID STYLING SYSTEM ---
         self.setStyleSheet("""
-            /* Reset Global */
             QWidget { background: transparent; }
             QLabel, QCheckBox, QGroupBox, QRadioButton { color: #1c2333; }
             
-            /* DROPDOWN FIX (CRITICAL) */
+            /* Clean Bold Labels */
+            QLabel { font-weight: bold; border: none; }
+            
+            /* Styled Numbers */
+            QLabel[role="value"] {
+                border: 1px solid #b3bcd1;
+                border-radius: 3px;
+                background-color: #ffffff;
+                padding: 2px 5px;
+                font-weight: normal;
+                min-width: 30px;
+                qproperty-alignment: AlignCenter;
+            }
+
             QComboBox { 
-                background-color: #ffffff; 
-                color: #1c2333;
-                border: 1px solid #b3bcd1; 
-                border-radius: 4px;
-                padding: 4px;
+                background-color: #ffffff; color: #1c2333;
+                border: 1px solid #b3bcd1; border-radius: 4px; padding: 4px;
             }
             QComboBox QAbstractItemView {
-                background-color: #ffffff;
-                color: #1c2333;
-                selection-background-color: #d4e3fc;
-                border: 1px solid #b3bcd1;
-                outline: none;
+                background-color: #ffffff; color: #1c2333;
+                selection-background-color: #d4e3fc; outline: none;
             }
-            
-            /* QTOOLBOX RESTORATION */
-            QToolBox { background: transparent; }
             QToolBox::tab {
-                color: #1c2333;
-                font-weight: bold;
-                background-color: #e1e6f0;
-                border: 1px solid #b3bcd1;
-                border-radius: 4px;
+                color: #1c2333; font-weight: bold; background-color: #e1e6f0;
+                border: 1px solid #b3bcd1; border-radius: 4px;
             }
-            QToolBox::tab:selected {
-                background-color: #d4e3fc;
-                font-style: italic;
-            }
+            QToolBox::tab:selected { background-color: #d4e3fc; font-style: italic; }
             .QWidget { background-color: #f7f9fc; border-radius: 4px; } 
-
-            /* WLM */
-            #WLM {
-                font-family: 'Consolas', monospace; font-size: 14px;
-                color: #333; background-color: #e1e6f0;
-                border: 1px solid #9ca7c2; border-radius: 4px;
-                padding: 4px 10px; font-weight: bold;
-            }
             
-            /* 3D BUTTONS */
+            /* Shared Button Style */
             QPushButton {
                 background-color: qlineargradient(x1:0, y1:0, x2:0, y2:1, stop:0 #ffffff, stop:1 #d8dfee);
-                border: 1px solid #9ca7c2;
-                border-radius: 4px;
-                padding: 4px 12px;
-                font-weight: bold;
-                color: #1c2333;
+                border: 1px solid #9ca7c2; border-radius: 5px; padding: 4px 12px; font-weight: bold; color: #1c2333;
             }
-            QPushButton:hover {
-                background-color: qlineargradient(x1:0, y1:0, x2:0, y2:1, stop:0 #ffffff, stop:1 #e6ecf7);
-                border: 1px solid #6c7a96;
-            }
-            QPushButton:pressed {
-                background-color: qlineargradient(x1:0, y1:0, x2:0, y2:1, stop:0 #cfd6e8, stop:1 #b0bdd7);
-                border: 1px solid #5a667a;
-                padding-top: 5px; padding-bottom: 3px;
-            }
+            QPushButton:hover { background-color: qlineargradient(x1:0, y1:0, x2:0, y2:1, stop:0 #ffffff, stop:1 #e6ecf7); }
+            QPushButton:pressed { background-color: qlineargradient(x1:0, y1:0, x2:0, y2:1, stop:0 #cfd6e8, stop:1 #b0bdd7); }
 
-            /* CHECKBOX */
-            QCheckBox { spacing: 5px; }
-            QCheckBox::indicator {
-                width: 16px; height: 16px;
-                border: 1px solid #5a6b8c;
-                background: #ffffff;
+            /* Dark Slider Handle */
+            QSlider::handle:horizontal { 
+                background: #2c3e50; 
+                border: 1px solid #2c3e50; 
+                width: 14px; 
+                margin: -4px 0; 
+                border-radius: 7px; 
+            }
+            QSlider::groove:horizontal {
+                border: 1px solid #999999;
+                height: 6px;
+                background: qlineargradient(x1:0, y1:0, x2:0, y2:1, stop:0 #B1B1B1, stop:1 #c4c4c4);
+                margin: 2px 0;
                 border-radius: 3px;
             }
-            QCheckBox::indicator:checked {
-                background-color: #5a6b8c;
-                border: 1px solid #3c4b64;
-            }
-            
-            QSlider::handle:horizontal { background: #5a6b8c; border: 1px solid #5a6b8c; width: 14px; margin: -4px 0; border-radius: 7px; }
-            QDialog, QMessageBox { background-color: #f5f7fb; }
         """)
         
-        # State
         self.img_full = None      
         self.img_preview = None   
+        self.original_preview = None 
         self.active_file_path = None
+        self.picking_color = False
         
-        # Cache (Grad Removed)
-        self.cache = {"basic": None, "glitch": None, "partial": None}
-        self.dirty_flags = {"basic": True, "glitch": True, "partial": True, "pattern": True}
-
-        # WLM Logic
-        self.wlm_values = ["1.048596", "0.571024", "0.571046", "3.372329", "0.334581", "1.130205"]
-        self.wlm_delay_timer = QTimer(self); self.wlm_delay_timer.setSingleShot(True)
-        self.wlm_delay_timer.timeout.connect(self.start_wlm_animation)
-        self.wlm_anim_timer = QTimer(self); self.wlm_anim_timer.setInterval(50)
-        self.wlm_anim_timer.timeout.connect(self.update_wlm_digit)
-        self.wlm_scramble_count = 0
+        # Async Processing
+        self.worker_thread = QThread()
+        self.worker = EffectWorker()
+        self.worker.moveToThread(self.worker_thread)
+        self.worker.finished.connect(self.on_worker_finished)
+        self.start_worker.connect(self.worker.run)
+        self.worker_thread.start()
+        
+        # Debounce Timer
+        self.update_timer = QTimer()
+        self.update_timer.setSingleShot(True)
+        self.update_timer.setInterval(200) # 200ms debounce
+        self.update_timer.timeout.connect(self.execute_worker)
         
         self._setup_ui()
 
+    def set_meter(self, meter):
+        self.meter = meter
+
     def _setup_ui(self):
-        main_layout = QHBoxLayout(self)
+        outer = QVBoxLayout(self)
+        outer.setContentsMargins(8,8,8,8); outer.setSpacing(6)
+        
+        main_layout = QHBoxLayout(); outer.addLayout(main_layout)
         
         # LEFT: PREVIEW
         left_layout = QVBoxLayout()
-        toolbar = QHBoxLayout()
-        btn_open = QPushButton("Open Image"); btn_open.clicked.connect(self.open_image)
-        btn_clear = QPushButton("Close"); btn_clear.clicked.connect(self.clear_image)
-        btn_save = QPushButton("Save Result"); btn_save.clicked.connect(self.save_image)
-        btn_save.setStyleSheet("background-color: #d4e3fc; border: 1px solid #8f9bb3;")
         
-        self.lbl_wlm = QLabel("1.048596α"); self.lbl_wlm.setObjectName("WLM")
-        self.lbl_wlm.setAlignment(Qt.AlignCenter); self.lbl_wlm.setFixedWidth(100)
-        
-        toolbar.addWidget(btn_open); toolbar.addWidget(btn_clear); toolbar.addWidget(btn_save)
-        toolbar.addWidget(self.lbl_wlm); toolbar.addStretch()
-        
-        self.lbl_zoom = QLabel("100%")
-        self.slider_zoom = QSlider(Qt.Horizontal); self.slider_zoom.setRange(10, 300); self.slider_zoom.setValue(100); self.slider_zoom.setFixedWidth(120)
-        self.slider_zoom.valueChanged.connect(self.on_zoom_change)
-        toolbar.addWidget(QLabel("Zoom:")); toolbar.addWidget(self.slider_zoom); toolbar.addWidget(self.lbl_zoom)
-        left_layout.addLayout(toolbar)
-
         self.preview_widget = ZoomableImageWidget()
-        self.preview_widget.setStyleSheet("background-color: transparent; border: 1px solid #b3bcd1; border-radius: 4px;")
-        self.preview_widget.color_picked.connect(self.on_eyedropper_picked)
-        left_layout.addWidget(self.preview_widget, stretch=1)
+        self.preview_widget.color_picked.connect(self.on_color_picked)
+        left_layout.addWidget(self.preview_widget)
+        
         main_layout.addLayout(left_layout, stretch=3)
 
         # RIGHT: TOOLBOX
+        right_panel = QVBoxLayout()
+        main_layout.addLayout(right_panel, stretch=1)
+        
+        # Top Buttons
+        top_btns = QHBoxLayout()
+        btn_open = QPushButton("Open Image"); btn_open.clicked.connect(self.open_image)
+        btn_clear = QPushButton("Close"); btn_clear.clicked.connect(self.clear_image)
+        top_btns.addWidget(btn_open); top_btns.addWidget(btn_clear)
+        right_panel.addLayout(top_btns)
+
         self.toolbox = QToolBox()
         
         # 1. ADJUSTMENT
         page_adj = QWidget(); lay_adj = QVBoxLayout(page_adj)
-        self.sl_bright = self._add_slider(lay_adj, "Brightness", -100, 100, 0, "basic")
-        self.sl_contrast = self._add_slider(lay_adj, "Contrast", -100, 100, 0, "basic")
-        self.sl_sat = self._add_slider(lay_adj, "Saturation", -100, 100, 0, "basic")
+        self.sl_bright = self._add_slider(lay_adj, "Brightness", -100, 100, 0)
+        self.sl_contrast = self._add_slider(lay_adj, "Contrast", -100, 100, 0)
+        self.sl_sat = self._add_slider(lay_adj, "Saturation", -100, 100, 0)
         lay_adj.addStretch()
         self.toolbox.addItem(page_adj, "1. Basic Adjustments")
 
-        # 2. PATTERN OVERLAY
+        # 2. PATTERN
         page_pat = QWidget(); lay_pat = QVBoxLayout(page_pat)
-        self.chk_pat = QCheckBox("Enable Pattern"); self.chk_pat.stateChanged.connect(lambda: self.mark_dirty("pattern")); lay_pat.addWidget(self.chk_pat)
+        self.chk_pat = QCheckBox("Enable Pattern"); self.chk_pat.stateChanged.connect(self.trigger_update); lay_pat.addWidget(self.chk_pat)
         self.cb_pattern = QComboBox(); self.cb_pattern.addItems(["Polka Dot", "Lines (Horizontal)", "Lines (Vertical)", "Lines (Diagonal)", "Chess", "Diamond", "Gears"])
-        self.cb_pattern.currentTextChanged.connect(lambda: self.mark_dirty("pattern")); lay_pat.addWidget(QLabel("Pattern Type:")); lay_pat.addWidget(self.cb_pattern)
+        self.cb_pattern.currentTextChanged.connect(self.trigger_update); lay_pat.addWidget(QLabel("Pattern Type:")); lay_pat.addWidget(self.cb_pattern)
         self.cb_pat_mask = QComboBox(); self.cb_pat_mask.addItems(["Whole Image", "Dark Areas Only", "Light Areas Only"])
-        self.cb_pat_mask.currentTextChanged.connect(lambda: self.mark_dirty("pattern")); lay_pat.addWidget(QLabel("Apply To:")); lay_pat.addWidget(self.cb_pat_mask)
+        self.cb_pat_mask.currentTextChanged.connect(self.trigger_update); lay_pat.addWidget(QLabel("Apply To:")); lay_pat.addWidget(self.cb_pat_mask)
         self.cb_blend = QComboBox(); self.cb_blend.addItems(["Overlay", "Multiply", "Screen", "Add", "Difference", "Normal"])
-        self.cb_blend.currentTextChanged.connect(lambda: self.mark_dirty("pattern")); lay_pat.addWidget(QLabel("Blend Mode:")); lay_pat.addWidget(self.cb_blend)
-        self.sl_pat_scale = self._add_slider(lay_pat, "Scale (Size)", 1, 10, 3, "pattern")
-        self.sl_pat_spacing = self._add_slider(lay_pat, "Density (Spacing)", 1, 10, 2, "pattern") 
-        self.sl_pat_opacity = self._add_slider(lay_pat, "Opacity", 0, 100, 50, "pattern")
+        self.cb_blend.currentTextChanged.connect(self.trigger_update); lay_pat.addWidget(QLabel("Blend Mode:")); lay_pat.addWidget(self.cb_blend)
+        self.sl_pat_scale = self._add_slider(lay_pat, "Scale", 1, 10, 3)
+        self.sl_pat_spacing = self._add_slider(lay_pat, "Density", 1, 10, 2) 
+        self.sl_pat_opacity = self._add_slider(lay_pat, "Opacity", 0, 100, 50)
         lay_pat.addStretch()
         self.toolbox.addItem(page_pat, "2. Pattern Overlay")
 
-        # 3. GLITCH FX
+        # 3. GLITCH
         page_glitch = QWidget(); lay_glitch = QVBoxLayout(page_glitch)
-        self.chk_gl_artifact = QCheckBox("RGB Shift"); self.chk_gl_artifact.stateChanged.connect(lambda: self.mark_dirty("glitch")); lay_glitch.addWidget(self.chk_gl_artifact)
-        self.chk_gl_puzzle = QCheckBox("Slice Swap"); self.chk_gl_puzzle.stateChanged.connect(lambda: self.mark_dirty("glitch")); lay_glitch.addWidget(self.chk_gl_puzzle)
-        self.chk_gl_ghost = QCheckBox("Ghosting"); self.chk_gl_ghost.stateChanged.connect(lambda: self.mark_dirty("glitch")); lay_glitch.addWidget(self.chk_gl_ghost)
-        self.chk_gl_scan = QCheckBox("Scanline Noise"); self.chk_gl_scan.stateChanged.connect(lambda: self.mark_dirty("glitch")); lay_glitch.addWidget(self.chk_gl_scan)
-        self.chk_gl_invert = QCheckBox("Random Invert"); self.chk_gl_invert.stateChanged.connect(lambda: self.mark_dirty("glitch")); lay_glitch.addWidget(self.chk_gl_invert)
-        self.sl_glitch_amount = self._add_slider(lay_glitch, "Intensity", 0, 100, 20, "glitch")
-        self.sl_glitch_seed = self._add_slider(lay_glitch, "Random Seed", 0, 100, 0, "glitch")
+        self.chk_gl_rgb = QCheckBox("RGB Shift"); self.chk_gl_rgb.stateChanged.connect(self.trigger_update); lay_glitch.addWidget(self.chk_gl_rgb)
+        self.chk_gl_scan = QCheckBox("Scanline Noise"); self.chk_gl_scan.stateChanged.connect(self.trigger_update); lay_glitch.addWidget(self.chk_gl_scan)
+        self.sl_glitch_amt = self._add_slider(lay_glitch, "Intensity", 0, 100, 20)
+        self.sl_glitch_seed = self._add_slider(lay_glitch, "Seed", 0, 100, 0)
         lay_glitch.addStretch()
-        self.toolbox.addItem(page_glitch, "3. Artifact Glitch")
+        self.toolbox.addItem(page_glitch, "3. Glitch FX")
 
-        # 4. PARTIAL COLOR (Now Group 4)
+        # 4. PARTIAL COLOR
         page_part = QWidget(); lay_part = QVBoxLayout(page_part)
-        self.chk_part = QCheckBox("Enable Partial Color"); self.chk_part.stateChanged.connect(lambda: self.mark_dirty("partial")); lay_part.addWidget(self.chk_part)
+        self.chk_part = QCheckBox("Enable Partial Color"); self.chk_part.stateChanged.connect(self.trigger_update); lay_part.addWidget(self.chk_part)
         h_pcol = QHBoxLayout(); h_pcol.addWidget(QLabel("Keep Color:"))
-        self.btn_part_col = SolidColorBtn(99, "#ff0000"); self.btn_part_col.colorChanged.connect(self.on_partial_color_change)
-        h_pcol.addWidget(self.btn_part_col)
-        
-        btn_pick = QPushButton("Pick"); btn_pick.setFixedWidth(40); btn_pick.setCursor(Qt.PointingHandCursor)
-        btn_pick.setToolTip("Pick color from image")
-        btn_pick.clicked.connect(lambda: self.preview_widget.enable_eyedropper_mode())
-        h_pcol.addWidget(btn_pick)
-        
-        lay_part.addLayout(h_pcol)
-        self.sl_part_fuzz = self._add_slider(lay_part, "Color Area", 1, 100, 40, "partial")
-        self.sl_part_sat = self._add_slider(lay_part, "Saturation Boost", 0, 100, 20, "partial") 
+        self.btn_part_col = SolidColorBtn(99, "#ff0000"); self.btn_part_col.colorChanged.connect(self.start_eyedropper)
+        h_pcol.addWidget(self.btn_part_col); lay_part.addLayout(h_pcol)
+        self.sl_part_fuzz = self._add_slider(lay_part, "Color Range", 1, 100, 40)
+        self.sl_part_sat = self._add_slider(lay_part, "Saturation Boost", 0, 100, 20) 
         lay_part.addStretch()
         self.toolbox.addItem(page_part, "4. Partial Color")
 
-        # 5. SPECIALS (Renumbered)
-        page_spec = QWidget(); lay_spec = QVBoxLayout(page_spec)
-        self.cb_magic_mode = QComboBox()
-        self.cb_magic_mode.addItems(["Chaos Mode (Heavy)", "Subtle Mode (Light)"])
-        lay_spec.addWidget(QLabel("Intensity:"))
-        lay_spec.addWidget(self.cb_magic_mode)
-        btn_magic = QPushButton("⌀ Randomize")
-        btn_magic.setStyleSheet("background-color: #ffcc00; color: #000; font-size: 11pt; padding: 10px;")
-        btn_magic.clicked.connect(self.randomize_magic)
-        lay_spec.addWidget(btn_magic)
-        lay_spec.addStretch()
-        self.toolbox.addItem(page_spec, "5. LABOKit Specials")
+        # 5. ASCII LAB
+        page_ascii = QWidget(); lay_ascii = QVBoxLayout(page_ascii)
+        self.chk_ascii = QCheckBox("Enable ASCII Lab"); self.chk_ascii.stateChanged.connect(self.trigger_update)
+        lay_ascii.addWidget(self.chk_ascii)
+        
+        self.cb_ascii_char = QComboBox(); self.cb_ascii_char.addItems(["Standard", "Matrix", "Block", "Binary", "Slant", "Minimal", "Code", "Hex"])
+        self.cb_ascii_char.currentTextChanged.connect(self.trigger_update)
+        lay_ascii.addWidget(QLabel("Charset:")); lay_ascii.addWidget(self.cb_ascii_char)
+        
+        self.sl_ascii_res = self._add_slider(lay_ascii, "Resolution (Cols)", 20, 200, 80)
+        self.sl_ascii_res.valueChanged.connect(self.force_fit_next)
+        
+        self.cb_ascii_mode = QComboBox(); self.cb_ascii_mode.addItems(["Color", "Grayscale", "Matrix Green", "Cyber Cyan", "Hacker Red"])
+        self.cb_ascii_mode.currentTextChanged.connect(self.trigger_update)
+        lay_ascii.addWidget(QLabel("Color Mode:")); lay_ascii.addWidget(self.cb_ascii_mode)
+        
+        self.cb_ascii_bg = QComboBox(); self.cb_ascii_bg.addItems(["Black", "White"])
+        self.cb_ascii_bg.currentTextChanged.connect(self.trigger_update)
+        lay_ascii.addWidget(QLabel("Background:")); lay_ascii.addWidget(self.cb_ascii_bg)
+        
+        lay_ascii.addStretch()
+        self.toolbox.addItem(page_ascii, "5. ASCII Lab")
 
-        main_layout.addWidget(self.toolbox, stretch=1)
+        right_panel.addWidget(self.toolbox)
+        
+        # Save Button at Bottom
+        btn_save = QPushButton("Save Result"); btn_save.clicked.connect(self.save_image)
+        btn_save.setFixedHeight(40)
+        right_panel.addWidget(btn_save)
 
-    def _add_slider(self, layout, label, min_val, max_val, default, stage_tag):
-        l = QLabel(f"{label}: {default}")
+        # Removed local meter
+
+    def _add_slider(self, layout, label, min_val, max_val, default):
+        # Styled Layout for Label: "Title" ........ [ Value ]
+        row = QHBoxLayout()
+        l = QLabel(label)
+        v = QLabel(str(default))
+        v.setProperty("role", "value") # For styling
+        row.addWidget(l)
+        row.addStretch()
+        row.addWidget(v)
+        layout.addLayout(row)
+        
         s = QSlider(Qt.Horizontal); s.setRange(min_val, max_val); s.setValue(default)
-        layout.addWidget(l); layout.addWidget(s)
-        s.valueChanged.connect(lambda v, lb=l, txt=label: lb.setText(f"{txt}: {v}"))
-        s.valueChanged.connect(lambda: self.mark_dirty(stage_tag)) 
+        layout.addWidget(s)
+        s.valueChanged.connect(lambda val, lbl=v: lbl.setText(str(val)))
+        s.valueChanged.connect(self.trigger_update) 
         return s
 
     # --- LOGIC ---
-    def mark_dirty(self, stage):
-        stages = ["basic", "glitch", "partial", "pattern"]
-        if stage in stages:
-            idx = stages.index(stage)
-            for i in range(idx, len(stages)): self.dirty_flags[stages[i]] = True
+    def start_eyedropper(self, idx, _):
+        if not self.img_preview is None:
+            self.picking_color = True
+            if self.meter: self.meter.set_message("Click image to pick color...")
+            self.preview_widget.enable_eyedropper_mode()
+
+    def on_color_picked(self, color):
+        self.picking_color = False
+        if self.meter: self.meter.set_message(f"Selected Color: {color.name()}")
+        self.btn_part_col.set_color(color)
         self.trigger_update()
+        if self.meter: QTimer.singleShot(1500, lambda: self.meter.set_message(None))
+
+    def force_fit_next(self):
+        # If ASCII res changed, next display should fit
+        self.pending_fit = True
 
     def trigger_update(self):
-        self.wlm_delay_timer.start(3000) 
-        self.process_preview()
+        # Update meter immediately
+        if self.meter: self.meter.set_message("Processing...")
+        self.update_timer.start() 
 
-    def start_wlm_animation(self):
-        self.wlm_scramble_count = 0
-        self.lbl_wlm.setStyleSheet("QLabel#WLM { color: #ff6600; background-color: #1a1a1a; border: 1px solid #ff6600; }")
-        self.wlm_anim_timer.start()
+    def execute_worker(self):
+        if self.img_preview is None: return
+        
+        # Gather Params
+        params = {
+            "basic": {
+                "b": self.sl_bright.value(),
+                "c": self.sl_contrast.value(),
+                "s": self.sl_sat.value()
+            },
+            "glitch": {
+                "amount": self.sl_glitch_amt.value(),
+                "seed": self.sl_glitch_seed.value(),
+                "rgb": self.chk_gl_rgb.isChecked(),
+                "scan": self.chk_gl_scan.isChecked()
+            },
+            "partial": {
+                "enabled": self.chk_part.isChecked(),
+                "color": self.btn_part_col.current_color,
+                "fuzz": self.sl_part_fuzz.value(),
+                "sat": self.sl_part_sat.value()
+            },
+            "pattern": {
+                "enabled": self.chk_pat.isChecked(),
+                "type": self.cb_pattern.currentText(),
+                "mask": self.cb_pat_mask.currentText(),
+                "blend": self.cb_blend.currentText(),
+                "scale": self.sl_pat_scale.value(),
+                "space": self.sl_pat_spacing.value(),
+                "opacity": self.sl_pat_opacity.value() / 100.0
+            },
+            "ascii": {
+                "enabled": self.chk_ascii.isChecked(),
+                "charset": self.cb_ascii_char.currentText(),
+                "res": self.sl_ascii_res.value(),
+                "color": self.cb_ascii_mode.currentText(),
+                "bg": self.cb_ascii_bg.currentText()
+            }
+        }
+        
+        self.worker.img = self.original_preview 
+        self.worker.params = params
+        self.start_worker.emit()
 
-    def update_wlm_digit(self):
-        self.lbl_wlm.setText(str(random.uniform(0, 5))[:8])
-        self.wlm_scramble_count += 1
-        if self.wlm_scramble_count > 10:
-            self.wlm_anim_timer.stop()
-            final_val = random.choice(self.wlm_values)
-            greek = random.choice(["α", "β", "γ", "δ"])
-            self.lbl_wlm.setText(f"{final_val}{greek}")
-            self.lbl_wlm.setStyleSheet("QLabel#WLM { color: #333; background-color: #e1e6f0; border: 1px solid #9ca7c2; }")
+    def on_worker_finished(self, result_img):
+        if result_img is not None:
+            fit = getattr(self, 'pending_fit', False)
+            self._display_image(result_img, fit=fit)
+            self.pending_fit = False # Reset
+            if self.meter: self.meter.set_message(None)
+        else:
+            if self.meter: self.meter.set_message("Error")
 
     def clear_image(self):
-        self.img_full = None; self.img_preview = None; self.active_file_path = None
+        self.img_full = None; self.img_preview = None; self.original_preview = None; self.active_file_path = None
         self.preview_widget.set_image_pixmaps(None, None)
-        for k in self.cache: self.cache[k] = None
 
     def open_image(self):
         f, _ = QFileDialog.getOpenFileName(self, "Open Image", "", "Images (*.jpg *.png *.webp *.bmp)")
         if f:
-            self.clear_image() 
             self.active_file_path = Path(f)
             try:
                 pil_img = Image.open(f).convert("RGB")
@@ -388,230 +635,67 @@ class ImageLabTab(QWidget):
                 scale = max_dim / w if w > max_dim else 1.0
                 if scale < 1.0:
                     new_w, new_h = int(w*scale), int(h*scale)
-                    self.img_preview = cv2.resize(img, (new_w, new_h), interpolation=cv2.INTER_AREA)
+                    self.original_preview = cv2.resize(img, (new_w, new_h), interpolation=cv2.INTER_AREA)
                 else:
-                    self.img_preview = img.copy()
+                    self.original_preview = img.copy()
                 
-                for k in self.dirty_flags: self.dirty_flags[k] = True
-                self.process_preview()
+                self.img_preview = self.original_preview.copy()
+                self._display_image(self.img_preview, is_initial=True)
+                
+                self.trigger_update()
             except Exception as e: QMessageBox.critical(self, "Error", f"Failed to load image:\n{e}")
-
-    def on_zoom_change(self, val):
-        self.lbl_zoom.setText(f"{val}%"); self.preview_widget.set_zoom_level(val / 100.0)
-
-    def on_partial_color_change(self, idx, color): self.mark_dirty("partial")
-    
-    def on_eyedropper_picked(self, color):
-        self.btn_part_col.set_color_silent(color)
-        self.mark_dirty("partial")
-
-    def process_preview(self):
-        if self.img_preview is None: return
-        current_img = self.img_preview.copy()
-        
-        if self.dirty_flags["basic"] or self.cache["basic"] is None:
-            self.cache["basic"] = self._apply_basic(current_img)
-            self.dirty_flags["basic"] = False
-        current_img = self.cache["basic"].copy()
-
-        if self.dirty_flags["glitch"] or self.cache["glitch"] is None:
-            self.cache["glitch"] = self._apply_glitch(current_img)
-            self.dirty_flags["glitch"] = False
-        current_img = self.cache["glitch"].copy()
-
-        if self.dirty_flags["partial"] or self.cache["partial"] is None:
-            if self.chk_part.isChecked(): self.cache["partial"] = self._apply_partial_color(current_img)
-            else: self.cache["partial"] = current_img.copy()
-            self.dirty_flags["partial"] = False
-        current_img = self.cache["partial"].copy()
-
-        if self.chk_pat.isChecked(): current_img = self._apply_pattern(current_img)
-        
-        self._display_image(current_img)
 
     def save_image(self):
         if self.img_full is None: return
         last_dir = str(self.active_file_path.parent) if self.active_file_path else ""
         save_path_str, _ = QFileDialog.getSaveFileName(self, "Save Image", last_dir, "PNG Image (*.png);;JPG Image (*.jpg)")
         if not save_path_str: return
-        save_path = Path(save_path_str)
+        
         dlg = QProgressDialog("Rendering Full Resolution...", None, 0, 0, self)
         dlg.setWindowModality(Qt.WindowModal); dlg.show(); QApplication.processEvents()
-        try:
-            res = self.img_full.copy()
-            res = self._apply_basic(res)
-            res = self._apply_glitch(res)
-            if self.chk_part.isChecked(): res = self._apply_partial_color(res)
-            if self.chk_pat.isChecked(): res = self._apply_pattern(res)
-            
-            is_success, buf = cv2.imencode(save_path.suffix, res)
-            if is_success:
-                buf.tofile(str(save_path))
-                dlg.close(); QMessageBox.information(self, "Saved", f"Image saved successfully!")
-            else: dlg.close(); QMessageBox.warning(self, "Error", "Failed to save image.")
-        except Exception as e: dlg.close(); QMessageBox.critical(self, "Error", str(e))
-
-    def randomize_magic(self):
-        mode = self.cb_magic_mode.currentText()
+        if self.meter: self.meter.set_message("Saving High-Res Image...")
         
-        if "Chaos" in mode:
+        try:
+            params = self.worker.params.copy()
+            full_img = self.img_full.copy()
             
-            # 1. Adjustments
-            self.sl_bright.setValue(random.randint(-40, 40))
-            self.sl_contrast.setValue(random.randint(-20, 50))
-            self.sl_sat.setValue(random.randint(-50, 50))
+            # USE STANDALONE FUNCTIONS FOR FULL RES
+            full_img = apply_basic(full_img, params.get("basic", {}))
+            full_img = apply_glitch(full_img, params.get("glitch", {}))
+            full_img = apply_partial(full_img, params.get("partial", {}))
+            full_img = apply_pattern(full_img, params.get("pattern", {}))
             
-            # 2. Pattern
-            self.chk_pat.setChecked(True) 
-            # Pilih tipe pattern, mask, dan blend secara acak dari index yang tersedia
-            self.cb_pattern.setCurrentIndex(random.randint(0, self.cb_pattern.count() - 1))
-            self.cb_pat_mask.setCurrentIndex(random.randint(0, self.cb_pat_mask.count() - 1))
-            self.cb_blend.setCurrentIndex(random.randint(0, self.cb_blend.count() - 1))
-            self.sl_pat_scale.setValue(random.randint(1, 8))
-            self.sl_pat_spacing.setValue(random.randint(1, 8))
-            self.sl_pat_opacity.setValue(random.randint(40, 90)) # Opacity tinggi agar terlihat jelas
+            # 5. ASCII
+            if params.get("ascii", {}).get("enabled"):
+                p_ascii = params.get("ascii")
+                res = render_ascii(full_img, p_ascii.get("charset"), p_ascii.get("res"), p_ascii.get("color"), p_ascii.get("bg"))
+                is_success, buf = cv2.imencode(Path(save_path_str).suffix, res)
+                if is_success: buf.tofile(save_path_str)
+            else:
+                is_success, buf = cv2.imencode(Path(save_path_str).suffix, full_img)
+                if is_success: buf.tofile(save_path_str)
             
-            # 3. Glitch 
-            self.chk_gl_artifact.setChecked(True)
-            self.chk_gl_puzzle.setChecked(True)
-            self.chk_gl_ghost.setChecked(True)
-            self.chk_gl_scan.setChecked(True)
-            self.chk_gl_invert.setChecked(True)
+            dlg.close()
+            if self.meter: self.meter.set_message(None)
+            QMessageBox.information(self, "Saved", "Image Saved!")
             
-            self.sl_glitch_amount.setValue(random.randint(30, 95)) # Intensitas tinggi
-            self.sl_glitch_seed.setValue(random.randint(0, 100))
-            
-            # 4. Partial Color 
-            self.chk_part.setChecked(True)
-            self.sl_part_fuzz.setValue(random.randint(20, 80))
-            self.sl_part_sat.setValue(random.randint(0, 60))
-            # Pilih warna target acak secara silent
-            self.btn_part_col.set_color_silent(QColor(random.randint(0,255), random.randint(0,255), random.randint(0,255)))
+        except Exception as e:
+            dlg.close()
+            print(e)
 
-        else:
-            self.sl_bright.setValue(random.randint(-10, 10))
-            self.sl_contrast.setValue(random.randint(0, 15))
-            self.sl_sat.setValue(random.randint(5, 20))
-            
-            # Pattern
-            use_pat = random.random() > 0.7 
-            self.chk_pat.setChecked(use_pat)
-            if use_pat:
-                self.cb_pattern.setCurrentIndex(random.randint(0, self.cb_pattern.count() - 1))
-                self.cb_blend.setCurrentText("Overlay") # Paksa Overlay biar blend halus
-                self.sl_pat_opacity.setValue(random.randint(5, 15))
-            
-            # Glitch
-            self.sl_glitch_amount.setValue(random.randint(5, 15))
-            self.chk_gl_artifact.setChecked(random.random() > 0.5)
-            self.chk_gl_scan.setChecked(random.random() > 0.5)
-            # Matikan glitch yang terlalu kasar
-            self.chk_gl_puzzle.setChecked(False)
-            self.chk_gl_invert.setChecked(False)
-            self.chk_gl_ghost.setChecked(False)
-            
-        self.mark_dirty("basic")
-
-    def _display_image(self, cv_img):
+    def _display_image(self, cv_img, is_initial=False, fit=False):
         rgb = cv2.cvtColor(cv_img, cv2.COLOR_BGR2RGB)
         h, w, ch = rgb.shape
         bytes_per_line = ch * w
         qimg = QImage(rgb.data, w, h, bytes_per_line, QImage.Format_RGB888)
-        res_pix = QPixmap.fromImage(qimg)
+        pix = QPixmap.fromImage(qimg)
         
-        orig_pix = None
-        if self.img_preview is not None:
-             rgb_orig = cv2.cvtColor(self.img_preview, cv2.COLOR_BGR2RGB)
-             h_o, w_o, ch_o = rgb_orig.shape
-             bpl_o = ch_o * w_o
-             qo = QImage(rgb_orig.data, w_o, h_o, bpl_o, QImage.Format_RGB888)
-             orig_pix = QPixmap.fromImage(qo)
-
-        self.preview_widget.set_image_pixmaps(orig_pix, res_pix, preserve_zoom=True)
-
-    # --- EFFECTS ---
-    def _apply_basic(self, img):
-        b = self.sl_bright.value(); c = self.sl_contrast.value(); s = self.sl_sat.value()
-        if b != 0 or c != 0:
-            alpha = (c + 100.0) / 100.0; beta = b 
-            img = cv2.convertScaleAbs(img, alpha=alpha, beta=beta)
-        if s != 0:
-            hsv = cv2.cvtColor(img, cv2.COLOR_BGR2HSV).astype(np.float32)
-            sat_mult = (s + 100.0) / 100.0
-            hsv[:,:,1] *= sat_mult; hsv[:,:,1] = np.clip(hsv[:,:,1], 0, 255)
-            hsv = hsv.astype(np.uint8); img = cv2.cvtColor(hsv, cv2.COLOR_HSV2BGR)
-        return img
-
-    def _apply_pattern(self, img):
-        pat_type = self.cb_pattern.currentText(); blend_mode = self.cb_blend.currentText(); mask_mode = self.cb_pat_mask.currentText()
-        obj_scale = self.sl_pat_scale.value(); spacing_scale = self.sl_pat_spacing.value() 
-        opacity = self.sl_pat_opacity.value() / 100.0
-        if opacity <= 0: return img
-        h, w = img.shape[:2]
-        overlay = generate_pattern((h, w, 3), pat_type, obj_scale, spacing_scale)
-        alpha_mask = None
-        if mask_mode != "Whole Image":
-            gray = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
-            if mask_mode == "Dark Areas Only": alpha_mask = 255 - gray
-            elif mask_mode == "Light Areas Only": alpha_mask = gray
-            alpha_mask = alpha_mask.astype(float) / 255.0
-            alpha_mask = cv2.merge([alpha_mask, alpha_mask, alpha_mask])
-        blended = blend_images(img, overlay, blend_mode, 1.0)
-        if alpha_mask is not None:
-            final_factor = alpha_mask * opacity
-            res = img * (1.0 - final_factor) + blended * final_factor
-            return res.astype(np.uint8)
-        else: return cv2.addWeighted(blended, opacity, img, 1.0 - opacity, 0)
-
-    def _apply_glitch(self, img):
-        intensity = self.sl_glitch_amount.value(); seed = self.sl_glitch_seed.value()
-        if intensity == 0: return img
-        np.random.seed(seed); h, w, c = img.shape; out = img.copy()
-        if self.chk_gl_artifact.isChecked():
-            shift = int((intensity / 100.0) * (w * 0.05)); out[:, :, 2] = np.roll(out[:, :, 2], shift, axis=1); out[:, :, 0] = np.roll(out[:, :, 0], -shift, axis=1) 
-        if self.chk_gl_puzzle.isChecked():
-            num_slices = int(intensity / 5) + 1; slice_h = h // num_slices
-            for i in range(num_slices):
-                if np.random.rand() > 0.5:
-                    y = i * slice_h; offset = np.random.randint(-50, 50); end_y = min(y+slice_h, h)
-                    out[y:end_y, :] = np.roll(out[y:end_y, :], offset, axis=1)
-        if self.chk_gl_ghost.isChecked():
-            offset_x = int((intensity / 100.0) * 30); offset_y = int((intensity / 100.0) * 10)
-            ghost = np.roll(out, offset_x, axis=1); ghost = np.roll(ghost, offset_y, axis=0)
-            out = cv2.addWeighted(out, 0.7, ghost, 0.3, 0)
-        if self.chk_gl_scan.isChecked():
-            noise = np.random.normal(0, intensity, (h, w, c)).astype(np.uint8)
-            for y in range(0, h, 4): out[y:min(y+2, h), :] = cv2.add(out[y:min(y+2, h), :], noise[y:min(y+2, h), :])
-        if self.chk_gl_invert.isChecked():
-            num_blocks = int(intensity / 2)
-            for _ in range(num_blocks):
-                x = np.random.randint(0, w-50); y = np.random.randint(0, h-50); bw = np.random.randint(20, 100); bh = np.random.randint(20, 100)
-                out[y:y+bh, x:x+bw] = 255 - out[y:y+bh, x:x+bw]
-        return out
-
-    def _apply_partial_color(self, img):
-        target_q = self.btn_part_col.current_color
-        tgt_bgr = np.uint8([[[target_q.blue(), target_q.green(), target_q.red()]]])
-        tgt_hsv = cv2.cvtColor(tgt_bgr, cv2.COLOR_BGR2HSV)[0][0]
-        fuzz = self.sl_part_fuzz.value(); sat_boost = self.sl_part_sat.value()
-        hsv_img = cv2.cvtColor(img, cv2.COLOR_BGR2HSV)
-        hue = tgt_hsv[0]
-        lower_bound = np.array([max(0, hue - fuzz), 20, 20]); upper_bound = np.array([min(180, hue + fuzz), 255, 255])
-        mask = cv2.inRange(hsv_img, lower_bound, upper_bound)
-        if hue < fuzz:
-            mask2 = cv2.inRange(hsv_img, np.array([180-(fuzz-hue),20,20]), np.array([180,255,255])); mask = cv2.bitwise_or(mask, mask2)
-        elif hue > 180 - fuzz:
-            mask2 = cv2.inRange(hsv_img, np.array([0,20,20]), np.array([hue+fuzz-180,255,255])); mask = cv2.bitwise_or(mask, mask2)
-        gray = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY); gray_bgr = cv2.cvtColor(gray, cv2.COLOR_GRAY2BGR)
-        if sat_boost > 0:
-            hsv_boost = hsv_img.astype(np.float32)
-            hsv_boost[:,:,1] *= (1.0 + sat_boost/50.0); hsv_boost[:,:,1] = np.clip(hsv_boost[:,:,1], 0, 255)
-            boosted_bgr = cv2.cvtColor(hsv_boost.astype(np.uint8), cv2.COLOR_HSV2BGR)
-        else: boosted_bgr = img
-        mask_inv = cv2.bitwise_not(mask)
-        colored_part = cv2.bitwise_and(boosted_bgr, boosted_bgr, mask=mask)
-        gray_part = cv2.bitwise_and(gray_bgr, gray_bgr, mask=mask_inv)
-        return cv2.add(colored_part, gray_part)
+        if is_initial:
+            self.preview_widget.set_image_pixmaps(pix, pix)
+        else:
+            orig = self.preview_widget.original_pixmap
+            # If fit is True, we don't preserve zoom (pass preserve_zoom=False)
+            self.preview_widget.set_image_pixmaps(orig, pix, preserve_zoom=not fit)
 
 def create_tab(parent=None):
     return ImageLabTab(parent)
