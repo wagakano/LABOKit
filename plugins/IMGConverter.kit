@@ -1,0 +1,436 @@
+# LABOKit Plugin: Image Converter
+# ID: labokit.converter
+# Author: Kano
+
+import os
+import random
+from pathlib import Path
+from PIL import Image, ImageOps
+from PySide6.QtCore import Qt, QSize, QTimer
+from PySide6.QtGui import QPixmap, QFont, QImage
+from PySide6.QtWidgets import (
+    QWidget, QVBoxLayout, QHBoxLayout, QListWidget, QListWidgetItem,
+    QLabel, QPushButton, QFileDialog, QMessageBox, QProgressDialog,
+    QFrame, QComboBox, QSlider, QApplication, QSizePolicy
+)
+
+PLUGIN_ID = "labokit.converter"
+PLUGIN_NAME = "Image Converter"
+PLUGIN_VERSION = "1.5"
+HELP_TEXT = (
+    "Image Converter Plugin for LABOKit\n\n"
+    "Features:\n"
+    "- Convert images between JPG, PNG, WEBP, BMP, ICO.\n"
+    "- Preview selected image and file details.\n"
+    "- Quality control for compressed formats.\n\n"
+    "How to use:\n"
+    "1. Add images to the list.\n"
+    "2. Select an image to preview it.\n"
+    "3. Set Target Format & Quality below.\n"
+    "4. Click Convert."
+)
+
+IMAGE_FILTER = (
+    "Images (*.jpg *.jpeg *.png *.bmp *.tif *.tiff *.webp *.gif *.ico "
+    "*.JPG *.JPEG *.PNG *.BMP *.TIF *.TIFF *.WEBP *.GIF *.ICO)"
+)
+
+RUNNING_VALUES = [
+    "0.000000α", "0.134891α", "0.210317α", "0.337187α",
+    "0.456903α", "0.571024α", "0.571082α", "1.048596β",
+    "1.130205β", "1.130426β", "2.615483β", "3.019430δ",
+    "3.372329δ", "4.456441ε"
+]
+
+# Style Fix untuk Dropdown
+COMBO_STYLE = """
+QComboBox {
+    background-color: #f7f9fc;
+    border: 1px solid #b3bcd1;
+    border-radius: 4px;
+    padding: 2px 6px;
+    color: #1c2333;
+}
+QComboBox QAbstractItemView {
+    background-color: #ffffff;
+    border: 1px solid #b3bcd1;
+    selection-background-color: #cfe2ff;
+    color: #1c2333;
+    selection-color: #101522;
+    outline: none;
+}
+"""
+
+class ImageConverterTab(QWidget):
+    def __init__(self, parent=None):
+        super().__init__(parent)
+
+        self.image_paths = []
+        self.output_dir = None
+
+        self.pixel_labels = []
+        self._running_index = 0
+        self._running_timer = None
+
+        self._setup_ui()
+        self._init_running_text()
+
+    def _setup_ui(self):
+        # Layout Utama
+        outer_layout = QVBoxLayout(self)
+        outer_layout.setContentsMargins(8, 8, 8, 8)
+        outer_layout.setSpacing(6)
+
+        main_layout = QHBoxLayout()
+        outer_layout.addLayout(main_layout, stretch=1)
+
+        # === KOLOM KIRI: LIST ===
+        left_layout = QVBoxLayout()
+        main_layout.addLayout(left_layout, stretch=1)
+
+        lbl_list = QLabel("LOADED IMAGES (Converter):")
+        lbl_list.setStyleSheet("border: none; background: transparent; color: #1c2333;")
+        left_layout.addWidget(lbl_list)
+
+        self.file_list = QListWidget()
+        self.file_list.currentItemChanged.connect(self.show_file_info)
+        left_layout.addWidget(self.file_list, stretch=1)
+
+        btn_row = QHBoxLayout()
+        btn_add = QPushButton("Add Images…")
+        btn_add.clicked.connect(self.add_images)
+        btn_clear = QPushButton("Clear List")
+        btn_clear.clicked.connect(self.clear_list)
+        btn_row.addWidget(btn_add)
+        btn_row.addWidget(btn_clear)
+        left_layout.addLayout(btn_row)
+
+        # === KOLOM KANAN: PREVIEW & CONTROLS ===
+        right_layout = QVBoxLayout()
+        main_layout.addLayout(right_layout, stretch=3)
+
+        self.output_label = QLabel("CONVERTER OUTPUT FOLDER: (auto)")
+        self.output_label.setWordWrap(True)
+        right_layout.addWidget(self.output_label)
+
+        boxes_layout = QHBoxLayout()
+        right_layout.addLayout(boxes_layout, stretch=5)
+
+        # Kotak 1: File Info
+        self.info_frame = self._create_preview_box("File Information")
+        info_inner = QVBoxLayout(self.info_frame.content_widget)
+        info_inner.setContentsMargins(0, 5, 0, 0)
+        self.lbl_file_info = QLabel("")
+        self.lbl_file_info.setStyleSheet("border: none; font-family: Consolas; color: #444;")
+        self.lbl_file_info.setAlignment(Qt.AlignTop | Qt.AlignLeft)
+        info_inner.addWidget(self.lbl_file_info)
+        info_inner.addStretch(1)
+        boxes_layout.addWidget(self.info_frame, stretch=1)
+
+        # Kotak 2: Image Preview
+        self.preview_frame = self._create_preview_box("Image Preview")
+        prev_inner = QVBoxLayout(self.preview_frame.content_widget)
+        prev_inner.setContentsMargins(0, 0, 0, 0)
+        self.lbl_preview_img = QLabel()
+        self.lbl_preview_img.setAlignment(Qt.AlignCenter)
+        self.lbl_preview_img.setStyleSheet("border: none; background: transparent;")
+        prev_inner.addWidget(self.lbl_preview_img)
+        boxes_layout.addWidget(self.preview_frame, stretch=1)
+
+        # -- ROW KONTROL --
+        controls_layout = QHBoxLayout()
+        right_layout.addSpacing(6)
+        right_layout.addLayout(controls_layout)
+
+        controls_layout.addWidget(QLabel("Target Format:"))
+        self.fmt_combo = QComboBox()
+        self.fmt_combo.setStyleSheet(COMBO_STYLE)
+        self.fmt_combo.addItems(["PNG", "JPG", "WEBP", "BMP", "ICO"])
+        self.fmt_combo.currentTextChanged.connect(self.on_fmt_changed)
+        controls_layout.addWidget(self.fmt_combo)
+
+        controls_layout.addSpacing(20)
+
+        self.quality_container = QWidget()
+        self.quality_container.setStyleSheet("border: none; background: transparent;")
+        qual_layout = QHBoxLayout(self.quality_container)
+        qual_layout.setContentsMargins(0,0,0,0)
+
+        qual_layout.addWidget(QLabel("Quality:"))
+        self.quality_slider = QSlider(Qt.Horizontal)
+        self.quality_slider.setRange(1, 100)
+        self.quality_slider.setValue(90)
+        self.quality_slider.setFixedWidth(120)
+        self.quality_slider.valueChanged.connect(self.update_quality_label)
+        qual_layout.addWidget(self.quality_slider)
+
+        self.quality_val_label = QLabel("90%")
+        self.quality_val_label.setFixedWidth(35)
+        qual_layout.addWidget(self.quality_val_label)
+
+        controls_layout.addWidget(self.quality_container)
+
+        self.lossless_label = QLabel("(Lossless)")
+        self.lossless_label.setStyleSheet("color: #888; font-style: italic; border: none;")
+        self.lossless_label.setVisible(False)
+        controls_layout.addWidget(self.lossless_label)
+
+        controls_layout.addStretch(1)
+
+        # -- ROW TOMBOL --
+        right_layout.addSpacing(10)
+        btn_process_layout = QHBoxLayout()
+
+        self.btn_convert_sel = QPushButton("Convert (Selected)")
+        self.btn_convert_sel.clicked.connect(self.process_selected)
+
+        self.btn_convert_all = QPushButton("Convert (All)")
+        self.btn_convert_all.clicked.connect(self.process_all)
+
+        btn_process_layout.addWidget(self.btn_convert_sel)
+        btn_process_layout.addWidget(self.btn_convert_all)
+        right_layout.addLayout(btn_process_layout)
+
+        right_layout.addStretch(1)
+
+        # === FOOTER (PIXEL BAR) - FIX TAMPILAN ===
+        bottom_frame = QFrame()
+        bottom_frame.setObjectName("PixelBar")
+        bar_layout = QHBoxLayout(bottom_frame)
+        bar_layout.setContentsMargins(10, 3, 10, 4)
+        bar_layout.setSpacing(18)
+
+        pixel_font = QFont("Consolas", 9)
+        for _ in range(10):
+            lbl = QLabel("0.000000α")
+            lbl.setAlignment(Qt.AlignLeft | Qt.AlignVCenter)
+            lbl.setFont(pixel_font)
+            # PERUBAHAN DI SINI:
+            # Menghapus setStyleSheet() agar label mewarisi style "kotak/chip" dari QFrame global
+            self.pixel_labels.append(lbl)
+            bar_layout.addWidget(lbl)
+
+        outer_layout.addWidget(bottom_frame)
+
+        self.on_fmt_changed("PNG")
+
+    def _create_preview_box(self, title):
+        frame = QFrame()
+        frame.setFrameShape(QFrame.StyledPanel)
+        layout = QVBoxLayout(frame)
+        layout.setContentsMargins(6, 6, 6, 6)
+
+        lbl_title = QLabel(title)
+        lbl_title.setStyleSheet("border: none; background: transparent; color: #1c2333;")
+        layout.addWidget(lbl_title)
+
+        line = QFrame()
+        line.setFrameShape(QFrame.HLine)
+        line.setFrameShadow(QFrame.Sunken)
+        line.setStyleSheet("border: none; border-top: 1px solid #dbe2f2; margin-bottom: 2px;")
+        layout.addWidget(line)
+
+        content = QWidget()
+        content.setStyleSheet("border: none; background: transparent;")
+        layout.addWidget(content, stretch=1)
+
+        frame.content_widget = content
+        return frame
+
+    def _init_running_text(self):
+        for lbl in self.pixel_labels:
+            lbl.setText(self._random_running_value() + "  •")
+        self._running_index = 0
+        self._running_timer = QTimer(self)
+        self._running_timer.setInterval(1000)
+        self._running_timer.timeout.connect(self._update_running_bar)
+        self._running_timer.start()
+
+    def _random_running_value(self):
+        return random.choice(RUNNING_VALUES)
+
+    def _update_running_bar(self):
+        if not self.pixel_labels: return
+        idx = self._running_index % len(self.pixel_labels)
+        self._running_index += 1
+        self.pixel_labels[idx].setText(self._random_running_value() + "  •")
+
+    def update_quality_label(self, val):
+        self.quality_val_label.setText(f"{val}%")
+
+    def on_fmt_changed(self, text):
+        if text in ["PNG", "BMP", "ICO"]:
+            self.quality_container.setVisible(False)
+            self.lossless_label.setVisible(True)
+        else:
+            self.quality_container.setVisible(True)
+            self.lossless_label.setVisible(False)
+
+    def show_file_info(self, current_item, previous_item):
+        if not current_item:
+            self.lbl_file_info.setText("Select an image...")
+            self.lbl_preview_img.setPixmap(QPixmap())
+            return
+
+        path_str = current_item.text()
+        full_path = None
+        for p in self.image_paths:
+            if p.name == path_str:
+                full_path = p
+                break
+
+        if full_path and full_path.exists():
+            try:
+                size_bytes = os.path.getsize(full_path)
+                size_str = self.format_bytes(size_bytes)
+
+                with Image.open(full_path) as img:
+                    width, height = img.size
+                    fmt = img.format or "Unknown"
+                    mode = img.mode
+
+                info_text = (
+                    f"File : {full_path.name}\n\n"
+                    f"Res  : {width} x {height} px\n"
+                    f"Size : {size_str}\n"
+                    f"Type : {fmt} ({mode})"
+                )
+                self.lbl_file_info.setText(info_text)
+
+                pix = QPixmap(str(full_path))
+                if not pix.isNull():
+                    self.lbl_preview_img.setPixmap(
+                        pix.scaled(QSize(300, 200), Qt.KeepAspectRatio, Qt.SmoothTransformation)
+                    )
+                else:
+                    self.lbl_preview_img.setText("(No Preview)")
+
+            except Exception as e:
+                self.lbl_file_info.setText(f"Error reading info.\n{e}")
+                self.lbl_preview_img.setPixmap(QPixmap())
+
+    def format_bytes(self, size):
+        power = 2**10
+        n = 0
+        power_labels = {0 : '', 1: 'KB', 2: 'MB', 3: 'GB'}
+        while size > power:
+            size /= power
+            n += 1
+        return f"{size:.2f} {power_labels.get(n, 'TB')}"
+
+    def add_images(self):
+        files, _ = QFileDialog.getOpenFileNames(self, "Select Images", "", IMAGE_FILTER)
+        if not files: return
+        for f in files:
+            path = Path(f)
+            if path not in self.image_paths:
+                self.image_paths.append(path)
+                self.file_list.addItem(path.name)
+
+        if self.file_list.count() > 0 and self.file_list.currentRow() < 0:
+            self.file_list.setCurrentRow(0)
+
+    def clear_list(self):
+        self.image_paths.clear()
+        self.file_list.clear()
+        self.lbl_file_info.setText("Select an image...")
+        self.lbl_preview_img.setPixmap(QPixmap())
+
+    def ensure_output_dir(self, sample_input):
+        if not self.output_dir:
+            self.output_dir = sample_input.parent / "LABOKit_Convert"
+            self.output_dir.mkdir(exist_ok=True)
+            self.output_label.setText(f"CONVERTER OUTPUT FOLDER: {self.output_dir}")
+        return self.output_dir
+
+    def change_output_folder(self):
+        folder = QFileDialog.getExistingDirectory(self, "Select Output Folder")
+        if folder:
+            self.output_dir = Path(folder)
+            self.output_label.setText(f"CONVERTER OUTPUT FOLDER: {self.output_dir}")
+
+    def process_selected(self):
+        selected_items = self.file_list.selectedItems()
+        if not selected_items:
+            QMessageBox.information(self, "Info", "No images selected.")
+            return
+
+        targets = []
+        for item in selected_items:
+            fname = item.text()
+            for p in self.image_paths:
+                if p.name == fname:
+                    targets.append(p)
+                    break
+        self._run_conversion(targets)
+
+    def process_all(self):
+        if not self.image_paths:
+            QMessageBox.information(self, "Info", "No images to convert.")
+            return
+        self._run_conversion(self.image_paths)
+
+    def _run_conversion(self, paths):
+        if not paths: return
+
+        out_dir = self.ensure_output_dir(paths[0])
+        target_ext = self.fmt_combo.currentText().lower()
+        quality = self.quality_slider.value()
+
+        progress = QProgressDialog("Converting...", "Cancel", 0, len(paths), self)
+        progress.setWindowModality(Qt.ApplicationModal)
+        progress.show()
+
+        processed = 0
+        errors = 0
+
+        for i, path in enumerate(paths):
+            if progress.wasCanceled(): break
+            progress.setLabelText(f"Converting {path.name} to {target_ext.upper()}...")
+            QApplication.processEvents()
+
+            try:
+                with Image.open(path) as img:
+                    out_name = f"{path.stem}.{target_ext}"
+                    out_path = out_dir / out_name
+
+                    if target_ext in ["jpg", "jpeg", "bmp"]:
+                        if img.mode in ("RGBA", "LA") or (img.mode == "P" and "transparency" in img.info):
+                            img = img.convert("RGBA")
+
+                            background = Image.new("RGB", img.size, (255, 255, 255))
+
+                            background.paste(img, mask=img.split()[3])
+
+                            img = background
+                        else:
+                            if img.mode != "RGB":
+                                img = img.convert("RGB")
+
+                    elif target_ext == "ico":
+                        if img.size[0] > 256 or img.size[1] > 256:
+                            img = img.resize((256, 256), Image.Resampling.LANCZOS)
+
+                    save_args = {}
+                    if target_ext in ["jpg", "jpeg", "webp"]:
+                        save_args["quality"] = quality
+
+                    if target_ext == "png":
+                        save_args["optimize"] = True
+
+                    img.save(out_path, **save_args)
+                    processed += 1
+
+            except Exception as e:
+                print(f"Error converting {path.name}: {e}")
+                errors += 1
+
+            progress.setValue(i + 1)
+
+        progress.close()
+
+        msg = f"Conversion Finished.\nSuccess: {processed}\nErrors: {errors}\n\nFolder: {out_dir}"
+        QMessageBox.information(self, "LABOKit Converter", msg)
+
+def create_tab(parent=None):
+    return ImageConverterTab(parent)

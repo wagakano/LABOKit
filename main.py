@@ -12,9 +12,7 @@ import base64
 import ssl
 import requests
 import svgwrite
-# cv2 removed from here
 from pathlib import Path
-# PIL removed from here (unused)
 from packaging import version
 import urllib3
 urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)

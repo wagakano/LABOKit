@@ -1,0 +1,537 @@
+# LABOKit Plugin: Quick Vector
+# ID: labokit.vector
+# Author: Kano
+
+import os
+import random
+import cv2
+import numpy as np
+import svgwrite
+from pathlib import Path
+from PIL import Image
+from PySide6.QtCore import Qt, QSize, QTimer
+from PySide6.QtGui import QPixmap, QImage, QFont
+from PySide6.QtWidgets import (
+    QWidget, QVBoxLayout, QHBoxLayout, QListWidget, QListWidgetItem,
+    QLabel, QPushButton, QFileDialog, QMessageBox, QProgressDialog,
+    QFrame, QComboBox, QSlider, QCheckBox, QApplication, QScrollArea
+)
+
+PLUGIN_ID = "labokit.vector"
+PLUGIN_NAME = "Quick Vector"
+PLUGIN_VERSION = "1.4"
+
+# --- HELP TEXT (ENGLISH) ---
+HELP_TEXT = (
+    "<h3>Quick Vector Guide</h3>"
+    "<p>This plugin converts raster images (JPG/PNG) into simple SVG vectors using Contour Tracing.</p>"
+    "<hr>"
+    "<b>HOW TO USE:</b>"
+    "<ol>"
+    "<li><b>Import Images:</b> Load logos, icons, or line-art (black and white images work best).</li>"
+    "<li><b>Preview Zoom:</b> Use the <b>Zoom Slider</b> to inspect pixel details.</li>"
+    "<li><b>Adjust Threshold:</b> Use the slider to determine the level of detail captured."
+    "<ul><li><i>Low:</i> Captures more noise and fine details.</li>"
+    "<li><i>High:</i> Cleaner results with fewer lines.</li></ul></li>"
+    "<li><b>Adjust Smoothness:</b> Smooth out jagged edges to make lines curvier.</li>"
+    "<li><b>Options:</b>"
+    "<ul><li><i>Invert:</i> Check this if your source image has white lines on a black background.</li>"
+    "<li><i>Fill Shapes:</i> Check for solid SVG results (filled). Uncheck for Outline mode (strokes only).</li></ul></li>"
+    "<li><b>Vectorize:</b> Click the button to process and save the result as an .SVG file.</li>"
+    "</ol>"
+    "<p><i>Note: This plugin is not suitable for realistic photos or complex scenery.</i></p>"
+)
+
+IMAGE_FILTER = "Images (*.jpg *.png *.bmp *.webp)"
+
+RUNNING_VALUES = [
+    "0.000000α", "0.134891α", "0.210317α", "0.337187α",
+    "0.456903α", "0.571024α", "0.571082α", "1.048596β",
+    "1.130205β", "1.130426β", "2.615483β", "3.019430δ",
+    "3.372329δ", "4.456441ε"
+]
+
+# --- CUSTOM LABEL (UPDATED: Works inside ScrollArea) ---
+class ZoomPreviewLabel(QLabel):
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        self.setAlignment(Qt.AlignCenter)
+        self.setStyleSheet("border: none; background: transparent;")
+
+        self._raw_pixmap = None
+        self._zoom_factor = 1.0
+
+    def set_raw_pixmap(self, pixmap):
+        self._raw_pixmap = pixmap
+        self._update_view()
+
+    def set_zoom(self, factor):
+        """Called by the slider"""
+        self._zoom_factor = factor
+        self._update_view()
+
+    def _update_view(self):
+        if not self._raw_pixmap:
+            self.clear()
+            return
+
+        # Hitung ukuran target berdasarkan ukuran ASLI gambar * zoom factor
+        # Ini penting agar label membesar di dalam ScrollArea
+        orig_w = self._raw_pixmap.width()
+        orig_h = self._raw_pixmap.height()
+
+        target_w = int(orig_w * self._zoom_factor)
+        target_h = int(orig_h * self._zoom_factor)
+
+        # Scaling Pixmap
+        scaled_pix = self._raw_pixmap.scaled(
+            target_w, target_h,
+            Qt.KeepAspectRatio, Qt.SmoothTransformation
+        )
+
+        # Set Pixmap dan Paksa Ukuran Label
+        super().setPixmap(scaled_pix)
+        self.setFixedSize(scaled_pix.size())
+
+class VectorTab(QWidget):
+    def __init__(self, parent=None):
+        super().__init__(parent)
+
+        self.image_paths = []
+        self.output_dir = None
+        self.current_preview_path = None
+        self.cached_pil_img = None
+        self.pixel_labels = []
+        self._running_index = 0
+        self._running_timer = None
+
+        self._setup_ui()
+        self._init_running_text()
+
+    def _setup_ui(self):
+        outer_layout = QVBoxLayout(self)
+        outer_layout.setContentsMargins(8, 8, 8, 8)
+        outer_layout.setSpacing(6)
+
+        main_layout = QHBoxLayout()
+        outer_layout.addLayout(main_layout, stretch=1)
+
+        # --- LEFT PANEL ---
+        left_layout = QVBoxLayout()
+        main_layout.addLayout(left_layout, stretch=1)
+
+        lbl_list = QLabel("LOADED IMAGES (Vector):")
+        lbl_list.setStyleSheet("border: none; background: transparent; color: #1c2333;")
+        left_layout.addWidget(lbl_list)
+
+        self.file_list = QListWidget()
+        self.file_list.currentItemChanged.connect(self.on_file_selected)
+        left_layout.addWidget(self.file_list)
+
+        btn_row = QHBoxLayout()
+        btn_add = QPushButton("Add Images…")
+        btn_add.clicked.connect(self.add_images)
+        btn_clear = QPushButton("Clear List")
+        btn_clear.clicked.connect(self.clear_list)
+        btn_row.addWidget(btn_add)
+        btn_row.addWidget(btn_clear)
+        left_layout.addLayout(btn_row)
+
+        # --- RIGHT PANEL ---
+        right_layout = QVBoxLayout()
+        main_layout.addLayout(right_layout, stretch=3)
+
+        self.output_label = QLabel("OUTPUT FOLDER: (auto)")
+        self.output_label.setWordWrap(True)
+        right_layout.addWidget(self.output_label)
+
+        # Preview Area
+        preview_layout = QHBoxLayout()
+
+        # Create boxes with ScrollArea support
+        self.orig_frame, self.lbl_orig = self._create_preview_box("Original")
+        preview_layout.addWidget(self.orig_frame)
+
+        self.res_frame, self.lbl_res = self._create_preview_box("Preview (Result)")
+        preview_layout.addWidget(self.res_frame)
+
+        right_layout.addLayout(preview_layout, stretch=1)
+
+        # --- CONTROLS SECTION ---
+        controls = QHBoxLayout()
+
+        # 1. ZOOM SLIDER
+        z_layout = QVBoxLayout()
+        z_layout.addWidget(QLabel("Preview Zoom:"))
+        h_zoom = QHBoxLayout()
+
+        self.zoom_slider = QSlider(Qt.Horizontal)
+        self.zoom_slider.setRange(10, 400) # 10% to 400%
+        self.zoom_slider.setValue(100)     # Default 100%
+        self.zoom_slider.valueChanged.connect(self.on_zoom_change)
+        h_zoom.addWidget(self.zoom_slider)
+
+        self.lbl_zoom_val = QLabel("100%")
+        self.lbl_zoom_val.setFixedWidth(40)
+        self.lbl_zoom_val.setStyleSheet("color: #1c2333;")
+        h_zoom.addWidget(self.lbl_zoom_val)
+
+        z_layout.addLayout(h_zoom)
+        controls.addLayout(z_layout, stretch=1)
+
+        # 2. Threshold Slider
+        t_layout = QVBoxLayout()
+        t_layout.addWidget(QLabel("Threshold (Detail):"))
+        h_slide = QHBoxLayout()
+        self.thresh_slider = QSlider(Qt.Horizontal)
+        self.thresh_slider.setRange(10, 240)
+        self.thresh_slider.setValue(127)
+        self.thresh_slider.valueChanged.connect(lambda: self.update_preview())
+        h_slide.addWidget(self.thresh_slider)
+
+        self.lbl_thresh = QLabel("127")
+        self.lbl_thresh.setFixedWidth(30)
+        self.lbl_thresh.setStyleSheet("color: #1c2333;")
+        h_slide.addWidget(self.lbl_thresh)
+        t_layout.addLayout(h_slide)
+        controls.addLayout(t_layout, stretch=1)
+
+        # 3. Smoothness Slider
+        s_layout = QVBoxLayout()
+        s_layout.addWidget(QLabel("Smoothness:"))
+        h_smooth = QHBoxLayout()
+        self.smooth_slider = QSlider(Qt.Horizontal)
+        self.smooth_slider.setRange(0, 100)
+        self.smooth_slider.setValue(10)
+        self.smooth_slider.valueChanged.connect(self.update_smooth_label)
+        self.smooth_slider.sliderReleased.connect(self.update_preview)
+        h_smooth.addWidget(self.smooth_slider)
+
+        self.lbl_smooth = QLabel("10")
+        self.lbl_smooth.setFixedWidth(30)
+        self.lbl_smooth.setStyleSheet("color: #1c2333;")
+        h_smooth.addWidget(self.lbl_smooth)
+        s_layout.addLayout(h_smooth)
+        controls.addLayout(s_layout, stretch=1)
+
+        # 4. Options
+        o_layout = QVBoxLayout()
+        o_layout.addWidget(QLabel("Options:"))
+
+        chk_style = """
+            QCheckBox { color: #1c2333; background: transparent; spacing: 5px; }
+            QCheckBox::indicator { width: 14px; height: 14px; background-color: #e6ecf7; border: 1px solid #9ca7c2; border-radius: 3px; }
+            QCheckBox::indicator:hover { background-color: #d8dfee; }
+            QCheckBox::indicator:checked { background-color: #5a6b8c; border: 1px solid #5a6b8c; }
+        """
+
+        self.chk_invert = QCheckBox("Invert")
+        self.chk_invert.setStyleSheet(chk_style)
+        self.chk_invert.stateChanged.connect(lambda: self.update_preview())
+        o_layout.addWidget(self.chk_invert)
+
+        self.chk_fill = QCheckBox("Fill Shapes")
+        self.chk_fill.setStyleSheet(chk_style)
+        self.chk_fill.setChecked(True)
+        self.chk_fill.stateChanged.connect(lambda: self.update_preview())
+        o_layout.addWidget(self.chk_fill)
+
+        controls.addLayout(o_layout)
+        right_layout.addLayout(controls)
+
+        # Action Buttons
+        action_row = QHBoxLayout()
+        btn_sel = QPushButton("Vectorize (Selected)")
+        btn_sel.clicked.connect(self.process_selected)
+        btn_all = QPushButton("Vectorize (All)")
+        btn_all.clicked.connect(self.process_all)
+        action_row.addWidget(btn_sel, stretch=1)
+        action_row.addWidget(btn_all, stretch=1)
+
+        right_layout.addSpacing(10)
+        right_layout.addLayout(action_row)
+
+        # Footer
+        bottom_frame = QFrame()
+        bottom_frame.setObjectName("PixelBar")
+        bar_layout = QHBoxLayout(bottom_frame)
+        bar_layout.setContentsMargins(10, 3, 10, 4)
+        bar_layout.setSpacing(18)
+
+        pixel_font = QFont("Consolas", 9)
+        for _ in range(10):
+            lbl = QLabel("0.000000α")
+            lbl.setAlignment(Qt.AlignLeft | Qt.AlignVCenter)
+            lbl.setFont(pixel_font)
+            self.pixel_labels.append(lbl)
+            bar_layout.addWidget(lbl)
+
+        outer_layout.addWidget(bottom_frame)
+
+    # --- ZOOM LOGIC ---
+    def on_zoom_change(self, value):
+        self.lbl_zoom_val.setText(f"{value}%")
+        factor = value / 100.0
+        self.lbl_orig.set_zoom(factor)
+        self.lbl_res.set_zoom(factor)
+
+    def change_output_folder(self):
+        d = QFileDialog.getExistingDirectory(self, "Select Output Folder")
+        if d:
+            self.output_dir = Path(d)
+            self.output_label.setText(f"OUTPUT FOLDER: {self.output_dir}")
+            QMessageBox.information(self, "Success", f"Output folder changed to:\n{self.output_dir}")
+
+    # --- UPDATED: BOX NOW CONTAINS SCROLL AREA ---
+    def _create_preview_box(self, title):
+        frame = QFrame()
+        frame.setFrameShape(QFrame.StyledPanel)
+        layout = QVBoxLayout(frame)
+        layout.setContentsMargins(6, 6, 6, 6)
+
+        lbl_title = QLabel(title)
+        lbl_title.setStyleSheet("border: none; background: transparent; color: #1c2333;")
+        layout.addWidget(lbl_title)
+
+        line = QFrame()
+        line.setFrameShape(QFrame.HLine)
+        line.setFrameShadow(QFrame.Sunken)
+        line.setStyleSheet("border: none; border-top: 1px solid #dbe2f2; margin-bottom: 2px;")
+        layout.addWidget(line)
+
+        # 1. Buat Scroll Area sebagai container
+        scroll = QScrollArea()
+        scroll.setWidgetResizable(False) # PENTING: False agar label bisa lebih besar dari area
+        scroll.setAlignment(Qt.AlignCenter) # Gambar selalu di tengah
+        scroll.setStyleSheet("background: transparent; border: none;") # Hilangkan border scroll area biar rapi
+
+        # 2. Masukkan Label ke dalam Scroll Area
+        content = ZoomPreviewLabel()
+        scroll.setWidget(content)
+
+        layout.addWidget(scroll, stretch=1)
+
+        # Return frame AND label (so we can control label later)
+        return frame, content
+
+    def _init_running_text(self):
+        for lbl in self.pixel_labels:
+            lbl.setText(self._random_running_value() + "  •")
+        self._running_index = 0
+        self._running_timer = QTimer(self)
+        self._running_timer.setInterval(1000)
+        self._running_timer.timeout.connect(self._update_running_bar)
+        self._running_timer.start()
+
+    def _random_running_value(self):
+        return random.choice(RUNNING_VALUES)
+
+    def _update_running_bar(self):
+        if not self.pixel_labels: return
+        idx = self._running_index % len(self.pixel_labels)
+        self._running_index += 1
+        self.pixel_labels[idx].setText(self._random_running_value() + "  •")
+
+    def update_smooth_label(self, val):
+        self.lbl_smooth.setText(str(val))
+
+    def _cache_image(self, path):
+        try:
+            self.cached_pil_img = Image.open(path)
+            if self.cached_pil_img.mode not in ("RGBA", "RGB", "L"):
+                self.cached_pil_img = self.cached_pil_img.convert("RGBA")
+        except Exception as e:
+            print(f"Cache Error: {e}")
+            self.cached_pil_img = None
+
+    def get_binary_map(self):
+        if self.cached_pil_img is None: return None, None
+
+        thresh_val = self.thresh_slider.value()
+        self.lbl_thresh.setText(str(thresh_val))
+
+        is_invert = self.chk_invert.isChecked()
+        bg_color = (0, 0, 0, 255) if is_invert else (255, 255, 255, 255)
+
+        if self.cached_pil_img.mode in ('RGBA', 'LA') or (self.cached_pil_img.mode == 'P' and 'transparency' in self.cached_pil_img.info):
+            work_img = self.cached_pil_img.convert("RGBA")
+            bg = Image.new("RGBA", work_img.size, bg_color)
+            composite = Image.alpha_composite(bg, work_img)
+            gray_pil = composite.convert("L")
+        else:
+            gray_pil = self.cached_pil_img.convert("L")
+
+        gray_np = np.array(gray_pil)
+        pad_color = 0 if is_invert else 255
+        gray_np = cv2.copyMakeBorder(gray_np, 1, 1, 1, 1, cv2.BORDER_CONSTANT, value=pad_color)
+
+        thresh_type = cv2.THRESH_BINARY if is_invert else cv2.THRESH_BINARY_INV
+        _, binary = cv2.threshold(gray_np, thresh_val, 255, thresh_type)
+
+        return binary, gray_np.shape
+
+    def save_svg(self, binary_map, output_path):
+        h, w = binary_map.shape
+        original_w, original_h = w - 2, h - 2
+
+        dwg = svgwrite.Drawing(str(output_path), size=(original_w, original_h), profile='tiny')
+        contours, _ = cv2.findContours(binary_map, cv2.RETR_TREE, cv2.CHAIN_APPROX_SIMPLE)
+
+        if not contours:
+            dwg.save()
+            return
+
+        smooth_val = self.smooth_slider.value()
+        factor = 0.0001 + (smooth_val * 0.0002)
+
+        path_data = []
+        for cnt in contours:
+            epsilon = factor * cv2.arcLength(cnt, True)
+            approx = cv2.approxPolyDP(cnt, epsilon, True)
+
+            if len(approx) < 3: continue
+
+            start_x, start_y = approx[0][0]
+            path_data.append(f"M {start_x-1},{start_y-1}")
+
+            for p in approx[1:]:
+                x, y = p[0]
+                path_data.append(f"L {x-1},{y-1}")
+            path_data.append("Z")
+
+        final_d = " ".join(path_data)
+
+        fill_color = "black" if self.chk_fill.isChecked() else "none"
+        stroke_color = "black" if not self.chk_fill.isChecked() else "none"
+        stroke_w = 1 if not self.chk_fill.isChecked() else 0
+
+        path_element = dwg.path(
+            d=final_d,
+            fill=fill_color,
+            stroke=stroke_color,
+            stroke_width=stroke_w,
+            fill_rule="evenodd"
+        )
+
+        dwg.add(path_element)
+        dwg.save()
+
+    def add_images(self):
+        files, _ = QFileDialog.getOpenFileNames(self, "Select Images", "", IMAGE_FILTER)
+        if not files: return
+        for f in files:
+            path = Path(f)
+            if path not in self.image_paths:
+                self.image_paths.append(path)
+                self.file_list.addItem(path.name)
+        if self.file_list.count() > 0: self.file_list.setCurrentRow(0)
+
+    def clear_list(self):
+        self.image_paths.clear()
+        self.file_list.clear()
+        self.cached_pil_img = None
+        self.lbl_orig.set_raw_pixmap(None)
+        self.lbl_res.set_raw_pixmap(None)
+
+    def on_file_selected(self, item, prev):
+        if not item: return
+        name = item.text()
+        for p in self.image_paths:
+            if p.name == name:
+                self.current_preview_path = p
+
+                pix = QPixmap(str(p))
+                if not pix.isNull():
+                    self.lbl_orig.set_raw_pixmap(pix)
+                    # Trigger zoom update right after loading
+                    self.on_zoom_change(self.zoom_slider.value())
+                else:
+                    self.lbl_orig.setText("(Load Failed)")
+
+                self._cache_image(p)
+                self.update_preview()
+                break
+
+    def update_preview(self):
+        if self.cached_pil_img is None: return
+
+        try:
+            binary, shape = self.get_binary_map()
+            if binary is None: return
+
+            h, w = shape
+            canvas = np.full((h, w, 3), 255, dtype=np.uint8)
+
+            contours, _ = cv2.findContours(binary, cv2.RETR_TREE, cv2.CHAIN_APPROX_SIMPLE)
+
+            smooth_val = self.smooth_slider.value()
+            factor = 0.0001 + (smooth_val * 0.0002)
+
+            smoothed_contours = []
+            for cnt in contours:
+                epsilon = factor * cv2.arcLength(cnt, True)
+                approx = cv2.approxPolyDP(cnt, epsilon, True)
+                smoothed_contours.append(approx)
+
+            is_fill = self.chk_fill.isChecked()
+            color = (0, 0, 0)
+            thickness = -1 if is_fill else 1
+
+            cv2.drawContours(canvas, smoothed_contours, -1, color, thickness)
+
+            final_view = np.ascontiguousarray(canvas[1:h-1, 1:w-1])
+
+            h_crop, w_crop, ch = final_view.shape
+            bytes_per_line = 3 * w_crop
+            qimg = QImage(final_view.data, w_crop, h_crop, bytes_per_line, QImage.Format_RGB888)
+            qpix = QPixmap.fromImage(qimg)
+
+            self.lbl_res.set_raw_pixmap(qpix)
+            # Apply current zoom to new result
+            self.on_zoom_change(self.zoom_slider.value())
+
+        except Exception as e:
+            print(f"Preview Error: {e}")
+
+    def ensure_output_dir(self, sample):
+        if not self.output_dir:
+            self.output_dir = sample.parent / "LABOKit_Vector"
+            self.output_dir.mkdir(exist_ok=True)
+            self.output_label.setText(f"OUTPUT FOLDER: {self.output_dir}")
+        return self.output_dir
+
+    def process_selected(self):
+        sel = self.file_list.selectedItems()
+        if not sel: return
+        targets = [p for p in self.image_paths if p.name in [i.text() for i in sel]]
+        self._run_process(targets)
+
+    def process_all(self):
+        if not self.image_paths: return
+        self._run_process(self.image_paths)
+
+    def _run_process(self, paths):
+        out = self.ensure_output_dir(paths[0])
+        dlg = QProgressDialog("Vectorizing...", "Cancel", 0, len(paths), self)
+        dlg.setWindowModality(Qt.ApplicationModal)
+        dlg.show()
+
+        for i, p in enumerate(paths):
+            if dlg.wasCanceled(): break
+            dlg.setLabelText(f"Tracing {p.name}...")
+            QApplication.processEvents()
+
+            try:
+                self._cache_image(p)
+                binary, _ = self.get_binary_map()
+
+                out_name = f"{p.stem}.svg"
+                self.save_svg(binary, out / out_name)
+            except Exception as e:
+                print(e)
+            dlg.setValue(i+1)
+        dlg.close()
+        QMessageBox.information(self, "Done", "Saved as SVG.")
+
+def create_tab(parent=None):
+    return VectorTab(parent)

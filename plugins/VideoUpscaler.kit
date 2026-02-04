@@ -1,0 +1,378 @@
+# LABOKit Plugin: Video Upscaler
+# ID: labokit.video_upscaler
+# Author: Kano
+
+import os
+import sys
+import subprocess
+import shutil
+import tempfile
+import random
+import time
+from pathlib import Path
+from PySide6.QtCore import Qt, QThread, Signal, QTimer, QSize
+from PySide6.QtGui import QFont, QIcon, QPixmap
+from PySide6.QtWidgets import (
+    QWidget, QVBoxLayout, QHBoxLayout, QListWidget, QListWidgetItem,
+    QLabel, QPushButton, QFileDialog, QMessageBox, QProgressDialog,
+    QFrame, QComboBox, QGroupBox, QApplication, QProgressBar, QCheckBox
+)
+
+PLUGIN_ID = "labokit.video_upscaler"
+PLUGIN_NAME = "Video Upscaler"
+PLUGIN_VERSION = "1.1"
+HELP_TEXT = (
+    "Video Upscaler Plugin\n\n"
+    "Upscale video files using Real-ESRGAN & FFmpeg.\n\n"
+    "Workflow:\n"
+    "1. Extract video frames.\n"
+    "2. Upscale frames (Batch).\n"
+    "3. Merge frames back to video.\n\n"
+    "Note: This process is heavy and may take a long time."
+)
+
+VIDEO_FILTER = "Video (*.mp4 *.mkv *.avi *.mov *.webm)"
+
+# --- STYLE COMPATIBILITY ---
+RUNNING_VALUES = [
+    "0.000000α", "0.134891α", "0.210317α", "0.337187α",
+    "0.456903α", "0.571024α", "0.571082α", "1.048596β",
+    "1.130205β", "1.130426β", "2.615483β", "3.019430δ",
+    "3.372329δ", "4.456441ε"
+]
+
+# --- WORKER THREAD (Background Process) ---
+class VideoWorker(QThread):
+    progress_log = Signal(str)
+    progress_val = Signal(int)
+    finished = Signal()
+    error = Signal(str)
+
+    def __init__(self, input_path, output_path, scale, model_name):
+        super().__init__()
+        self.input_path = str(input_path)
+        self.output_path = str(output_path)
+        self.scale = scale
+        self.model_name = model_name
+        self._is_running = True
+
+        app_data = Path(os.getenv('APPDATA')) / "LABOKit"
+        self.ffmpeg_exe = str(app_data / "ffmpeg" / "ffmpeg.exe")
+        self.ffprobe_exe = str(app_data / "ffmpeg" / "ffprobe.exe")
+        self.realesrgan_exe = str(app_data / "realesrgan" / "realesrgan-ncnn-vulkan.exe")
+        self.realesrgan_dir = str(app_data / "realesrgan")
+
+    def run(self):
+        temp_dir = Path(tempfile.mkdtemp(prefix="labokit_video_"))
+        frames_in = temp_dir / "frames_in"
+        frames_out = temp_dir / "frames_out"
+        frames_in.mkdir(); frames_out.mkdir()
+
+        try:
+            self.progress_log.emit("Analyzing video FPS...")
+            fps = self._get_fps()
+
+            self.progress_log.emit("Extracting frames (FFmpeg)...")
+            cmd_extract = [
+                self.ffmpeg_exe, "-i", self.input_path,
+                "-q:v", "1",
+                str(frames_in / "frame_%08d.png")
+            ]
+            subprocess.run(cmd_extract, check=True, creationflags=subprocess.CREATE_NO_WINDOW)
+
+            total_frames = len(list(frames_in.glob("*.png")))
+            self.progress_log.emit(f"Extracted {total_frames} frames.")
+
+            self.progress_log.emit(f"Upscaling ({self.model_name})... This takes time.")
+            self.progress_val.emit(10)
+
+            cmd_upscale = [
+                self.realesrgan_exe,
+                "-i", str(frames_in),
+                "-o", str(frames_out),
+                "-n", self.model_name,
+                "-s", str(self.scale),
+                "-f", "png"
+            ]
+
+            subprocess.run(
+                cmd_upscale,
+                check=True,
+                cwd=self.realesrgan_dir,
+                creationflags=subprocess.CREATE_NO_WINDOW
+            )
+            self.progress_val.emit(80)
+
+            self.progress_log.emit("Merging frames & audio...")
+
+            cmd_merge = [
+                self.ffmpeg_exe,
+                "-r", str(fps),
+                "-i", str(frames_out / "frame_%08d.png"),
+                "-i", self.input_path,
+                "-map", "0:v:0",
+                "-map", "1:a?",
+                "-c:a", "copy",
+                "-c:v", "libx264",
+                "-crf", "17",
+                "-pix_fmt", "yuv420p",
+                "-y",
+                self.output_path
+            ]
+
+            subprocess.run(cmd_merge, check=True, creationflags=subprocess.CREATE_NO_WINDOW)
+            self.progress_val.emit(100)
+            self.progress_log.emit("Done! Process Complete.")
+            self.finished.emit()
+
+        except Exception as e:
+            self.error.emit(str(e))
+        finally:
+            try: shutil.rmtree(temp_dir)
+            except: pass
+
+    def _get_fps(self):
+        cmd = [
+            self.ffprobe_exe,
+            "-v", "0", "-of", "csv=p=0", "-select_streams", "v:0",
+            "-show_entries", "stream=r_frame_rate", self.input_path
+        ]
+        result = subprocess.run(cmd, capture_output=True, text=True, creationflags=subprocess.CREATE_NO_WINDOW)
+        num, den = map(int, result.stdout.strip().split('/'))
+        return num / den
+
+# --- UI CLASS ---
+class VideoUpscalerTab(QWidget):
+    def __init__(self, parent=None):
+        super().__init__(parent)
+
+        self.input_file = None
+        self.output_dir = None
+        self.worker = None
+        self.pixel_labels = []
+        self._running_index = 0
+        self._running_timer = None
+
+        self._setup_ui()
+        self._init_running_text()
+
+    def _setup_ui(self):
+        # 1. Main Outer Layout
+        outer_layout = QVBoxLayout(self)
+        outer_layout.setContentsMargins(8, 8, 8, 8)
+        outer_layout.setSpacing(6)
+
+        # 2. Split Layout (Left / Right)
+        main_layout = QHBoxLayout()
+        outer_layout.addLayout(main_layout, stretch=1)
+
+        # --- LEFT SIDE: File List ---
+        left_layout = QVBoxLayout()
+        main_layout.addLayout(left_layout, stretch=1)
+
+        lbl_list = QLabel("LOADED VIDEO:")
+        lbl_list.setStyleSheet("border: none; background: transparent; color: #1c2333;")
+        left_layout.addWidget(lbl_list)
+
+        self.file_list = QListWidget()
+        left_layout.addWidget(self.file_list)
+
+        btn_row = QHBoxLayout()
+        btn_add = QPushButton("Browse Video…")
+        btn_add.clicked.connect(self.browse_video)
+        btn_clear = QPushButton("Clear")
+        btn_clear.clicked.connect(self.clear_list)
+        btn_row.addWidget(btn_add)
+        btn_row.addWidget(btn_clear)
+        left_layout.addLayout(btn_row)
+
+        # --- RIGHT SIDE: Controls & Status ---
+        right_layout = QVBoxLayout()
+        main_layout.addLayout(right_layout, stretch=3)
+
+        self.output_label = QLabel("OUTPUT FOLDER: (auto)")
+        self.output_label.setWordWrap(True)
+        right_layout.addWidget(self.output_label)
+
+        # Preview Boxes (repurposed for Info & Log)
+        preview_layout = QHBoxLayout()
+
+        # Box 1: Settings Display / Info
+        self.info_frame = self._create_preview_box("Settings / Info")
+        self.lbl_info = QLabel("No video loaded.")
+        self.lbl_info.setAlignment(Qt.AlignCenter)
+        self.lbl_info.setStyleSheet("color: #555;")
+        self.info_frame.content_widget.layout().addWidget(self.lbl_info)
+        preview_layout.addWidget(self.info_frame)
+
+        # Box 2: Log / Status
+        self.log_frame = self._create_preview_box("Process Log")
+        self.lbl_log = QLabel("Ready.")
+        self.lbl_log.setAlignment(Qt.AlignCenter)
+        self.lbl_log.setWordWrap(True)
+        self.lbl_log.setStyleSheet("color: #1c2333; font-style: italic;")
+        self.log_frame.content_widget.layout().addWidget(self.lbl_log)
+        preview_layout.addWidget(self.log_frame)
+
+        right_layout.addLayout(preview_layout, stretch=1)
+
+        # Controls Section
+        controls = QHBoxLayout()
+
+        # Scale Control
+        s_layout = QVBoxLayout()
+        s_layout.addWidget(QLabel("Scale Factor:"))
+        self.combo_scale = QComboBox()
+        self.combo_scale.addItems(["2x", "3x", "4x"])
+        self.combo_scale.setCurrentText("2x")
+        s_layout.addWidget(self.combo_scale)
+        controls.addLayout(s_layout, stretch=1)
+
+        # Model Control
+        m_layout = QVBoxLayout()
+        m_layout.addWidget(QLabel("AI Model:"))
+        self.combo_model = QComboBox()
+        self.combo_model.addItems(["realesrgan-x4plus", "realesrgan-x4plus-anime", "realesr-animevideov3"])
+        self.combo_model.setCurrentText("realesr-animevideov3")
+        m_layout.addWidget(self.combo_model)
+        controls.addLayout(m_layout, stretch=2)
+
+        right_layout.addLayout(controls)
+
+        # Progress Bar
+        self.pbar = QProgressBar()
+        self.pbar.setValue(0)
+        self.pbar.setTextVisible(False)
+        self.pbar.setStyleSheet("QProgressBar { border: 1px solid #dbe2f2; border-radius: 3px; background: white; height: 10px; } QProgressBar::chunk { background-color: #5a6b8c; }")
+        right_layout.addWidget(self.pbar)
+
+        # Action Buttons
+        action_row = QHBoxLayout()
+        self.btn_run = QPushButton("Start Upscaling")
+        self.btn_run.clicked.connect(self.start_process)
+        self.btn_run.setMinimumHeight(35)
+        action_row.addWidget(self.btn_run)
+
+        right_layout.addSpacing(5)
+        right_layout.addLayout(action_row)
+
+        # 3. Bottom Frame (Running Text Animation)
+        bottom_frame = QFrame()
+        bottom_frame.setObjectName("PixelBar")
+        bar_layout = QHBoxLayout(bottom_frame)
+        bar_layout.setContentsMargins(10, 3, 10, 4)
+        bar_layout.setSpacing(18)
+
+        pixel_font = QFont("Consolas", 9)
+        for _ in range(10):
+            lbl = QLabel("0.000000α")
+            lbl.setAlignment(Qt.AlignLeft | Qt.AlignVCenter)
+            lbl.setFont(pixel_font)
+            self.pixel_labels.append(lbl)
+            bar_layout.addWidget(lbl)
+
+        outer_layout.addWidget(bottom_frame)
+
+    def _create_preview_box(self, title):
+        frame = QFrame()
+        frame.setFrameShape(QFrame.StyledPanel)
+        layout = QVBoxLayout(frame)
+        layout.setContentsMargins(6, 6, 6, 6)
+
+        lbl_title = QLabel(title)
+        lbl_title.setStyleSheet("border: none; background: transparent; color: #1c2333;")
+        layout.addWidget(lbl_title)
+
+        line = QFrame()
+        line.setFrameShape(QFrame.HLine)
+        line.setFrameShadow(QFrame.Sunken)
+        line.setStyleSheet("border: none; border-top: 1px solid #dbe2f2; margin-bottom: 2px;")
+        layout.addWidget(line)
+
+        content = QWidget()
+        content.setStyleSheet("border: none; background: transparent;")
+        c_layout = QVBoxLayout(content)
+        c_layout.setContentsMargins(0,0,0,0)
+        layout.addWidget(content, stretch=1)
+
+        frame.content_widget = content
+        return frame
+
+    # --- Running Text Logic (Copied from Vector) ---
+    def _init_running_text(self):
+        for lbl in self.pixel_labels:
+            lbl.setText(self._random_running_value() + "  •")
+        self._running_index = 0
+        self._running_timer = QTimer(self)
+        self._running_timer.setInterval(1000)
+        self._running_timer.timeout.connect(self._update_running_bar)
+        self._running_timer.start()
+
+    def _random_running_value(self):
+        return random.choice(RUNNING_VALUES)
+
+    def _update_running_bar(self):
+        if not self.pixel_labels: return
+        idx = self._running_index % len(self.pixel_labels)
+        self._running_index += 1
+        self.pixel_labels[idx].setText(self._random_running_value() + "  •")
+
+    # --- Logic Handlers ---
+    def browse_video(self):
+        f, _ = QFileDialog.getOpenFileName(self, "Select Video", "", VIDEO_FILTER)
+        if f:
+            self.input_file = Path(f)
+            self.file_list.clear()
+            self.file_list.addItem(self.input_file.name)
+            self.output_label.setText(f"OUTPUT FOLDER: {self.input_file.parent}")
+            self.lbl_info.setText(f"File: {self.input_file.name}\nSize: {os.path.getsize(f) / (1024*1024):.2f} MB")
+            self.lbl_log.setText("Ready to process.")
+
+    def clear_list(self):
+        self.file_list.clear()
+        self.input_file = None
+        self.lbl_info.setText("No video loaded.")
+        self.lbl_log.setText("Ready.")
+        self.pbar.setValue(0)
+
+    def start_process(self):
+        if not self.input_file:
+            return QMessageBox.warning(self, "Error", "Please select a video first.")
+
+        scale_str = self.combo_scale.currentText()
+        scale = int(scale_str.replace("x", ""))
+        out_name = f"{self.input_file.stem}_upscaled_{scale_str}.mp4"
+        out_path = self.input_file.parent / out_name
+        model = self.combo_model.currentText()
+
+        self.btn_run.setEnabled(False)
+        self.pbar.setValue(0)
+        self.pbar.setRange(0, 0) # Indeterminate
+        self.lbl_log.setText("Starting process...")
+
+        self.worker = VideoWorker(self.input_file, out_path, scale, model)
+        self.worker.progress_log.connect(self.lbl_log.setText)
+        self.worker.progress_val.connect(self.update_bar)
+        self.worker.finished.connect(self.on_finished)
+        self.worker.error.connect(self.on_error)
+        self.worker.start()
+
+    def update_bar(self, val):
+        self.pbar.setRange(0, 100)
+        self.pbar.setValue(val)
+
+    def on_finished(self):
+        self.btn_run.setEnabled(True)
+        self.pbar.setValue(100)
+        self.lbl_log.setText("Finished!")
+        QMessageBox.information(self, "Success", "Video Upscaling Complete!")
+
+    def on_error(self, msg):
+        self.btn_run.setEnabled(True)
+        self.pbar.setRange(0, 100)
+        self.pbar.setValue(0)
+        self.lbl_log.setText("Error occurred.")
+        QMessageBox.critical(self, "Error", f"Process Failed:\n{msg}")
+
+def create_tab(parent=None):
+    return VideoUpscalerTab(parent)
