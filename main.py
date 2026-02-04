@@ -1,14 +1,3 @@
-# --- PATCH TORCHVISION BASICSR ---
-import torchvision.transforms.functional as F
-try:
-    from torchvision.transforms import functional_tensor
-except ImportError:
-    import sys
-    from types import ModuleType
-    
-    ft_module = ModuleType('torchvision.transforms.functional_tensor')
-    ft_module.rgb_to_grayscale = F.rgb_to_grayscale
-    sys.modules['torchvision.transforms.functional_tensor'] = ft_module
 
 import sys
 import os
@@ -23,24 +12,12 @@ import base64
 import ssl
 import requests
 import svgwrite
-import cv2
+# cv2 removed from here
 from pathlib import Path
-from PIL import Image
+# PIL removed from here (unused)
 from packaging import version
 import urllib3
 urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
-
-# --- IMPORT ENGINE AI  ---
-try:
-    import torch
-    import cv2
-    import numpy as np
-    from basicsr.archs.srvgg_arch import SRVGGNetCompact 
-    from realesrgan import RealESRGANer
-    HAS_TORCH = True
-except ImportError as e:
-    HAS_TORCH = False
-    print(f"Warning: AI Engine modules missing: {e}")
 
 # --- APP INFO ---
 APP_VERSION = "2.0.0"
@@ -86,17 +63,43 @@ IMAGE_FILTER = (
     "*.JPG *.JPEG *.PNG *.BMP *.TIF *.TIFF *.WEBP *.GIF)"
 )
 
-# --- IMPORT LIBRARY PYTORCH & REALESRGAN ---
-try:
-    import torch
-    from torch import nn
-    import numpy as np
-    import cv2
-    from realesrgan import RealESRGANer 
-    HAS_TORCH = True
-except ImportError as e:
-    HAS_TORCH = False
-    print(f"Warning: PyTorch/RealESRGAN modules not found: {e}")
+# --- LAZY LOADING AI ENGINE ---
+AI_MODULES = None
+
+def load_ai_engine():
+    global AI_MODULES
+    if AI_MODULES:
+        return AI_MODULES
+
+    try:
+        # Patch torchvision
+        import torchvision.transforms.functional as F
+        try:
+            from torchvision.transforms import functional_tensor
+        except ImportError:
+            import sys
+            from types import ModuleType
+            ft_module = ModuleType('torchvision.transforms.functional_tensor')
+            ft_module.rgb_to_grayscale = F.rgb_to_grayscale
+            sys.modules['torchvision.transforms.functional_tensor'] = ft_module
+
+        import torch
+        from torch import nn
+        import cv2
+        import numpy as np
+        from basicsr.archs.srvgg_arch import SRVGGNetCompact
+        from realesrgan import RealESRGANer
+
+        AI_MODULES = {
+            "torch": torch,
+            "cv2": cv2,
+            "SRVGGNetCompact": SRVGGNetCompact,
+            "RealESRGANer": RealESRGANer
+        }
+        return AI_MODULES
+    except ImportError as e:
+        print(f"AI Engine Load Error: {e}")
+        return None
 
 # --- BG REMOVER PRESETS ---
 BG_PRESETS = {
@@ -447,9 +450,16 @@ class UpscalerTab(QWidget):
         right.addWidget(self.preview_widget)
 
     def run_python_inference(self, img_path, out_path, model_name):
-        if not HAS_TORCH:
+        ai = load_ai_engine()
+        if not ai:
             QMessageBox.critical(self, "Error", "(torch/basicsr/realesrgan) is not ready.")
             return False
+
+        # Unpack
+        torch = ai["torch"]
+        cv2 = ai["cv2"]
+        SRVGGNetCompact = ai["SRVGGNetCompact"]
+        RealESRGANer = ai["RealESRGANer"]
 
         try:
             model_path = REALESRGAN_DIR / "models" / model_name 
