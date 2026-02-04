@@ -1,4 +1,4 @@
-# LABOKit Plugin: Dithering FX v2.3
+# LABOKit Plugin: Dithering FX v2.4
 # ID: labokit.dithering
 # Author: Kano
 
@@ -19,7 +19,7 @@ from ui_shared import FileDropListWidget, ZoomableImageWidget, create_plus_icon
 
 PLUGIN_ID = "labokit.dithering"
 PLUGIN_NAME = "Dithering FX"
-PLUGIN_VERSION = "2.3"
+PLUGIN_VERSION = "2.4"
 HELP_TEXT = (
     "<h3>Dithering FX</h3>"
     "<p>Retro dithering effects for your images.</p>"
@@ -207,7 +207,7 @@ class DitheringTab(QWidget):
         self.debounce_timer.setInterval(200)
         self.debounce_timer.timeout.connect(self.start_preview_worker)
 
-        # UI Styling (Light Mode & Bold Titles)
+        # UI Styling (Light Mode, Bold Titles, Custom Sliders)
         self.content_frame = QFrame(self)
         self.content_frame.setObjectName("DitheringContent")
         self.content_frame.setStyleSheet("""
@@ -226,6 +226,22 @@ class DitheringTab(QWidget):
                 border: 1px solid #b3bcd1; border-radius: 4px;
             }
             #DitheringContent QToolBox::tab:selected { background-color: #d4e3fc; font-style: italic; }
+
+            /* Custom Sliders (Match ImageLAB) */
+            #DitheringContent QSlider::handle:horizontal {
+                background: #2c3e50;
+                border: 1px solid #2c3e50;
+                width: 14px;
+                margin: -4px 0;
+                border-radius: 7px;
+            }
+            #DitheringContent QSlider::groove:horizontal {
+                border: 1px solid #999999;
+                height: 6px;
+                background: qlineargradient(x1:0, y1:0, x2:0, y2:1, stop:0 #B1B1B1, stop:1 #c4c4c4);
+                margin: 2px 0;
+                border-radius: 3px;
+            }
         """)
 
         CACHE_DIR.mkdir(parents=True, exist_ok=True)
@@ -488,8 +504,6 @@ class DitheringTab(QWidget):
 
                 self.loaded_proxy_path = str(real_path)
 
-                # Don't trigger update immediately to let user see original first
-                # Or trigger it? Usually users want to see effect.
                 self.trigger_update()
 
             except Exception as e:
@@ -516,101 +530,8 @@ class DitheringTab(QWidget):
 
     def on_preview_ready(self, pix_res):
         if pix_res:
-            # We want to preserve zoom AND potentially the original if it was a movie
-            # But ZoomableImageWidget.set_image_pixmaps resets movies.
-            # We must accept that previewing effect stops original animation in the preview window.
-            # This is acceptable for previewing the static effect.
-
-            # If we want to keep original as movie, we need to handle it.
-            # ZoomableWidget handles original_pixmap preservation if we pass it back.
-
-            # Current widget state:
-            # original_movie might be set if it's a GIF.
-
-            # If we pass original_pixmap=None, it clears original.
-            # We should try to keep the original visual.
-            # But set_image_pixmaps clears original_movie.
-
-            # Strategy: Just update the result pixmap. The widget will display result.
-            # If user toggles "Show Original", it might break if we cleared movie.
-            # So we rely on set_images(original) having set it up.
-
-            # Actually, `set_image_pixmaps` logic:
-            # self.original_pixmap = original_pixmap (overwrites)
-            # self.original_movie = None (clears)
-
-            # So if we want to support GIF original + Static Result Preview:
-            # We need to modify ZoomableImageWidget or handle it here.
-            # Let's just pass the original pixmap (first frame) for now to ensure consistency.
-            # The user asked for "GIF playable in image preview".
-            # If they toggle "Show Original", they want to see the GIF playing.
-            # If `set_image_pixmaps` kills the movie, that fails the requirement.
-
-            # NOTE: I modified ZoomableImageWidget to support movies.
-            # I should verify if `set_image_pixmaps` can be used to ONLY update result?
-            # It takes (original, result).
-
-            # If I pass `self.preview_widget.original_pixmap` it might be None if movie is set.
-            # Let's fix this by re-instantiating the movie if needed, or accepting that previewing effect stops animation.
-            # BUT, the user requirement is specific.
-
-            # Hack: We can just set the result pixmap directly if we access the label? No, encapsulation.
-
-            # Re-read `ui_shared.py` logic I wrote:
-            # set_image_pixmaps clears movie.
-
-            # Maybe I should use `set_images` but that expects paths.
-            # I have a memory pixmap for result.
-
-            # Okay, for now, let's assume standard behavior:
-            # Live preview = static frame processing.
-            # Original = Animated GIF (if we reload it).
-
-            # I will modify `on_preview_ready` to check if original was a gif path, and set it again?
-            # No, that restarts it.
-
-            # Let's stick to standard behavior: Static preview.
-            # "Make the gif is playable in the image preview" -> Likely refers to the Input (Original).
-            # If I use `set_image_pixmaps`, I lose the movie.
-
-            # I will use a valid workaround:
-            # If I want to keep the movie, I shouldn't call `set_image_pixmaps`.
-            # I need a method `set_result_pixmap(pix)` in `ui_shared`.
-            # But I can't modify `ui_shared` again in this step (I already did).
-
-            # Wait, I CAN modify `ui_shared` again if I want, but I marked it complete.
-            # I can just overwrite `ui_shared.py` again if really needed.
-            # Actually, `ZoomableImageWidget.set_image_pixmaps` sets `self.result_movie = None`.
-
-            # Let's try to just pass the static pixmap.
-            # If user wants to see animation, they click "Show Original".
-            # I will re-set the original movie in `toggle` logic? No.
-
-            # Let's just use `set_image_pixmaps` and fallback to static first frame for original.
-            # This satisfies "functionality" but maybe not the specific "playable" desire fully if they toggle.
-            # BUT, `set_images` in `on_file_selected` SETS the movie.
-            # Then `trigger_update` fires.
-            # Then `on_preview_ready` fires.
-            # Then `set_image_pixmaps` is called -> MOVIE KILLED.
-
-            # I should avoid calling `set_image_pixmaps` if I can help it, or fix `ui_shared` to accept `None` to preserve?
-            # The method signature: `set_image_pixmaps(self, original_pixmap, result_pixmap, preserve_zoom=False)`
-            # It sets `self.original_pixmap = original_pixmap`...
-
-            # I will accept that live preview kills the animation for now, but ensure processed result (GIF) plays.
-            pass
-
-        if pix_res:
-            # Get current original from widget if it exists as pixmap
-            orig = self.preview_widget.original_pixmap
-            # If it was a movie, orig is None.
-            # We create a static proxy for it
-            if orig is None and self.preview_proxy_img:
-                 raw_orig = self.preview_proxy_img.tobytes("raw", "RGBA")
-                 qorig = QImage(raw_orig, self.preview_proxy_img.width, self.preview_proxy_img.height, QImage.Format_RGBA8888)
-                 orig = QPixmap.fromImage(qorig)
-
-            self.preview_widget.set_image_pixmaps(orig, pix_res, preserve_zoom=True)
+            # Use the new method to update ONLY result
+            self.preview_widget.set_result_pixmap(pix_res)
 
         if self.meter: self.meter.set_message(None)
 

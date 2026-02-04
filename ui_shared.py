@@ -55,10 +55,10 @@ class ZoomableImageWidget(QScrollArea):
         self.setWidget(self.image_label)
         
         self.original_pixmap = None
-        self.original_movie = None # NEW: Support for GIF/Movie
+        self.original_movie = None
 
         self.result_pixmap = None
-        self.result_movie = None   # NEW: Support for GIF/Movie in result
+        self.result_movie = None
 
         self.current_target_pixmap = None
         self.current_target_movie = None
@@ -90,13 +90,11 @@ class ZoomableImageWidget(QScrollArea):
         self.setFocusPolicy(Qt.StrongFocus)
 
     def set_images(self, original_path, result_path):
-        # Reset current state
         self.original_pixmap = None
         self.original_movie = None
         self.result_pixmap = None
         self.result_movie = None
 
-        # Load Original
         if original_path:
             p = Path(original_path)
             if p.exists():
@@ -106,7 +104,6 @@ class ZoomableImageWidget(QScrollArea):
                 else:
                     self.original_pixmap = QPixmap(str(p))
 
-        # Load Result
         if result_path:
             p = Path(result_path)
             if p.exists():
@@ -119,7 +116,6 @@ class ZoomableImageWidget(QScrollArea):
         self.fit_to_view()
         self.btn_toggle.setChecked(False)
 
-        # Determine visibility of toggle
         has_orig = bool(self.original_pixmap or self.original_movie)
         has_res = bool(self.result_pixmap or self.result_movie)
         self.btn_toggle.setVisible(has_orig and has_res)
@@ -127,7 +123,6 @@ class ZoomableImageWidget(QScrollArea):
         self.update_display()
 
     def set_image_pixmaps(self, original_pixmap, result_pixmap, preserve_zoom=False):
-        # This method is primarily for static pixmaps (memory based)
         self.original_pixmap = original_pixmap
         self.original_movie = None
 
@@ -141,12 +136,26 @@ class ZoomableImageWidget(QScrollArea):
         self.btn_toggle.setVisible(bool(self.original_pixmap and self.result_pixmap))
         self.update_display()
 
+    # --- NEW METHOD ---
+    def set_result_pixmap(self, result_pixmap):
+        """Updates ONLY the result pixmap without clearing original (pixmap or movie)."""
+        self.result_pixmap = result_pixmap
+        self.result_movie = None
+
+        # Ensure toggle is visible if we have original
+        has_orig = bool(self.original_pixmap or self.original_movie)
+        self.btn_toggle.setVisible(has_orig and bool(self.result_pixmap))
+
+        # If currently showing result (or trying to), refresh
+        if not self.btn_toggle.isChecked():
+            self.update_display()
+    # ------------------
+
     def fit_to_view(self):
-        # Determine target for size calculation
         target_size = QSize(0,0)
 
         if self.original_pixmap: target_size = self.original_pixmap.size()
-        elif self.original_movie: target_size = self.original_movie.currentImage().size() # Approximation
+        elif self.original_movie: target_size = self.original_movie.currentImage().size()
         elif self.result_pixmap: target_size = self.result_pixmap.size()
         elif self.result_movie: target_size = self.result_movie.currentImage().size()
 
@@ -159,11 +168,6 @@ class ZoomableImageWidget(QScrollArea):
             self.scale_factor = 1.0
 
     def update_display(self):
-        # Stop previous movie if playing
-        if self.current_target_movie:
-            # We don't stop it because we might toggle back, but we clear label
-            pass
-
         self.current_target_pixmap = None
         self.current_target_movie = None
 
@@ -171,7 +175,6 @@ class ZoomableImageWidget(QScrollArea):
             if self.original_movie: self.current_target_movie = self.original_movie
             else: self.current_target_pixmap = self.original_pixmap
         else:
-            # Default to Result, fallback to Original
             if self.result_movie: self.current_target_movie = self.result_movie
             elif self.result_pixmap: self.current_target_pixmap = self.result_pixmap
             elif self.original_movie: self.current_target_movie = self.original_movie
@@ -181,19 +184,11 @@ class ZoomableImageWidget(QScrollArea):
 
     def _refresh_view(self):
         if self.current_target_movie:
-            # Movie Logic
             movie = self.current_target_movie
             if not movie.isValid():
                 self.image_label.setText("Invalid Movie")
                 return
 
-            # Helper to scale movie frames
-            # QMovie doesn't auto-scale nicely in QLabel without setScaledSize
-            base_size = movie.format() # Wait, format() returns string. We need size.
-            # QMovie.currentImage().size() might vary, but usually consistent.
-            # We assume initial size is representative.
-
-            # Hack: Get size from current pixmap or jump to 0
             if movie.currentPixmap().isNull():
                 movie.jumpToFrame(0)
 
@@ -203,12 +198,10 @@ class ZoomableImageWidget(QScrollArea):
                 movie.setScaledSize(new_size)
 
             self.image_label.setMovie(movie)
-            # Ensure movie is running (it might have been paused or not started)
             if movie.state() != QMovie.Running:
                 movie.start()
 
         elif self.current_target_pixmap and not self.current_target_pixmap.isNull():
-            # Pixmap Logic
             new_size = self.current_target_pixmap.size() * self.scale_factor
             scaled = self.current_target_pixmap.scaled(
                 new_size, Qt.KeepAspectRatio, Qt.SmoothTransformation
