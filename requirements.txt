@@ -13,3 +13,4 @@ basicsr
 realesrgan
 qrcode[pil]
 urllib3
+psutil

@@ -1,9 +1,12 @@
-from PySide6.QtCore import Qt, Signal
-from PySide6.QtGui import QPixmap, QPainter, QColor, QPen, QIcon, QAction
+from PySide6.QtCore import Qt, Signal, QTimer, QPoint
+from PySide6.QtGui import QPixmap, QPainter, QColor, QPen, QIcon, QAction, QFont, QCursor, QGuiApplication
 from PySide6.QtWidgets import (
-    QListWidget, QScrollArea, QLabel, QPushButton, QMenu
+    QListWidget, QScrollArea, QLabel, QPushButton, QMenu, QFrame, QHBoxLayout, QApplication
 )
+import random
 from pathlib import Path
+import psutil
+import os
 
 VALID_EXTENSIONS = {
     ".jpg", ".jpeg", ".png", ".bmp", ".tif", ".tiff", ".webp", ".gif"
@@ -41,6 +44,9 @@ class FileDropListWidget(QListWidget):
             event.ignore()
 
 class ZoomableImageWidget(QScrollArea):
+    # Callback for eyedropper: sends QColor
+    color_picked = Signal(QColor)
+
     def __init__(self, parent=None):
         super().__init__(parent)
         self.setWidgetResizable(True)
@@ -55,6 +61,7 @@ class ZoomableImageWidget(QScrollArea):
         self.result_pixmap = None
         self.current_target_pixmap = None
         self.scale_factor = 1.0
+        self.eyedropper_active = False
         
         # Toggle Button (Top-Right)
         self.btn_toggle = QPushButton("Show Original", self)
@@ -82,25 +89,33 @@ class ZoomableImageWidget(QScrollArea):
         self.original_pixmap = QPixmap(str(original_path)) if original_path and Path(original_path).exists() else None
         self.result_pixmap = QPixmap(str(result_path)) if result_path and Path(result_path).exists() else None
         
-        # Auto-fit logic for initial load
-        target = self.original_pixmap if self.original_pixmap else None
+        self.fit_to_view()
+        self.btn_toggle.setChecked(False)
+        self.btn_toggle.setVisible(bool(self.original_pixmap and self.result_pixmap))
+        self.update_display()
+
+    def set_image_pixmaps(self, original_pixmap, result_pixmap, preserve_zoom=False):
+        self.original_pixmap = original_pixmap
+        self.result_pixmap = result_pixmap
+        
+        if not preserve_zoom:
+            self.fit_to_view()
+        
+        self.btn_toggle.setChecked(False)
+        self.btn_toggle.setVisible(bool(self.original_pixmap and self.result_pixmap))
+        self.update_display()
+
+    def fit_to_view(self):
+        target = self.original_pixmap if self.original_pixmap else self.result_pixmap
         if target and not target.isNull():
-            # Calculate fit scale
             w_ratio = self.width() / target.width()
             h_ratio = self.height() / target.height()
             fit_scale = min(w_ratio, h_ratio)
-            self.scale_factor = min(fit_scale, 1.0) * 0.95 # Slight margin, cap at 100%
+            self.scale_factor = min(fit_scale, 1.0) * 0.95 
         else:
             self.scale_factor = 1.0
-        
-        # Reset toggle
-        self.btn_toggle.setChecked(False)
-        self.btn_toggle.setVisible(bool(self.original_pixmap and self.result_pixmap))
-        
-        self.update_display()
 
     def update_display(self):
-        # Determine which image to show
         if self.btn_toggle.isChecked() and self.original_pixmap:
             target = self.original_pixmap
         elif self.result_pixmap:
@@ -117,7 +132,6 @@ class ZoomableImageWidget(QScrollArea):
             self.image_label.setText("No Image")
             return
             
-        # Scale
         new_size = self.current_target_pixmap.size() * self.scale_factor
         scaled = self.current_target_pixmap.scaled(
             new_size, Qt.KeepAspectRatio, Qt.SmoothTransformation
@@ -125,15 +139,45 @@ class ZoomableImageWidget(QScrollArea):
         self.image_label.setPixmap(scaled)
         self.image_label.adjustSize()
         
+    def enable_eyedropper_mode(self):
+        self.eyedropper_active = True
+        QApplication.setOverrideCursor(Qt.CrossCursor)
+        self.grabMouse() # Capture global mouse events
+        
+        # Force show original for picking if available
+        if self.original_pixmap:
+            self.btn_toggle.setChecked(True)
+            self.update_display()
+
+    def mousePressEvent(self, event):
+        if self.eyedropper_active:
+            # Global Color Picking
+            global_pos = event.globalPosition().toPoint()
+            screen = QGuiApplication.screenAt(global_pos)
+            if not screen: screen = QGuiApplication.primaryScreen()
+            
+            # Grab 1x1 pixel at cursor
+            pix = screen.grabWindow(0, global_pos.x(), global_pos.y(), 1, 1)
+            img = pix.toImage()
+            color = img.pixelColor(0, 0)
+            
+            self.color_picked.emit(color)
+                
+            # Disable mode
+            self.eyedropper_active = False
+            self.releaseMouse()
+            QApplication.restoreOverrideCursor()
+            
+            self.btn_toggle.setChecked(False) # Revert view
+            self.update_display()
+        else:
+            super().mousePressEvent(event)
+
     def wheelEvent(self, event):
         if event.modifiers() & Qt.ControlModifier:
             delta = event.angleDelta().y()
-            if delta > 0:
-                self.scale_factor *= 1.25
-            else:
-                self.scale_factor *= 0.8
-            
-            # Clamp scale
+            if delta > 0: self.scale_factor *= 1.25
+            else: self.scale_factor *= 0.8
             self.scale_factor = max(0.1, min(self.scale_factor, 10.0))
             self._refresh_view()
             event.accept()
@@ -142,27 +186,102 @@ class ZoomableImageWidget(QScrollArea):
 
     def resizeEvent(self, event):
         super().resizeEvent(event)
-        # Position button top-right with margin
         bw, bh = self.btn_toggle.width(), self.btn_toggle.height()
         self.btn_toggle.move(self.width() - bw - 20, 20)
 
+class DivergenceMeter(QFrame):
+    RUNNING_VALUES = [
+        "0.000000α", "0.134891α", "0.210317α", "0.295582α",
+        "0.334581α", "0.337187α", "0.409420α", "0.456903α",
+        "0.571024α", "0.571046α", "0.615483α", "0.934587α",
+        "1.048596β", "1.130205β", "1.130426β", "3.019430δ",
+        "3.372329δ", "4.456441ε"
+    ]
+
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        self.setObjectName("PixelBar")
+        self.setStyleSheet("""
+            #PixelBar { background-color: #dde4f5; border-radius: 6px; border: 1px solid #b3bcd1; }
+            QLabel { color: #4b556b; font-family: 'Consolas'; font-size: 9pt; background: transparent; }
+            QLabel#StatusBox { 
+                background-color: #cbd5e1; 
+                border: 1px solid #94a3b8; 
+                border-radius: 4px;
+                color: #334155;
+                font-weight: bold;
+                padding-left: 8px;
+            }
+        """)
+        
+        self._layout = QHBoxLayout(self)
+        self._layout.setContentsMargins(10,3,10,4)
+        self._layout.setSpacing(18)
+        
+        self.labels = []
+        self._running_index = 0
+        self.override_message = None
+        
+        # 8 Small Boxes (Updated from 6)
+        font = QFont("Consolas", 9)
+        for _ in range(8):
+            l = QLabel("0.000000α")
+            l.setFont(font)
+            self.labels.append(l)
+            self._layout.addWidget(l)
+            
+        self._layout.addStretch()
+        
+        # 1 Long Status Box
+        self.status_label = QLabel("SYSTEM READY")
+        self.status_label.setObjectName("StatusBox")
+        self.status_label.setFont(font)
+        self.status_label.setFixedWidth(300) 
+        self.status_label.setAlignment(Qt.AlignVCenter | Qt.AlignLeft)
+        self._layout.addWidget(self.status_label)
+            
+        self.timer = QTimer(self)
+        self.timer.timeout.connect(self._update_text)
+        self.timer.start(100) 
+        self._update_text() 
+
+    def set_message(self, text):
+        self.override_message = text
+        self._update_status_box()
+
+    def _update_status_box(self):
+        if self.override_message:
+            self.status_label.setText(f"➤ {self.override_message}")
+            self.status_label.setStyleSheet("background-color: #a5f3fc; border: 1px solid #22d3ee; color: #0e7490;") 
+        else:
+            # Idle / RAM (Process Only)
+            try:
+                process = psutil.Process(os.getpid())
+                mem_bytes = process.memory_info().rss
+                ram_mb = mem_bytes / (1024 * 1024)
+                self.status_label.setText(f"APP MEM: {ram_mb:.1f} MB")
+            except:
+                self.status_label.setText("SYSTEM READY")
+            self.status_label.setStyleSheet("")
+
+    def _update_text(self):
+        idx = self._running_index % len(self.labels)
+        self._running_index += 1
+        val = random.choice(self.RUNNING_VALUES)
+        self.labels[idx].setText(f"{val}  •")
+        
+        if not self.override_message and self._running_index % 10 == 0: 
+            self._update_status_box()
+
 def create_plus_icon():
-    """Generates a simple flat '+' icon."""
     pix = QPixmap(16, 16)
     pix.fill(Qt.transparent)
     painter = QPainter(pix)
     painter.setRenderHint(QPainter.Antialiasing)
-    
-    # Dark grey plus
     pen = QPen(QColor("#333333"))
     pen.setWidth(2)
     painter.setPen(pen)
-    
-    # Draw +
-    # Vertical
     painter.drawLine(8, 3, 8, 13)
-    # Horizontal
     painter.drawLine(3, 8, 13, 8)
-    
     painter.end()
     return QIcon(pix)
