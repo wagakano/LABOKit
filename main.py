@@ -318,39 +318,58 @@ class BgRemoverTab(QWidget):
 
     def _run(self, paths):
         out = self.ensure_out(paths[0])
-        dlg = QProgressDialog("Removing BG...", "Cancel", 0, len(paths), self)
-        dlg.setWindowModality(Qt.ApplicationModal)
-        dlg.setFixedWidth(350)
-        dlg.show()
-        dlg.setValue(0)
-        QApplication.processEvents()
+        self.dlg = QProgressDialog("Initializing BG Remover", "Cancel", 0, len(paths), self)
+        self.dlg.setWindowModality(Qt.ApplicationModal)
+        self.dlg.setFixedWidth(350)
+        self.dlg.show()
+        self.dlg.setValue(0)
         
-        cnt = 0
-        import rembg
-        from rembg import new_session
-
-        # Create session once (reuse model for batch)
+        # Model Map
         model_map = {"General": "u2net", "Anime": "isnet-anime"}
         sel_model = model_map.get(self.combo_model.currentText(), "u2net")
-        session = new_session(model_name=sel_model)
+        preset = self.presets.get(self.current_preset_name, {})
+        
+        # Start Worker
+        self.worker = BgRemovalWorker(paths, out, sel_model, preset, self)
+        self.worker.progress.connect(self.on_worker_progress)
+        self.worker.finished.connect(lambda cnt: self.on_worker_finished(cnt, out))
+        self.worker.error.connect(self.on_worker_error)
+        
+        self.dlg.canceled.connect(self.worker.stop)
+        
+        self.worker.start()
 
-        for i, p in enumerate(paths):
-            if dlg.wasCanceled(): break
-            if self.meter: self.meter.set_message(f"Processing {i+1}/{len(paths)}")
-            dlg.setLabelText(f"Processing {p.name}...")
-            QApplication.processEvents()
-            try:
-                res = rembg.remove(p.read_bytes(), session=session, **self.presets.get(self.current_preset_name, {}))
-                opath = out / f"{p.stem}_nobg.png"
-                opath.write_bytes(res)
-                self.output_map[p] = opath
-                cnt += 1
-            except Exception as e: print(e)
-            dlg.setValue(i+1)
-        dlg.close()
+    def on_worker_progress(self, i, msg):
+        if self.meter: self.meter.set_message(f"{msg}")
+        self.dlg.setLabelText(msg)
+        self.dlg.setValue(i)
+        
+        # Collect output paths as we go? 
+        # Actually the worker writes files. We need to update self.output_map 
+        # But we can do that at the end or if we pass signals. 
+        # For now, let's update map at the end or assume filenames.
+        # Ideally we'd pass the result path back.
+        # But sticking to the pattern:
+        # We can reconstruct the path: out_dir / {stem}_nobg.png
+        # Let's verify files at the end.
+
+    def on_worker_finished(self, cnt, out_dir):
+        self.dlg.close()
         if self.meter: self.meter.set_message(None)
-        QMessageBox.information(self, "Done", f"Processed {cnt} images.\nFolder: {out}")
+        
+        # Update output map
+        for p in self.image_paths:
+            opath = out_dir / f"{p.stem}_nobg.png"
+            if opath.exists():
+                self.output_map[p] = opath
+
+        QMessageBox.information(self, "Done", f"Processed {cnt} images.\nFolder: {out_dir}")
         if self.list_w.currentRow() >= 0: self._update_prev(self.image_paths[self.list_w.currentRow()])
+
+    def on_worker_error(self, err):
+        self.dlg.close()
+        if self.meter: self.meter.set_message(None)
+        QMessageBox.critical(self, "Error", f"BG Removal Failed:\n{err}")
 
     def show_help(self):
         text = (
@@ -1079,6 +1098,49 @@ class LABOKitMainWindow(QMainWindow):
 class StartupWorker(QThread):
     def run(self):
         deploy_assets()
+
+class BgRemovalWorker(QThread):
+    progress = Signal(int, str)
+    finished = Signal(int)
+    error = Signal(str)
+
+    def __init__(self, paths, out_dir, model_name, preset, parent=None):
+        super().__init__(parent)
+        self.paths = paths
+        self.out_dir = out_dir
+        self.model_name = model_name
+        self.preset = preset
+        self.is_running = True
+
+    def run(self):
+        try:
+            import rembg
+            from rembg import new_session
+            
+            # Create session
+            session = new_session(model_name=self.model_name)
+            
+            cnt = 0
+            for i, p in enumerate(self.paths):
+                if not self.is_running: break
+                
+                self.progress.emit(i, f"Processing {p.name}...")
+                
+                try:
+                    res = rembg.remove(p.read_bytes(), session=session, **self.preset)
+                    opath = self.out_dir / f"{p.stem}_nobg.png"
+                    opath.write_bytes(res)
+                    cnt += 1
+                except Exception as e:
+                    print(f"Error processing {p.name}: {e}")
+            
+            self.finished.emit(cnt)
+            
+        except Exception as e:
+            self.error.emit(str(e))
+
+    def stop(self):
+        self.is_running = False
 
 def main():
     app = QApplication(sys.argv)
