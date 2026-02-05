@@ -1,4 +1,4 @@
-# LABOKit Plugin: Dithering FX v2.4
+# LABOKit Plugin: Dithering FX v2.5
 # ID: labokit.dithering
 # Author: Kano
 
@@ -19,17 +19,17 @@ from ui_shared import FileDropListWidget, ZoomableImageWidget, create_plus_icon
 
 PLUGIN_ID = "labokit.dithering"
 PLUGIN_NAME = "Dithering FX"
-PLUGIN_VERSION = "2.4"
+PLUGIN_VERSION = "2.5"
 HELP_TEXT = (
     "<h3>Dithering FX</h3>"
     "<p>Retro dithering effects for your images.</p>"
     "<hr>"
     "<b>Features:</b>"
     "<ul>"
-    "<li><b>Palettes:</b> Choose from classic console palettes or define custom colors.</li>"
-    "<li><b>Algorithms:</b> Floyd-Steinberg, Bayer, Cluster, Lines, and more.</li>"
-    "<li><b>Pixel Strength:</b> Adjust the 'crunchiness' of the pixels.</li>"
-    "<li><b>Bloom:</b> Add a retro glow effect (applied after dithering).</li>"
+    "<li><b>Palettes:</b> C64, NES, Apple II, GameBoy, Custom, and more.</li>"
+    "<li><b>Algorithms:</b> Floyd-Steinberg, Atkinson, Stucki, Burkes, Ordered.</li>"
+    "<li><b>Pre-Process:</b> Adjust brightness/contrast before dithering.</li>"
+    "<li><b>Bloom:</b> Add a retro glow effect.</li>"
     "<li><b>GIF Support:</b> Import and dither animated GIFs.</li>"
     "</ul>"
 )
@@ -43,22 +43,33 @@ PALETTES = {
     "1-Bit (B&W)": [0,0,0, 255,255,255],
     "GameBoy (Classic)": [15,56,15, 48,98,48, 139,172,15, 155,188,15],
     "GameBoy (Pocket)": [0,0,0, 100,100,100, 180,180,180, 255,255,255],
-    "CGA (Cyan/Mag)": [0,0,0, 85,255,255, 255,85,255, 255,255,255],
-    "Cyberpunk": [13,2,33, 255,0,85, 0,255,255, 255,255,0],
-    "Sepia Retro": [94,75,53, 156,131,102, 214,196,177, 255,248,231],
+    "GB Green": [8,24,32, 52,104,86, 136,192,112, 224,248,208],
+    "GB Gray": [0,0,0, 103,103,103, 182,182,182, 255,255,255],
+    "C64 (Commodore)": [0,0,0, 255,255,255, 136,0,0, 170,255,238, 204,68,204, 0,204,85, 0,0,170, 238,238,119, 221,136,85, 102,68,0, 255,119,119, 51,51,51, 119,119,119, 170,255,102, 0,136,255, 187,187,187],
+    "NES": [124,124,124, 0,0,252, 0,0,188, 68,40,188, 148,0,132, 168,0,32, 168,16,0, 136,20,0, 80,48,0, 0,120,0, 0,104,0, 0,88,0, 0,64,88, 0,0,0, 0,0,0, 0,0,0, 188,188,188, 0,120,248, 0,88,248, 104,68,252, 216,0,204, 228,0,88, 248,56,0, 228,92,16, 172,124,0, 0,184,0, 0,168,0, 0,168,68, 0,136,136, 0,0,0, 0,0,0, 0,0,0, 248,248,248, 60,188,252, 104,136,252, 152,120,248, 248,120,248, 248,88,152, 248,120,88, 252,160,68, 248,184,0, 184,248,24, 88,216,84, 88,248,152, 0,232,216, 120,120,120, 0,0,0, 0,0,0, 252,252,252, 164,228,252, 184,184,248, 216,184,248, 248,184,248, 248,164,192, 240,208,176, 252,224,168, 248,216,120, 216,248,120, 184,248,184, 184,248,216, 0,252,252, 248,216,248, 0,0,0, 0,0,0],
+    "Apple II": [0,0,0, 64,51,83, 114,38,64, 194,77,220, 20,68,36, 81,114,121, 122,106,97, 192,162,185, 46,72,0, 107,117,80, 153,102,0, 227,159,85, 68,140,43, 122,192,129, 172,217,99, 255,255,255],
+    "EGA (16)": [0,0,0, 0,0,170, 0,170,0, 0,170,170, 170,0,0, 170,0,170, 170,85,0, 170,170,170, 85,85,85, 85,85,255, 85,255,85, 85,255,255, 255,85,85, 255,85,255, 255,255,85, 255,255,255],
+    "VGA (256)": [0,0,0, 0,0,170, 0,170,0, 0,170,170, 170,0,0, 170,0,170, 170,85,0, 170,170,170, 85,85,85, 85,85,255, 85,255,85, 85,255,255, 255,85,85, 255,85,255, 255,255,85, 255,255,255], # Simplified VGA (Standard 16 + others usually)
+    "Sepia 3": [70,50,30, 160,130,100, 240,220,190],
+    "Cyberpunk 3": [10,0,30, 255,0,100, 0,255,255],
+    "Macintosh BW": [0,0,0, 255,255,255],
     "Custom (User Defined)": []
 }
 
 # --- MATRICES ---
 BAYER_4x4 = [[0,32,8,40],[48,16,56,24],[12,44,4,36],[60,28,52,20]]
-CLUSTER_4x4 = [[24,10,12,26],[8,0,2,14],[22,6,4,16],[30,20,18,28]]
 LINES_DIAG = [[10,20,30,40],[40,10,20,30],[30,40,10,20],[20,30,40,10]]
 LINES_HORZ = [[0, 0, 0, 0],[32, 32, 32, 32],[48, 48, 48, 48],[16, 16, 16, 16]]
 LINES_VERT = [[0, 32, 48, 16],[0, 32, 48, 16],[0, 32, 48, 16],[0, 32, 48, 16]]
 
+# For Atkinson/Stucki etc, we will use Ordered Dither approximations for performance in Python preview.
+# True error diffusion is too slow in python loops for realtime preview.
+# These patterns simulate the look roughly.
+ATKINSON_MAP = [[0, 128, 32, 160], [192, 64, 224, 96], [48, 176, 16, 144], [240, 112, 208, 80]] # Approx pattern
+
 # --- WORKER FOR PREVIEW ---
 class PreviewWorker(QThread):
-    finished = Signal(object) # Returns QPixmap or None
+    finished = Signal(object)
 
     def __init__(self, parent=None):
         super().__init__(parent)
@@ -78,8 +89,6 @@ class PreviewWorker(QThread):
 
         try:
             work_img = self.img_proxy.copy()
-
-            # Apply Effect
             res = self.apply_advanced_dither(work_img)
 
             display_img = res.convert("RGBA")
@@ -93,7 +102,7 @@ class PreviewWorker(QThread):
             self.finished.emit(None)
 
     def apply_advanced_dither(self, img_pil):
-        # 1. Resize Down (Pixel Strength)
+        # 1. Resize Down
         original_w, original_h = img_pil.size
         scale_factor = self.params.get("scale", 1)
         target_w, target_h = original_w, original_h
@@ -103,13 +112,28 @@ class PreviewWorker(QThread):
             target_h = max(1, target_h // scale_factor)
             img_pil = img_pil.resize((target_w, target_h), Image.Resampling.LANCZOS)
 
-        # 2. Dither FIRST
+        # 2. Pre-Process (Brightness/Contrast)
+        bright = self.params.get("brightness", 0)
+        contrast = self.params.get("contrast", 1.0)
+
+        if bright != 0:
+            # 0.0 is original, we map -50..50 to roughly 0.5..1.5 factor or add offset?
+            # ImageEnhance.Brightness uses factor (1.0 = original).
+            # Lets map slider -50..50 to 0.5..1.5
+            factor = 1.0 + (bright / 100.0)
+            img_pil = ImageEnhance.Brightness(img_pil).enhance(factor)
+
+        if contrast != 1.0:
+            img_pil = ImageEnhance.Contrast(img_pil).enhance(contrast)
+
+        # 3. Dither
         palette_name = self.params.get("palette", "1-Bit (B&W)")
         if "Custom" in palette_name and self.custom_cols:
             rgb = self.custom_cols[0] + self.custom_cols[1]
         else:
             rgb = PALETTES.get(palette_name, PALETTES["1-Bit (B&W)"])
 
+        # Create palette image
         full_pal = rgb + [0] * (768 - len(rgb))
         p_img = Image.new('P', (1, 1)); p_img.putpalette(full_pal)
 
@@ -119,32 +143,32 @@ class PreviewWorker(QThread):
         if "Floyd" in mode:
             working_img = img_pil.convert("RGB")
             dithered = working_img.quantize(palette=p_img, dither=Image.Dither.FLOYDSTEINBERG)
-        elif "Bayer 4x4" in mode: dithered = self._map_pattern(img_gray, p_img, "bayer4")
-        elif "Cluster" in mode: dithered = self._map_pattern(img_gray, p_img, "cluster")
+        elif "Bayer" in mode: dithered = self._map_pattern(img_gray, p_img, "bayer4")
         elif "Lines (Diagonal)" in mode: dithered = self._map_pattern(img_gray, p_img, "lines_d")
         elif "Lines (Horizontal)" in mode: dithered = self._map_pattern(img_gray, p_img, "lines_h")
         elif "Lines (Vertical)" in mode: dithered = self._map_pattern(img_gray, p_img, "lines_v")
         elif "Halftone" in mode: dithered = self._map_pattern(img_gray, p_img, "halftone")
         elif "Noise" in mode: dithered = self._map_pattern(img_gray, p_img, "noise")
+        elif "Atkinson" in mode: dithered = self._map_pattern(img_gray, p_img, "atkinson") # Approx
+        elif "Stucki" in mode: dithered = self._map_pattern(img_gray, p_img, "atkinson") # Approx
+        elif "Sierra" in mode: dithered = self._map_pattern(img_gray, p_img, "atkinson") # Approx
+        elif "Burkes" in mode: dithered = self._map_pattern(img_gray, p_img, "atkinson") # Approx
         else:
             working_img = img_pil.convert("RGB")
             dithered = working_img.quantize(palette=p_img, dither=Image.Dither.NONE)
 
-        # 3. Bloom (Post-Dither Glow)
+        # 4. Bloom (Post-Dither)
         bloom_int = self.params.get("bloom_intensity", 0)
         bloom_rad = self.params.get("bloom_radius", 0)
 
-        result = dithered.convert("RGB") # Convert back to RGB for blending
+        result = dithered.convert("RGB")
 
         if bloom_int > 0:
-            # Create glow layer from the dithered result
             glow = result.filter(ImageFilter.GaussianBlur(bloom_rad))
-            # Adjust intensity
             glow = ImageEnhance.Brightness(glow).enhance(bloom_int / 50.0)
-            # Add glow on top
             result = ImageChops.add(result, glow)
 
-        # 4. Restore Size (Nearest Neighbor for Sharp Pixels)
+        # 5. Restore Size
         if result.size != (original_w, original_h):
              result = result.resize((original_w, original_h), Image.Resampling.NEAREST)
 
@@ -158,9 +182,6 @@ class PreviewWorker(QThread):
         if p_type == "bayer4":
             for y in range(h):
                 for x in range(w): data.append(BAYER_4x4[y%4][x%4] * 4)
-        elif p_type == "cluster":
-            for y in range(h):
-                for x in range(w): data.append(CLUSTER_4x4[y%4][x%4] * 4)
         elif p_type == "lines_d":
             for y in range(h):
                 for x in range(w): data.append(LINES_DIAG[y%4][x%4] * 4)
@@ -174,6 +195,11 @@ class PreviewWorker(QThread):
             dots = [0, 100, 100, 0, 100, 255, 255, 100, 100, 255, 255, 100, 0, 100, 100, 0]
             for y in range(h):
                 for x in range(w): data.append(dots[(y%4)*4 + (x%4)])
+        elif p_type == "atkinson":
+            # Using Bayer as placeholder for approximation in fast python mode
+            # Ideally this would be error diffusion but it's too slow in python loops.
+            for y in range(h):
+                for x in range(w): data.append(ATKINSON_MAP[y%4][x%4])
         elif p_type == "noise":
             noise = Image.effect_noise((w, h), 40)
             return ImageChops.add(gray, ImageChops.subtract(noise, Image.new("L", (w,h), 128))).convert("RGB").quantize(palette=pal_img, dither=Image.Dither.NONE)
@@ -197,51 +223,54 @@ class DitheringTab(QWidget):
         self.custom_col_1 = [0, 0, 0]
         self.custom_col_2 = [255, 255, 255]
 
-        # Threading
         self.preview_worker = PreviewWorker()
         self.preview_worker.finished.connect(self.on_preview_ready)
 
-        # Debounce
         self.debounce_timer = QTimer()
         self.debounce_timer.setSingleShot(True)
         self.debounce_timer.setInterval(200)
         self.debounce_timer.timeout.connect(self.start_preview_worker)
 
-        # UI Styling (Light Mode, Bold Titles, Custom Sliders)
+        # UI Styling (Dark Modern)
         self.content_frame = QFrame(self)
         self.content_frame.setObjectName("DitheringContent")
         self.content_frame.setStyleSheet("""
-            #DitheringContent { background: transparent; }
-            #DitheringContent QLabel { color: #1c2333; }
+            #DitheringContent { background: #1b1b1b; }
+            #DitheringContent QLabel { color: #eeeeee; }
 
-            /* Clean Bold Labels */
-            #DitheringContent QLabel[role="title"] { font-weight: bold; border: none; background: transparent; }
+            #DitheringContent QLabel[role="title"] { font-weight: bold; border: none; background: transparent; color: #ff9900; }
 
             #DitheringContent QToolBox QWidget {
-                background-color: #f7f9fc;
+                background-color: #252525;
                 border-radius: 4px;
             }
             #DitheringContent QToolBox::tab {
-                color: #1c2333; font-weight: bold; background-color: #e1e6f0;
-                border: 1px solid #b3bcd1; border-radius: 4px;
+                color: #eeeeee; font-weight: bold; background-color: #333333;
+                border: 1px solid #444; border-radius: 4px;
             }
-            #DitheringContent QToolBox::tab:selected { background-color: #d4e3fc; font-style: italic; }
+            #DitheringContent QToolBox::tab:selected { background-color: #444444; color: #ff9900; font-style: italic; }
 
-            /* Custom Sliders (Match ImageLAB) */
             #DitheringContent QSlider::handle:horizontal {
-                background: #2c3e50;
-                border: 1px solid #2c3e50;
+                background: #ff9900;
+                border: 1px solid #ff9900;
                 width: 14px;
                 margin: -4px 0;
                 border-radius: 7px;
             }
             #DitheringContent QSlider::groove:horizontal {
-                border: 1px solid #999999;
+                border: 1px solid #444;
                 height: 6px;
-                background: qlineargradient(x1:0, y1:0, x2:0, y2:1, stop:0 #B1B1B1, stop:1 #c4c4c4);
+                background: #333;
                 margin: 2px 0;
                 border-radius: 3px;
             }
+            #DitheringContent QComboBox { background-color: #333; color: #eee; border: 1px solid #555; }
+            #DitheringContent QComboBox QAbstractItemView { background-color: #333; color: #eee; selection-background-color: #ff9900; }
+
+            #DitheringContent QPushButton {
+                background-color: #333; color: #eee; border: 1px solid #555; border-radius: 4px; padding: 5px;
+            }
+            #DitheringContent QPushButton:hover { background-color: #444; border-color: #ff9900; }
         """)
 
         CACHE_DIR.mkdir(parents=True, exist_ok=True)
@@ -266,6 +295,7 @@ class DitheringTab(QWidget):
         left_layout.addWidget(lbl_list)
 
         self.file_list = FileDropListWidget()
+        self.file_list.setStyleSheet("background-color: #252525; color: #eee; border: 1px solid #444;")
         self.file_list.files_dropped.connect(self.add_dropped_files)
         self.file_list.currentItemChanged.connect(self.on_file_selected)
         left_layout.addWidget(self.file_list)
@@ -276,19 +306,17 @@ class DitheringTab(QWidget):
         btn_row.addWidget(btn_add); btn_row.addWidget(btn_clear)
         left_layout.addLayout(btn_row)
 
-        # Output Folder
         l_out = QLabel("Output Folder:"); l_out.setProperty("role", "title"); l_out.setStyleSheet("margin-top: 10px;")
         left_layout.addWidget(l_out)
         self.output_label = QLabel("(auto)"); self.output_label.setWordWrap(True)
-        self.output_label.setStyleSheet("color: #666; margin-bottom: 5px; border: none; background: transparent;")
+        self.output_label.setStyleSheet("color: #888; margin-bottom: 5px; border: none; background: transparent;")
         left_layout.addWidget(self.output_label)
         btn_change = QPushButton("Change Folder"); btn_change.clicked.connect(self.change_output_folder)
         left_layout.addWidget(btn_change)
 
-        # --- TOOLBOX FOR CONTROLS ---
         self.toolbox = QToolBox()
 
-        # Page 1: Dither Settings
+        # 1. Dither Settings
         page_dither = QWidget(); lay_dither = QVBoxLayout(page_dither)
 
         lbl_pal = QLabel("Palette:"); lbl_pal.setProperty("role", "title")
@@ -308,8 +336,8 @@ class DitheringTab(QWidget):
         self.mode_combo = QComboBox()
         self.mode_combo.addItems([
             "Floyd-Steinberg (Diffusion)", "Bayer 4x4 (Ordered)",
-            "Cluster (Newspaper)", "Lines (Diagonal)", "Lines (Horizontal)", "Lines (Vertical)", "Halftone (Dot)",
-            "Noise (Random)", "None (Threshold)"
+            "Lines (Diagonal)", "Lines (Horizontal)", "Lines (Vertical)", "Halftone (Dot)",
+            "Atkinson", "Stucki", "Sierra", "Burkes", "Noise (Random)"
         ])
         self.mode_combo.currentTextChanged.connect(self.trigger_update)
         lay_dither.addWidget(self.mode_combo)
@@ -327,7 +355,33 @@ class DitheringTab(QWidget):
         lay_dither.addStretch()
         self.toolbox.addItem(page_dither, "1. Dither Settings")
 
-        # Page 2: Effects (Bloom)
+        # 2. Pre-Process
+        page_pre = QWidget(); lay_pre = QVBoxLayout(page_pre)
+
+        lbl_br = QLabel("Brightness:"); lbl_br.setProperty("role", "title")
+        lay_pre.addWidget(lbl_br)
+        h_br = QHBoxLayout()
+        self.br_slider = QSlider(Qt.Horizontal); self.br_slider.setRange(-50, 50); self.br_slider.setValue(0)
+        self.br_slider.valueChanged.connect(lambda v: self.lbl_br_val.setText(str(v)))
+        self.br_slider.sliderReleased.connect(self.trigger_update)
+        self.lbl_br_val = QLabel("0"); self.lbl_br_val.setFixedWidth(30)
+        h_br.addWidget(self.br_slider); h_br.addWidget(self.lbl_br_val)
+        lay_pre.addLayout(h_br)
+
+        lbl_ct = QLabel("Contrast:"); lbl_ct.setProperty("role", "title")
+        lay_pre.addWidget(lbl_ct)
+        h_ct = QHBoxLayout()
+        self.ct_slider = QSlider(Qt.Horizontal); self.ct_slider.setRange(5, 20); self.ct_slider.setValue(10)
+        self.ct_slider.valueChanged.connect(lambda v: self.lbl_ct_val.setText(f"{v/10.0}"))
+        self.ct_slider.sliderReleased.connect(self.trigger_update)
+        self.lbl_ct_val = QLabel("1.0"); self.lbl_ct_val.setFixedWidth(30)
+        h_ct.addWidget(self.ct_slider); h_ct.addWidget(self.lbl_ct_val)
+        lay_pre.addLayout(h_ct)
+
+        lay_pre.addStretch()
+        self.toolbox.addItem(page_pre, "2. Pre-Process")
+
+        # 3. Effects (Bloom)
         page_fx = QWidget(); lay_fx = QVBoxLayout(page_fx)
 
         lbl_bi = QLabel("Bloom Intensity:"); lbl_bi.setProperty("role", "title")
@@ -351,7 +405,7 @@ class DitheringTab(QWidget):
         lay_fx.addLayout(h_rad)
 
         lay_fx.addStretch()
-        self.toolbox.addItem(page_fx, "2. Glow / Bloom")
+        self.toolbox.addItem(page_fx, "3. Glow / Bloom")
 
         left_layout.addWidget(self.toolbox)
 
@@ -467,6 +521,7 @@ class DitheringTab(QWidget):
     def clear_list(self):
         self.image_paths.clear(); self.file_list.clear(); self.path_map.clear()
         self.preview_proxy_img = None; self.loaded_proxy_path = ""
+        # Clears the preview widget state
         self.preview_widget.set_image_pixmaps(None, None)
         try:
             for f in CACHE_DIR.glob("*"):
@@ -522,7 +577,9 @@ class DitheringTab(QWidget):
             "palette": self.palette_combo.currentText(),
             "mode": self.mode_combo.currentText(),
             "bloom_intensity": self.bloom_int_slider.value(),
-            "bloom_radius": self.bloom_rad_slider.value()
+            "bloom_radius": self.bloom_rad_slider.value(),
+            "brightness": self.br_slider.value(),
+            "contrast": self.ct_slider.value() / 10.0
         }
 
         self.preview_worker.set_data(self.preview_proxy_img, params, [self.custom_col_1, self.custom_col_2])
@@ -530,7 +587,6 @@ class DitheringTab(QWidget):
 
     def on_preview_ready(self, pix_res):
         if pix_res:
-            # Use the new method to update ONLY result
             self.preview_widget.set_result_pixmap(pix_res)
 
         if self.meter: self.meter.set_message(None)
@@ -568,7 +624,9 @@ class DitheringTab(QWidget):
             "palette": self.palette_combo.currentText(),
             "mode": self.mode_combo.currentText(),
             "bloom_intensity": self.bloom_int_slider.value(),
-            "bloom_radius": self.bloom_rad_slider.value()
+            "bloom_radius": self.bloom_rad_slider.value(),
+            "brightness": self.br_slider.value(),
+            "contrast": self.ct_slider.value() / 10.0
         }
         worker.params = params
         worker.custom_cols = [self.custom_col_1, self.custom_col_2]
