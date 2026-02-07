@@ -253,10 +253,11 @@ class BgRemoverTab(QWidget):
 
     def clear_list(self):
         self.image_paths.clear(); self.output_map.clear(); self.list_w.clear()
-        self._update_prev(None)
+        self.preview_widget.set_images(None, None) # Explicitly clear
 
     def on_file_selected(self, row):
-        if row < 0 or row >= len(self.image_paths): self._update_prev(None)
+        if row < 0 or row >= len(self.image_paths): 
+            self.preview_widget.set_images(None, None)
         else: self._update_prev(self.image_paths[row])
 
     def show_list_context_menu(self, pos):
@@ -278,13 +279,16 @@ class BgRemoverTab(QWidget):
                     del self.output_map[path]
             # Clear preview if list empty or selection changed
             if not self.image_paths:
-                self._update_prev(None)
+                self.preview_widget.set_images(None, None)
             elif row < len(self.image_paths):
                 self.list_w.setCurrentRow(row) # Select next
             else:
                 self.list_w.setCurrentRow(len(self.image_paths) - 1) # Select last
 
     def _update_prev(self, path):
+        if path is None:
+            self.preview_widget.set_images(None, None)
+            return
         out = self.output_map.get(path)
         self.preview_widget.set_images(path, out)
 
@@ -491,10 +495,11 @@ class UpscalerTab(QWidget):
 
     def clear_list(self):
         self.image_paths.clear(); self.output_map.clear(); self.list_w.clear()
-        self._update_prev(None)
+        self.preview_widget.set_images(None, None)
 
     def on_item(self, curr, prev):
-        if not curr: self._update_prev(None)
+        if not curr: 
+            self.preview_widget.set_images(None, None)
         else: self._update_prev(curr.data(Qt.UserRole))
 
     def show_list_context_menu(self, pos):
@@ -516,11 +521,14 @@ class UpscalerTab(QWidget):
                     del self.output_map[path]
             # Update preview
             if not self.image_paths:
-                self._update_prev(None)
+                self.preview_widget.set_images(None, None)
             elif self.list_w.currentItem():
                 self.on_item(self.list_w.currentItem(), None)
 
     def _update_prev(self, path):
+        if path is None:
+            self.preview_widget.set_images(None, None)
+            return
         self.view_path = path
         out = self.output_map.get(path)
         self.preview_widget.set_images(path, out)
