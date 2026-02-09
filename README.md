@@ -33,7 +33,7 @@
 ## 📥 Download
 
 **(Windows)**
-1.  Go to the **[Releases](https://github.com/wagakano/LABOKit/releases/tag/v3.0)** page.
+1.  Go to the **[Releases](https://github.com/wagakano/LABOKit/releases/tag/3.0)** page.
 2.  Download the `LABOKit_v3.0.zip` & Extract.
 3.  Run `LABOKit_v3.0.exe` and enjoy! (☆▽☆)
 
