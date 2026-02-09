@@ -1,4 +1,4 @@
-# LABOKit ⌀ v2.0 (3.0 Upcoming - 10 February) [DOWNLOAD](https://github.com/wagakano/LABOKit?tab=readme-ov-file#-download)
+# LABOKit ⌀ v3.0
 
 <img width="1365" height="416" alt="Banner" src="https://github.com/user-attachments/assets/f4ab1e1b-de1c-4a0f-a648-25b210f0ea4f" />
 
@@ -11,48 +11,31 @@
 * **User-Friendly & Fast:** Designed for simplicity and speed. Just load your images and click.
 * **Batch Background Removal:** Powered by `rembg` (U^2-Net).
 * **Batch Upscaling (Hybrid):** Supports both GPU (Vulkan) and CPU (PyTorch) processing.
-* **ImageLAB:** Built-in editor for creative effects and glitches.
+* **ImageLAB:** Built-in editor for creative effects, ASCII art, and glitches.
 * **World Line Meter:** Visual decoration displaying divergence numbers.
 * **Plugin System:** Extend functionality using `.kit` files.
 * **Offline Mode:** All processing is done locally on your machine.
+* **Multilanguage:** Supports English, Japanese (日本語), and Indonesian (Bahasa Indonesia).
 
-<img width="1200" height="800" alt="Image" src="https://github.com/user-attachments/assets/515b5725-dcde-4384-a91d-d56f8badfb49" />
-<img width="1200" height="800" alt="Image" src="https://github.com/user-attachments/assets/9566a831-61ea-4e3d-8237-2fbcb614ea51" />
-
-![Image](https://github.com/user-attachments/assets/f38a6769-3242-4527-9863-790afc4c2c7b)
-
-## What's New in v2.0
-* **New Feature: ImageLAB:** A built-in image editor playground! Add effects like Pattern Overlay, Partial Color, Artifact Glitch, and Randomizer to your images.
-* **CPU-Friendly Upscaling:** Added `realesr-general-x4v3` model. This allows upscaling on computers *without* Vulkan GPUs (Low-end PC friendly).
-* **ONNX Loader Plugin:** Load your own custom `.onnx` upscaling models. LABOKit now serves as a GUI for your personal models.
-* **UI Overhaul:** Significant improvements to the overall user interface for a cleaner look.
-* **Auto-Updates:** Get notified when a new version of LABOKit is available. Plus, installed plugins now **update automatically**, eliminating manual redownloads.
-* **Plugin Improvements:**
-    * **Dithering FX:** Refreshed UI, improved dithering results, and added more configuration options.
-    * **Quick Vector:** Added **Zoom** feature to inspect vector details.
-    * **Image Converter:** Fixed Transparency Glitch when converting PNG to JPG.
-* **General:** Minor bug fixes and performance improvements.
-
-## What's New in 3.0 (UPCOMING)
-* **Improved BG Remover:** Optimized for anime-style illustrations with cleaner edge detection. Now even more precise for digital art.
-* **New Feature: ASCII Lab (for ImageLAB):** A dedicated playground for ASCII art generation.
-    * **Advanced Tone Control:** sliders for **Resolution** with basic adjustment like Contrast and Brightness to fine-tune your results.
-    * **8 ASCII Types:** Choose from 8 different character sets/styles.
-* **Major UI/UX Overhaul:** * **Drag & Drop:** Import your images instantly by dragging them into the app.
-    * **Flexible List Management:** You can now selectively remove specific images from the batch list instead of clearing all.
-    * **Resource Monitor:** Added a real-time **RAM Usage Status** to keep track of your system performance.
-* **Performance Boost:** * **Optimized Startup:** Refactored initialization for a significantly faster application launch.
-    * **Faster Batch Processing:** Faster processing times for both **Batch Upscaling** and **Batch Background Removal**.
-* **General:** Minor bug fixes and improved stability for long processing sessions.
-
-*Note: Additional features for v3.0 are currently in development (Dithering FX - GIF Support, New Plugin: GIF Maker) and will be announced soon.*
+## What's New in v3.0
+* **Drag n Drop:** Import your images instantly by dragging them into the app.
+* **Multilanguage Support:** Added Interface language options for Japanese (日本語) and Indonesian (Bahasa Indonesia).
+* **Performance Boost:** All processing (Upscaling, BG Removal, Dithering) now runs on background threads, preventing "Not Responding" freezes.
+* **Improved BG Remover:** Improved BG Remover to remove anime background more accurate and precise.
+* **DitheringFX v3.3:**
+    * **True Error Diffusion:** Implemented accurate Atkinson, Stucki, Burkes, and Sierra algorithms (with total 11 Algorithms).
+    * **GIF Support:** Full support for importing, processing, and previewing animated GIFs.
+    * **Bloom Effect:** Add retro glow to your dithered images.
+    * **Enhanced Controls:** New sliders for Softness, Noise, and Error Bleed.
+* **ImageLAB ASCII:** adding ASCII art generation with 8 ASCII Types (character sets) and color modes.
+* **Improved Stability:** Fixed crashes related to Video Upscaling and GIF rendering.
 
 ## 📥 Download
 
 **(Windows)**
-1.  Go to the **[Releases](https://github.com/wagakano/LABOKit/releases/tag/v2.0)** page.
-2.  Download the `LABOKit_v2.0.exe`.
-3.  Run `LABOKit_v2.0.exe` and enjoy! (☆▽☆)
+1.  Go to the **[Releases](https://github.com/wagakano/LABOKit/releases/tag/v3.0)** page.
+2.  Download the `LABOKit_v3.0.exe`.
+3.  Run `LABOKit_v3.0.exe` and enjoy! (☆▽☆)
 
 **(Linux)**
 * **[Source Code](https://github.com/wagakano/LABOKit/tree/main_linux)**
@@ -60,16 +43,6 @@
 **LABOKit Electron Ver - Alternative UI**
 Contributed by: **Chizzui**
 * **[Download v1.3](https://github.com/Chizuui/labokit-electron)**
-
-## ⚠️ Hardware Requirement
-> LABOKit processes everything locally using advanced AI models.
-> * **Standard Upscaling (x4plus):** Requires a **Vulkan-compatible GPU**.
-> * **CPU Upscaling (General x4v3):** Works on **any computer** (including non-Vulkan/Integrated Graphics).
-> * **Performance:** High-end PCs will process images instantly. Low-end PCs may experience longer processing times during upscaling.
-
-## ⚠️ Important Notes
-* **First Startup Delay:** When you run the application for the first time, the startup process may take longer than usual. You might see a "Not Responding" status while the app initializes and loads the necessary data. This is normal and only happens during the first run; subsequent launches will be much faster.
-* **Upscaling & System Load:** During the upscaling process, the application may temporarily enter a "Not Responding" state. This is expected behavior due to the heavy computational load required by the ESRGAN models. Even on high-end systems, this can happen. As long as the application does not crash, please wait for the process to complete—it is working hard in the background!
 
 ## Plugins
 LABOKit capabilities can be extended using `.kit` plugins.
@@ -94,23 +67,17 @@ Upscale video files significantly using the power of **Real-ESRGAN** and **FFmpe
 
 > **⚠️ Note:** This process is resource-intensive (GPU/CPU) and may take a long time depending on the video length and upscaling factor.
 
-<img width="1200" height="800" alt="Image" src="https://github.com/user-attachments/assets/e130932c-84e3-4252-b81a-d8511eda4b21" />
-
 ### 2. ONNX Loader
 **File:** **[ONNXLoader.kit](https://github.com/wagakano/LABOKit/releases/download/v2.0/ONNXLoader.kit)**
 **Status:** Released
 
 A bridge for advanced users. Allows you to load external `.onnx` Upscaler models into LABOKit's interface, making it easy to test and use custom models found online.
 
-<img width="1200" height="800" alt="Image" src="https://github.com/user-attachments/assets/5c746637-00cc-4582-9a30-93e433a83ab0" />
-
 ### 3. QR-Code Generator
 **File:** **[QRCodeGenerator.kit](https://github.com/wagakano/LABOKit/releases/download/v2.0/QRCodeGenerator.kit)**
 **Status:** Released
 
 A batch-able QR-Code generator.
-
-<img width="1200" height="800" alt="Image" src="https://github.com/user-attachments/assets/83884af6-ebad-40fe-8e41-4bb28d31247b" />
 
 ## Advanced Plugins
 Also you can get the **Advanced Plugin Bundle** by supporting the development (Donation/Pay What You Want).
@@ -120,8 +87,6 @@ Turn your raster images (JPG/PNG/BMP) into scalable vector graphics (SVG) instan
 * **Best for:** Logos, icons, signatures, and black & white line art.
 * **Features:** Threshold slider, smoothness control, real-time binary preview, Zoom inspection, and batch processing.
 
-<img width="1200" height="800" alt="Image" src="https://github.com/user-attachments/assets/68f4b04d-81e6-469c-b53f-aaf61122f2c6" />
-
 ### 2. Dithering FX
 Give your images a stunning retro aesthetic. Apply old-school shading and color palettes inspired by vintage hardware. (Batch-able!)
 * **Styles:** GameBoy (Classic/Pocket), Cyberpunk, Halftone, and Lines.
@@ -130,14 +95,10 @@ Give your images a stunning retro aesthetic. Apply old-school shading and color 
 
 * 🍌 If you're from r/steinsgate, you can get this Plugin for free! Just DM me your email (u/Lazy-Time-1807) and I'll send the .kit to you.
 
-![Image](https://github.com/user-attachments/assets/d1492680-1d2e-40c0-a48a-1783d8431dc8)
-
 ### 3. Image Converter
 Batch convert WebP/JPG/PNG/ICO/BMP with quality control and transparency handling. (Batch-able!)
 * **Formats:** JPG, PNG, WEBP, BMP, ICO.
 * **Features:** Auto-flatten transparency, quality sliders for compression, and detailed file info inspector.
-
-<img width="1200" height="800" alt="Image" src="https://github.com/user-attachments/assets/462317a8-f070-495a-b803-e0dc187d1fe0" />
 
 ## 💖 Support & Rewards
 **Donate & Get the Plugins**
@@ -171,8 +132,7 @@ LABOKit is free and open-source. By purchasing this bundle (Pay What You Want), 
 
 3.  **Model Setup**
     * BG Remover (rembg)
-      * **Automatic:** The application will automatically download the required model (`u2net.onnx`, ~170MB) into the `models/` folder on the first run.
-      * **Manual (Offline):** If you prefer manual setup, download [u2net.onnx](https://github.com/danielgatis/rembg/releases/download/v0.0.0/u2net.onnx), create a folder named `models` in the project root, and place the file there (`LABOKit/models/u2net.onnx`).
+      * **Manual (Offline):** for manual setup, download [u2net.onnx](https://github.com/danielgatis/rembg/releases/download/v0.0.0/u2net.onnx) and [isnet-anime.onnx](https://github.com/danielgatis/rembg/releases/download/v0.0.0/isnet-anime.onnx), create a folder named `models` in the project root, and place the file there (`LABOKit/models/`).
     * Upscaler (realesrgan) - ensure the `realesrgan_ncnn` folder (containing the executable) and the `models` folder (containing .pth files) are correctly placed in the project directory.
         * Download [realesrgan-ncnn-vulkan.exe](https://github.com/xinntao/Real-ESRGAN?tab=readme-ov-file#portable-executable-files-ncnn) and the models (e.g., `realesrgan-x4plus.bin`, etc.).
         * Place them in the `realesrgan_ncnn/` folder inside the project directory.\

@@ -19,8 +19,11 @@ from packaging import version
 import urllib3
 urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
 
+# --- TRANSLATIONS ---
+from translations import tr, set_language, CURRENT_LANG
+
 # --- APP INFO ---
-APP_VERSION = "2.0.0"
+APP_VERSION = "3.0.0"
 APP_UPDATE_URL = "https://raw.githubusercontent.com/wagakano/LABOKit/main_windows/latest_version.json"
 PLUGIN_MANIFEST_URL = "https://raw.githubusercontent.com/wagakano/LABOKit/main_windows/plugins_manifest.json"
 
@@ -179,12 +182,12 @@ class BgRemoverTab(QWidget):
         self.list_w.customContextMenuRequested.connect(self.show_list_context_menu)
         self.list_w.files_dropped.connect(self.add_dropped_files)
         self.list_w.currentRowChanged.connect(self.on_file_selected)
-        lbl = QLabel("LOADED IMAGES (BG Remover):"); lbl.setStyleSheet("border:none; background:transparent;")
+        lbl = QLabel(tr("lbl_loaded_bg")); lbl.setStyleSheet("border:none; background:transparent;")
         left.addWidget(lbl); left.addWidget(self.list_w)
         # Buttons (Add/Clear) moved to bottom area
         btns = QHBoxLayout()
-        b_add = QPushButton("Add Images…"); b_add.setIcon(create_plus_icon()); b_add.clicked.connect(self.add_images)
-        b_clr = QPushButton("Clear List"); b_clr.clicked.connect(self.clear_list)
+        b_add = QPushButton(tr("btn_add")); b_add.setIcon(create_plus_icon()); b_add.clicked.connect(self.add_images)
+        b_clr = QPushButton(tr("btn_clear")); b_clr.clicked.connect(self.clear_list)
         btns.addWidget(b_add); btns.addWidget(b_clr); left.addLayout(btns)
 
         # Divider
@@ -194,25 +197,25 @@ class BgRemoverTab(QWidget):
         left.addWidget(line)
 
         # Options in sidebar
-        l_out = QLabel("Output Folder:"); l_out.setStyleSheet("font-weight: bold; border: none; background: transparent;")
+        l_out = QLabel(tr("lbl_out")); l_out.setStyleSheet("font-weight: bold; border: none; background: transparent;")
         left.addWidget(l_out)
         self.out_lbl = QLabel("(auto)"); self.out_lbl.setWordWrap(True)
         self.out_lbl.setStyleSheet("color: #666; margin-bottom: 5px; border: none; background: transparent;")
         left.addWidget(self.out_lbl)
 
-        b_change = QPushButton("Change Folder"); b_change.clicked.connect(self.change_output_folder)
+        b_change = QPushButton(tr("btn_change")); b_change.clicked.connect(self.change_output_folder)
         left.addWidget(b_change)
         
         pres_row = QVBoxLayout() 
         pres_row.setSpacing(5)
 
-        l_mod = QLabel("Model:"); l_mod.setStyleSheet("font-weight: bold; border: none; background: transparent;")
+        l_mod = QLabel(tr("lbl_model")); l_mod.setStyleSheet("font-weight: bold; border: none; background: transparent;")
         pres_row.addWidget(l_mod)
         self.combo_model = QComboBox()
         self.combo_model.addItems(["General", "Anime"])
         pres_row.addWidget(self.combo_model)
 
-        l_sen = QLabel("Sensitivity:"); l_sen.setStyleSheet("font-weight: bold; border: none; background: transparent;")
+        l_sen = QLabel(tr("lbl_sens")); l_sen.setStyleSheet("font-weight: bold; border: none; background: transparent;")
         pres_row.addWidget(l_sen)
         self.combo = QComboBox(); self.combo.addItems(self.presets.keys())
         self.combo.currentTextChanged.connect(self.on_preset)
@@ -220,8 +223,8 @@ class BgRemoverTab(QWidget):
         left.addLayout(pres_row)
 
         left.addSpacing(10)
-        b_sel = QPushButton("Remove BG (Selected)"); b_sel.clicked.connect(self.proc_sel)
-        b_all = QPushButton("Remove BG (All)"); b_all.clicked.connect(self.proc_all)
+        b_sel = QPushButton(tr("btn_proc_sel")); b_sel.clicked.connect(self.proc_sel)
+        b_all = QPushButton(tr("btn_proc_all")); b_all.clicked.connect(self.proc_all)
         left.addWidget(b_sel)
         left.addWidget(b_all)
 
@@ -231,7 +234,7 @@ class BgRemoverTab(QWidget):
         right.addWidget(self.preview_widget)
     
     def add_images(self):
-        files, _ = QFileDialog.getOpenFileNames(self, "Select Images", "", IMAGE_FILTER)
+        files, _ = QFileDialog.getOpenFileNames(self, tr("btn_add"), "", IMAGE_FILTER)
         if not files: return
         for f in files:
             p = Path(f)
@@ -313,11 +316,11 @@ class BgRemoverTab(QWidget):
 
     def proc_sel(self):
         sel = [i.data(Qt.UserRole) for i in self.list_w.selectedItems()]
-        if not sel: return QMessageBox.information(self, "Info", "Select images first.")
+        if not sel: return QMessageBox.information(self, "Info", tr("msg_select"))
         self._run(sel)
 
     def proc_all(self):
-        if not self.image_paths: return QMessageBox.information(self, "Info", "Add images first.")
+        if not self.image_paths: return QMessageBox.information(self, "Info", tr("msg_add"))
         self._run(self.image_paths)
 
     def _run(self, paths):
@@ -347,15 +350,6 @@ class BgRemoverTab(QWidget):
         if self.meter: self.meter.set_message(f"{msg}")
         self.dlg.setLabelText(msg)
         self.dlg.setValue(i)
-        
-        # Collect output paths as we go? 
-        # Actually the worker writes files. We need to update self.output_map 
-        # But we can do that at the end or if we pass signals. 
-        # For now, let's update map at the end or assume filenames.
-        # Ideally we'd pass the result path back.
-        # But sticking to the pattern:
-        # We can reconstruct the path: out_dir / {stem}_nobg.png
-        # Let's verify files at the end.
 
     def on_worker_finished(self, cnt, out_dir):
         self.dlg.close()
@@ -367,13 +361,13 @@ class BgRemoverTab(QWidget):
             if opath.exists():
                 self.output_map[p] = opath
 
-        QMessageBox.information(self, "Done", f"Processed {cnt} images.\nFolder: {out_dir}")
+        QMessageBox.information(self, tr("msg_done"), f"Processed {cnt} images.\nFolder: {out_dir}")
         if self.list_w.currentRow() >= 0: self._update_prev(self.image_paths[self.list_w.currentRow()])
 
     def on_worker_error(self, err):
         self.dlg.close()
         if self.meter: self.meter.set_message(None)
-        QMessageBox.critical(self, "Error", f"BG Removal Failed:\n{err}")
+        QMessageBox.critical(self, tr("msg_error"), f"BG Removal Failed:\n{err}")
 
     def show_help(self):
         text = (
@@ -416,13 +410,13 @@ class UpscalerTab(QWidget):
         self.list_w.customContextMenuRequested.connect(self.show_list_context_menu)
         self.list_w.files_dropped.connect(self.add_dropped_files)
         self.list_w.currentItemChanged.connect(self.on_item)
-        lbl = QLabel("LOADED IMAGES (Upscaler):"); lbl.setStyleSheet("border:none; background:transparent;")
+        lbl = QLabel(tr("lbl_loaded_up")); lbl.setStyleSheet("border:none; background:transparent;")
         left.addWidget(lbl); left.addWidget(self.list_w)
         
         # Buttons
         btns = QHBoxLayout()
-        b_add = QPushButton("Add Images…"); b_add.setIcon(create_plus_icon()); b_add.clicked.connect(self.add_images)
-        b_clr = QPushButton("Clear List"); b_clr.clicked.connect(self.clear_list)
+        b_add = QPushButton(tr("btn_add")); b_add.setIcon(create_plus_icon()); b_add.clicked.connect(self.add_images)
+        b_clr = QPushButton(tr("btn_clear")); b_clr.clicked.connect(self.clear_list)
         btns.addWidget(b_add); btns.addWidget(b_clr); left.addLayout(btns)
 
         # Divider
@@ -432,24 +426,24 @@ class UpscalerTab(QWidget):
         left.addWidget(line)
 
         # Options sidebar
-        l_out = QLabel("Output Folder:"); l_out.setStyleSheet("font-weight: bold; border: none; background: transparent;")
+        l_out = QLabel(tr("lbl_out")); l_out.setStyleSheet("font-weight: bold; border: none; background: transparent;")
         left.addWidget(l_out)
         self.out_lbl = QLabel("(auto)"); self.out_lbl.setWordWrap(True)
         self.out_lbl.setStyleSheet("color: #666; margin-bottom: 5px; border: none; background: transparent;")
         left.addWidget(self.out_lbl)
 
-        b_change = QPushButton("Change Folder"); b_change.clicked.connect(self.change_output_folder)
+        b_change = QPushButton(tr("btn_change")); b_change.clicked.connect(self.change_output_folder)
         left.addWidget(b_change)
         
         opt_layout = QVBoxLayout()
         opt_layout.setSpacing(5)
         
-        l_scale = QLabel("Scale:"); l_scale.setStyleSheet("font-weight: bold; border: none; background: transparent;")
+        l_scale = QLabel(tr("lbl_scale")); l_scale.setStyleSheet("font-weight: bold; border: none; background: transparent;")
         opt_layout.addWidget(l_scale)
         self.combo_s = QComboBox(); self.combo_s.addItems(["2x", "4x"]); self.combo_s.setCurrentText("4x")
         opt_layout.addWidget(self.combo_s)
         
-        l_mod = QLabel("Model:"); l_mod.setStyleSheet("font-weight: bold; border: none; background: transparent;")
+        l_mod = QLabel(tr("lbl_model")); l_mod.setStyleSheet("font-weight: bold; border: none; background: transparent;")
         opt_layout.addWidget(l_mod)
         self.combo_m = QComboBox()
         self.combo_m.addItems([
@@ -462,8 +456,8 @@ class UpscalerTab(QWidget):
 
         # Buttons
         left.addSpacing(10)
-        b_sel = QPushButton("Upscale (Selected)"); b_sel.clicked.connect(self.proc_sel)
-        b_all = QPushButton("Upscale (All)"); b_all.clicked.connect(self.proc_all)
+        b_sel = QPushButton(tr("btn_proc_sel")); b_sel.clicked.connect(self.proc_sel)
+        b_all = QPushButton(tr("btn_proc_all")); b_all.clicked.connect(self.proc_all)
         left.addWidget(b_sel)
         left.addWidget(b_all)
 
@@ -551,11 +545,11 @@ class UpscalerTab(QWidget):
 
     def proc_sel(self):
         sel = [i.data(Qt.UserRole) for i in self.list_w.selectedItems()]
-        if not sel: return QMessageBox.information(self, "Info", "Select images first.")
+        if not sel: return QMessageBox.information(self, "Info", tr("msg_select"))
         self._run(sel)
 
     def proc_all(self):
-        if not self.image_paths: return QMessageBox.information(self, "Info", "Add images first.")
+        if not self.image_paths: return QMessageBox.information(self, "Info", tr("msg_add"))
         self._run(self.image_paths)
 
     def _run(self, paths):
@@ -608,13 +602,13 @@ class UpscalerTab(QWidget):
              if opath.exists():
                  self.output_map[p] = opath
 
-        QMessageBox.information(self, "Done", f"Upscaled {cnt} images.\nFolder: {actual_out_dir}")
+        QMessageBox.information(self, tr("msg_done"), f"Upscaled {cnt} images.\nFolder: {actual_out_dir}")
         if self.list_w.currentItem(): self.on_item(self.list_w.currentItem(), None)
 
     def on_worker_error(self, err):
         self.dlg.close()
         if self.meter: self.meter.set_message(None)
-        QMessageBox.critical(self, "Error", f"Upscale Failed:\n{err}")
+        QMessageBox.critical(self, tr("msg_error"), f"Upscale Failed:\n{err}")
 
     def show_help(self):
         text = (
@@ -845,8 +839,8 @@ class LABOKitMainWindow(QMainWindow):
         self.tabs = QTabWidget()
         self.bg_tab = BgRemoverTab(meter=self.meter, parent=self)
         self.up_tab = UpscalerTab(meter=self.meter, parent=self)
-        self.tabs.addTab(self.bg_tab, "BG Remover")
-        self.tabs.addTab(self.up_tab, "Upscaler")
+        self.tabs.addTab(self.bg_tab, tr("tab_bg"))
+        self.tabs.addTab(self.up_tab, tr("tab_up"))
         
         self.main_layout.addWidget(self.tabs)
         self.main_layout.addWidget(self.meter) # Added global meter
@@ -957,20 +951,30 @@ class LABOKitMainWindow(QMainWindow):
         
         self.custom_title_bar.menu_layout.addWidget(mb)
 
-        conf = mb.addMenu("&Config")
+        conf = mb.addMenu(tr("menu_config"))
         conf.addAction("Load Plugin (.kit)...", self.load_plugin_file)
         conf.addAction("Open Plugins Folder", lambda: QDesktopServices.openUrl(QUrl.fromLocalFile(str(PLUGIN_DIR))))
+        
+        # Language Submenu
+        lang_menu = conf.addMenu("Language")
+        lang_menu.addAction("English", lambda: self.switch_language("en"))
+        lang_menu.addAction("日本語", lambda: self.switch_language("ja"))
+        lang_menu.addAction("Bahasa Indonesia", lambda: self.switch_language("id"))
 
-        help = mb.addMenu("&Help")
+        help = mb.addMenu(tr("menu_help"))
         help.addAction("BG Remover Help", self.bg_tab.show_help)
         help.addAction("Upscaler Help", self.up_tab.show_help)
         help.addSeparator()
         help.addAction("Licenses / NOTICE", self.show_notice)
-        self.menu_plugins = help.addMenu("Plugins")
+        self.menu_plugins = help.addMenu(tr("menu_plugins"))
 
-        supp = mb.addMenu("♥ Support")
+        supp = mb.addMenu(tr("menu_support"))
         supp.addAction("Get Plugins (Trakteer ID)", lambda: self.open_url("https://trakteer.id/kano-bbif7/reward/labokit-advanced-plugins-m84J6"))
         supp.addAction("Get Plugins (Ko-fi)", lambda: self.open_url("https://ko-fi.com/s/a367e473fe"))
+
+    def switch_language(self, lang):
+        set_language(lang)
+        QMessageBox.information(self, "Restart Required", "Please restart LABOKit to apply language changes.\n\n言語変更を適用するには再起動してください。\nSilakan restart untuk menerapkan bahasa.")
 
     def show_bg_help(self): self.bg_tab.show_help()
     def show_upscale_help(self): self.up_tab.show_help()
