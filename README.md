@@ -1,15 +1,14 @@
 # LABOKit ⌀ v3.0
 
-<img width="1365" height="416" alt="Banner" src="https://github.com/user-attachments/assets/f4ab1e1b-de1c-4a0f-a648-25b210f0ea4f" />
+<img width="1555" height="295" alt="Image" src="https://github.com/user-attachments/assets/34825c09-c071-45e6-91e7-4d0b1f98480d" />
 
 **LABOKit** is a modular desktop tool for offline image processing Built with Python (PySide6), it aims to provide a fast, simple, and user-friendly batch-processing workflow with a retro "Steins;Gate" divergence meter aesthetic.
 
 > *"El Psy Kongroo."*
 
 ## Features
-
 * **User-Friendly & Fast:** Designed for simplicity and speed. Just load your images and click.
-* **Batch Background Removal:** Powered by `rembg` (U^2-Net).
+* **Batch Background Removal:** Powered by `rembg`.
 * **Batch Upscaling (Hybrid):** Supports both GPU (Vulkan) and CPU (PyTorch) processing.
 * **ImageLAB:** Built-in editor for creative effects, ASCII art, and glitches.
 * **World Line Meter:** Visual decoration displaying divergence numbers.
@@ -19,7 +18,7 @@
 
 ## What's New in v3.0
 * **Drag n Drop:** Import your images instantly by dragging them into the app.
-* **Zoom Feature** Now you can do zoom-in and out via CTRL + Scroll.
+* **Zoom Feature:** Now you can do zoom-in and out via CTRL + Scroll.
 * **Multilanguage Support:** Added Interface language options for Japanese (日本語) and Indonesian (Bahasa Indonesia).
 * **Performance Boost:** All processing (Upscaling, BG Removal, Dithering) now runs on background threads, preventing "Not Responding" freezes.
 * **Improved BG Remover:** Improved BG Remover to remove anime background more accurate and precise.
@@ -35,7 +34,7 @@
 
 **(Windows)**
 1.  Go to the **[Releases](https://github.com/wagakano/LABOKit/releases/tag/v3.0)** page.
-2.  Download the `LABOKit_v3.0.exe`.
+2.  Download the `LABOKit_v3.0.zip` & Extract.
 3.  Run `LABOKit_v3.0.exe` and enjoy! (☆▽☆)
 
 **(Linux)**
@@ -53,8 +52,6 @@ LABOKit capabilities can be extended using `.kit` plugins.
 2.  Go to menu **Config** > **Load Plugin (.kit)...**
 3.  Select the plugin file. It will be installed permanently.
 *(To uninstall, simply delete the file from the plugins folder via **Config > Open Plugins Folder**).*
-
-**Now you can zoom-in zoom-out via CTRL + Scroll**
 
 ## Available Plugin
 ### 1. Video Upscaler
@@ -92,10 +89,10 @@ Turn your raster images (JPG/PNG/BMP) into scalable vector graphics (SVG) instan
 
 ### 2. Dithering FX
 Give your images a stunning retro aesthetic. Apply old-school shading and color palettes inspired by vintage hardware. (Batch-able!)
-* **Styles:** GameBoy (Classic/Pocket), Cyberpunk, Halftone, and Lines.
-* **Algorithms:** Floyd-Steinberg, Bayer Matrix (Ordered), and Noise.
-* **STEINS;GATE Special:** Unique "Glitch" animation on the World Line Meter.
-
+* **True Error Diffusion:** Implemented accurate Atkinson, Stucki, Burkes, and Sierra algorithms (with total 11 Algorithms).
+* **GIF Support:** Full support for importing, processing, and previewing animated GIFs.
+* **Bloom Effect:** Add retro glow to your dithered images.
+* **Enhanced Controls:** New sliders for Softness, Noise, and Error Bleed.
 * 🍌 If you're from r/steinsgate, you can get this Plugin for free! Just DM me your email (u/Lazy-Time-1807) and I'll send the .kit to you.
 
 ### 3. Image Converter

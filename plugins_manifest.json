@@ -1,33 +1,33 @@
 {
     "DitheringFX": {
-        "version": "2.0",
-        "url_encoded": "aHR0cHM6Ly9naXRodWIuY29tL3dhZ2FrYW5vL0xBQk9LaXQtYXNzZXRzL3JlbGVhc2VzL2Rvd25sb2FkL3VwZGF0ZTEvRGl0aGVyaW5nRlgua2l0", 
-        "changelog": "1. Improved Dithering result, adding more options and custom color choices.<br>2. Now you can generate multiple outputs from the same image.<br>3. Downscaling feature to make the effect stronger & consistent on high-res images.<br>4. Fixed change output folder, now you can do custom output folder.<br>5. Optimized Live Preview."
+        "version": "3.3",
+        "url_encoded": "aHR0cHM6Ly9naXRodWIuY29tL3dhZ2FrYW5vL0xBQk9LaXQtYXNzZXRzL3JlbGVhc2VzL2Rvd25sb2FkL3VwZGF0ZTIvRGl0aGVyaW5nRlgua2l0", 
+        "changelog": "1. Added Bloom Effect for Retro Glow.<br>2. New Sliders: Softness, Noise, and Error Bleed.<br>3. Improved Stability and Bug Fixes.<br>4. GIF Support.<br>"
     },
     "QuickVector": {
-        "version": "1.4",
-        "url_encoded": "aHR0cHM6Ly9naXRodWIuY29tL3dhZ2FrYW5vL0xBQk9LaXQtYXNzZXRzL3JlbGVhc2VzL2Rvd25sb2FkL3VwZGF0ZTEvUXVpY2tWZWN0b3Iua2l0",
-        "changelog": "1. Updated Help Section for How to Use.<br>2. Added Zoom Preview to inspect pixel details.<br>"
+        "version": "1.6",
+        "url_encoded": "aHR0cHM6Ly9naXRodWIuY29tL3dhZ2FrYW5vL0xBQk9LaXQtYXNzZXRzL3JlbGVhc2VzL2Rvd25sb2FkL3VwZGF0ZTIvUXVpY2tWZWN0b3Iua2l0",
+        "changelog": "Updated UI for 3.0 Compatibility."
     },
     "IMGConverter": {
-        "version": "1.5",
-        "url_encoded": "aHR0cHM6Ly9naXRodWIuY29tL3dhZ2FrYW5vL0xBQk9LaXQtYXNzZXRzL3JlbGVhc2VzL2Rvd25sb2FkL3VwZGF0ZTEvSU1HQ29udmVydGVyLmtpdA==",
-        "changelog": "1. Updated Help Section for How to Use.<br>2. PNG > JPG Transperency Background Bug Fixed.<br>"
+        "version": "1.7",
+        "url_encoded": "aHR0cHM6Ly9naXRodWIuY29tL3dhZ2FrYW5vL0xBQk9LaXQtYXNzZXRzL3JlbGVhc2VzL2Rvd25sb2FkL3VwZGF0ZTIvSU1HQ29udmVydGVyLmtpdA==",
+        "changelog": "Updated UI for 3.0 Compatibility."
     },
     "VideoUpscaler": {
-        "version": "1.1",
-        "url_encoded": "aHR0cHM6Ly9naXRodWIuY29tL3dhZ2FrYW5vL0xBQk9LaXQtYXNzZXRzL3JlbGVhc2VzL2Rvd25sb2FkL3VwZGF0ZTEvVmlkZW9VcHNjYWxlci5raXQ=",
-        "changelog": "1. Updated Help Section for How to Use.<br>"
+        "version": "1.3",
+        "url_encoded": "aHR0cHM6Ly9naXRodWIuY29tL3dhZ2FrYW5vL0xBQk9LaXQtYXNzZXRzL3JlbGVhc2VzL2Rvd25sb2FkL3VwZGF0ZTIvVmlkZW9VcHNjYWxlci5raXQ=",
+        "changelog": "Updated UI for 3.0 Compatibility."
     },
     "ONNXLoader": {
-        "version": "1.0",
-        "url_encoded": "aHR0cHM6Ly9naXRodWIuY29tL3dhZ2FrYW5vL0xBQk9LaXQtYXNzZXRzL3JlbGVhc2VzL2Rvd25sb2FkL3VwZGF0ZTEvT05OWExvYWRlci5raXQ=",
-        "changelog": "- Initial Release"
+        "version": "1.1",
+        "url_encoded": "aHR0cHM6Ly9naXRodWIuY29tL3dhZ2FrYW5vL0xBQk9LaXQtYXNzZXRzL3JlbGVhc2VzL2Rvd25sb2FkL3VwZGF0ZTIvT05OWExvYWRlci5raXQ=",
+        "changelog": "Updated UI for 3.0 Compatibility."
     },
     "QRCodeGenerator": {
-        "version": "1.6",
-        "url_encoded": "aHR0cHM6Ly9naXRodWIuY29tL3dhZ2FrYW5vL0xBQk9LaXQvcmVsZWFzZXMvZG93bmxvYWQvdjIuMC9RUkNvZGVHZW5lcmF0b3Iua2l0",
-        "changelog": "- Initial Release"
+        "version": "1.7",
+        "url_encoded": "aHR0cHM6Ly9naXRodWIuY29tL3dhZ2FrYW5vL0xBQk9LaXQtYXNzZXRzL3JlbGVhc2VzL2Rvd25sb2FkL3VwZGF0ZTIvUVJDb2RlR2VuZXJhdG9yLmtpdA==",
+        "changelog": "Updated UI for 3.0 Compatibility."
     },
     "_message": "If you are able to decode the links, congratulation you get the plugins for free~!"
 }

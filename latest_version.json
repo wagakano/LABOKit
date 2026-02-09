@@ -1,5 +1,5 @@
 {
-  "version": "2.0.0",
-  "url": "https://github.com/wagakano/LABOKit/releases",
-  "changelog": "v2.0 Update:<br>+ New: ImageLAB, CPU Upscaling, & ONNX Loader<br>+ Auto-Updates for App & Plugins<br>+ UI Overhaul & Improved Dithering FX<br>+ Fixed transparency bugs"
+  "version": "3.0.0",
+  "url": "https://github.com/wagakano/LABOKit/releases/download/3.0/LABOKit_v3.0.zip",
+  "changelog": "3.0 - Improved BG Remover for Anime Backgrounds - New ImageLAB feature (ASCII LAB) - New Dithering FX Massive Update - Drag n Drop Feature - UI/UX Overhaul - Performance & Stability Improvement"
 }
