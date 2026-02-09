@@ -19,6 +19,7 @@
 
 ## What's New in v3.0
 * **Drag n Drop:** Import your images instantly by dragging them into the app.
+* **Zoom Feature** Now you can do zoom-in and out via CTRL + Scroll.
 * **Multilanguage Support:** Added Interface language options for Japanese (日本語) and Indonesian (Bahasa Indonesia).
 * **Performance Boost:** All processing (Upscaling, BG Removal, Dithering) now runs on background threads, preventing "Not Responding" freezes.
 * **Improved BG Remover:** Improved BG Remover to remove anime background more accurate and precise.
@@ -52,6 +53,8 @@ LABOKit capabilities can be extended using `.kit` plugins.
 2.  Go to menu **Config** > **Load Plugin (.kit)...**
 3.  Select the plugin file. It will be installed permanently.
 *(To uninstall, simply delete the file from the plugins folder via **Config > Open Plugins Folder**).*
+
+**Now you can zoom-in zoom-out via CTRL + Scroll**
 
 ## Available Plugin
 ### 1. Video Upscaler
