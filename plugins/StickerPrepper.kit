@@ -227,13 +227,14 @@ class StickerWorker(QThread):
         alpha = img_np[:, :, 3]
 
         border_px = self.params.get('border', 30)
+        border_color = self.params.get('border_c', (0, 0, 0)) # Default Black
         offset_px = self.params.get('offset', 0)
         stroke_px = self.params.get('stroke_w', 2)
         stroke_color = self.params.get('stroke_c', (255, 0, 255))
 
         def get_kernel(size):
             k_size = 2 * int(size) + 1
-            return cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (k_size, k_size))
+            return cv2.getStructuringElement(cv2.MORPH_RECT, (k_size, k_size))
 
         # Pad image to accommodate dilation
         # Padding = Border + |Offset| + Stroke + Safety
@@ -260,17 +261,19 @@ class StickerWorker(QThread):
 
         # 3. GENERATE LAYERS
 
-        # Layer 1: White Body
-        # Create full white image
-        white_canvas = Image.new("RGBA", orig_padded.size, (255, 255, 255, 255))
-        # Mask for white body
+        # Layer 1: Border Body (Bleed)
+        # Create full solid color image (using border_color)
+        r_b, g_b, b_b = border_color
+        border_canvas = Image.new("RGBA", orig_padded.size, (r_b, g_b, b_b, 255))
+
+        # Mask for border body
         mask_pil = Image.fromarray(white_body_mask, mode="L")
 
         # Start composite with transparent
         final_comp = Image.new("RGBA", orig_padded.size, (0,0,0,0))
 
-        # Paste White using mask
-        final_comp.paste(white_canvas, (0,0), mask_pil)
+        # Paste Border Color using mask
+        final_comp.paste(border_canvas, (0,0), mask_pil)
 
         # Layer 2: Original Image
         final_comp = Image.alpha_composite(final_comp, orig_padded)
@@ -329,6 +332,7 @@ class StickerPrepperTab(QWidget):
 
         # Settings
         self.p_border = 30
+        self.p_border_color = (0, 0, 0) # Default Black
         self.p_offset = 0
         self.p_stroke = 2
         self.p_color = (255, 0, 255)
@@ -392,7 +396,16 @@ class StickerPrepperTab(QWidget):
         glayout.setSpacing(10)
 
         # Border
+        b_layout = QHBoxLayout()
         self.lbl_border = QLabel(f"Border Thickness: {self.p_border}px")
+        b_layout.addWidget(self.lbl_border)
+
+        self.btn_border_color = QPushButton()
+        self.btn_border_color.setFixedSize(24, 24)
+        self.btn_border_color.clicked.connect(self.choose_border_color)
+        self._update_border_color_btn()
+        b_layout.addWidget(self.btn_border_color)
+
         self.sl_border = QSlider(Qt.Horizontal)
         self.sl_border.setRange(0, 100)
         self.sl_border.setValue(self.p_border)
@@ -422,7 +435,7 @@ class StickerPrepperTab(QWidget):
         c_layout.addWidget(self.btn_color)
         c_layout.addStretch()
 
-        glayout.addWidget(self.lbl_border)
+        glayout.addLayout(b_layout)
         glayout.addWidget(self.sl_border)
         glayout.addWidget(self.lbl_offset)
         glayout.addWidget(self.sl_offset)
@@ -511,9 +524,20 @@ class StickerPrepperTab(QWidget):
             self._update_color_btn()
             self.on_param_change()
 
+    def choose_border_color(self):
+        c = QColorDialog.getColor(QColor(*self.p_border_color), self, "Select Border Color")
+        if c.isValid():
+            self.p_border_color = (c.red(), c.green(), c.blue())
+            self._update_border_color_btn()
+            self.on_param_change()
+
     def _update_color_btn(self):
         r,g,b = self.p_color
         self.btn_color.setStyleSheet(f"background-color: rgb({r},{g},{b}); border: 1px solid #666; border-radius: 4px;")
+
+    def _update_border_color_btn(self):
+        r,g,b = self.p_border_color
+        self.btn_border_color.setStyleSheet(f"background-color: rgb({r},{g},{b}); border: 1px solid #666; border-radius: 4px;")
 
     def ensure_out(self, sample_path):
         if not self.output_dir:
@@ -531,6 +555,7 @@ class StickerPrepperTab(QWidget):
     def get_params(self):
         return {
             "border": self.p_border,
+            "border_c": self.p_border_color,
             "offset": self.p_offset,
             "stroke_w": self.p_stroke,
             "stroke_c": self.p_color,
