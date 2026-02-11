@@ -1,0 +1,571 @@
+import sys
+import os
+import cv2
+import numpy as np
+from PIL import Image, ImageDraw, ImageOps
+from pathlib import Path
+from PySide6.QtCore import Qt, Signal, QThread, QTimer, QSize, QByteArray, QBuffer, QIODevice
+from PySide6.QtGui import QPixmap, QImage, QColor, QAction, QIcon
+from PySide6.QtWidgets import (
+    QWidget, QVBoxLayout, QHBoxLayout, QPushButton, QLabel,
+    QSlider, QSpinBox, QColorDialog, QFileDialog, QMessageBox,
+    QGroupBox, QFrame, QListWidgetItem, QMenu, QProgressDialog,
+    QAbstractItemView, QCheckBox
+)
+try:
+    from reportlab.pdfgen import canvas
+    from reportlab.lib.units import inch, mm
+    HAS_REPORTLAB = True
+except ImportError:
+    HAS_REPORTLAB = False
+
+# Imports from Main App
+try:
+    from ui_shared import FileDropListWidget, ZoomableImageWidget, create_plus_icon, VALID_EXTENSIONS
+    from translations import tr
+except ImportError:
+    # Fallback for testing isolation
+    def tr(k): return k
+    FileDropListWidget = None
+    ZoomableImageWidget = None
+    create_plus_icon = None
+    VALID_EXTENSIONS = {}
+
+PLUGIN_NAME = "Sticker Prepper V2"
+PLUGIN_VERSION = "2.0"
+HELP_TEXT = """
+<h3>Sticker Prepper V2</h3>
+<p>Automated Die-Cut Generation for Print-and-Cut Workflows (Smooth Vector Algorithm).</p>
+<hr>
+<b>How to use:</b>
+<ol>
+<li><b>Add Images:</b> Drag & Drop transparent PNGs.</li>
+<li><b>Adjust Settings:</b>
+    <ul>
+    <li><b>Border:</b> Width of the background shape (Bleed).</li>
+    <li><b>Offset:</b> Adjusts the cut line position relative to the border (Negative = Inside).</li>
+    <li><b>Stroke:</b> Width of the cut line visual.</li>
+    </ul>
+</li>
+<li><b>Output Format:</b> Choose PNG (Rasterized) or PDF (Vector Cut Line).</li>
+<li><b>Preview:</b> Check the result in the right panel.</li>
+<li><b>Process:</b> Click 'Process All' to save files to <b>LABOKit_Stickers</b> folder.</li>
+</ol>
+"""
+
+class StickerWorker(QThread):
+    progress = Signal(int, str)
+    finished = Signal(int)
+    error = Signal(str)
+    preview_ready = Signal(QPixmap) # For preview mode
+
+    def __init__(self, paths, out_dir, params, mode="process", parent=None):
+        super().__init__(parent)
+        self.paths = paths
+        self.out_dir = out_dir
+        self.params = params
+        self.mode = mode # "process" or "preview"
+        self.is_running = True
+
+    def run(self):
+        try:
+            if self.mode == "preview":
+                self.run_preview()
+            else:
+                self.run_batch()
+        except Exception as e:
+            self.error.emit(str(e))
+
+    def run_preview(self):
+        if not self.paths: return
+        p = self.paths[0]
+        try:
+            is_pdf_req = self.params.get('pdf', False)
+            self.params['pdf'] = False # Force raster for preview
+            final_img = self.process_image(p)
+            self.params['pdf'] = is_pdf_req # Restore
+
+            if final_img:
+                data = final_img.convert("RGBA").tobytes("raw", "RGBA")
+                qim = QImage(data, final_img.width, final_img.height, QImage.Format_RGBA8888)
+                pix = QPixmap.fromImage(qim.copy())
+                self.preview_ready.emit(pix)
+        except Exception as e:
+            self.error.emit(str(e))
+
+    def run_batch(self):
+        cnt = 0
+        total = len(self.paths)
+        is_pdf = self.params.get('pdf', False)
+
+        for i, p in enumerate(self.paths):
+            if not self.is_running: break
+            self.progress.emit(i, f"Processing {p.name}...")
+
+            try:
+                res = self.process_image(p)
+                if res:
+                    if is_pdf and isinstance(res, tuple):
+                        final_comp, contours, crop_box, orig_size = res
+                        out_path = self.out_dir / f"{p.stem}_sticker.pdf"
+                        self.save_as_pdf(final_comp, contours, crop_box, orig_size, out_path)
+                    else:
+                        out_path = self.out_dir / f"{p.stem}_sticker.png"
+                        res.save(out_path)
+                    cnt += 1
+            except Exception as e:
+                print(f"Error processing {p.name}: {e}")
+                import traceback; traceback.print_exc()
+
+        self.finished.emit(cnt)
+
+    def save_as_pdf(self, image_pil, contours, crop_box, orig_size, out_path):
+        if not HAS_REPORTLAB:
+            raise ImportError("ReportLab is not installed. PDF output unavailable.")
+
+        dpi = 300.0
+        scale = 72.0 / dpi
+
+        w_px, h_px = image_pil.size
+        w_pts, h_pts = w_px * scale, h_px * scale
+
+        c = canvas.Canvas(str(out_path), pagesize=(w_pts, h_pts))
+
+        import tempfile
+        with tempfile.NamedTemporaryFile(suffix='.png', delete=False) as tf:
+            image_pil.save(tf, format='PNG')
+            tf.close()
+            c.drawImage(tf.name, 0, 0, width=w_pts, height=h_pts, mask='auto')
+            os.unlink(tf.name)
+
+        crop_x, crop_y = 0, 0
+        if crop_box:
+            crop_x, crop_y = crop_box[0], crop_box[1]
+
+        stroke_c = self.params.get('stroke_c', (255, 0, 255))
+        stroke_w = self.params.get('stroke_w', 2)
+
+        r, g, b = stroke_c
+        c.setStrokeColorRGB(r/255.0, g/255.0, b/255.0)
+        c.setLineWidth(stroke_w * scale)
+
+        for cnt in contours:
+            path = c.beginPath()
+            points = cnt[:, 0, :]
+
+            first = True
+            for pt in points:
+                x_global, y_global = pt[0], pt[1]
+                x_rel = x_global - crop_x
+                y_rel = y_global - crop_y
+                x_pdf = x_rel * scale
+                y_pdf = h_pts - (y_rel * scale)
+
+                if first:
+                    path.moveTo(x_pdf, y_pdf)
+                    first = False
+                else:
+                    path.lineTo(x_pdf, y_pdf)
+
+            path.close()
+            c.drawPath(path, stroke=1, fill=0)
+
+        c.save()
+
+    def process_image(self, path):
+        orig = Image.open(path).convert("RGBA")
+        img_np = np.array(orig)
+        alpha = img_np[:, :, 3]
+
+        border_px = self.params.get('border', 30)
+        border_color = self.params.get('border_c', (0, 0, 0))
+        offset_px = self.params.get('offset', 0)
+        stroke_px = self.params.get('stroke_w', 2)
+        stroke_color = self.params.get('stroke_c', (255, 0, 255))
+
+        # --- NEW ALGORITHM: DISTANCE TRANSFORM ---
+
+        # 1. Upscale (8x)
+        # We process everything at high resolution to get smooth curves from distance field
+        upscale = 8.0
+        h, w = alpha.shape
+        h_up, w_up = int(h * upscale), int(w * upscale)
+
+        # Resize Alpha
+        alpha_up = cv2.resize(alpha, (w_up, h_up), interpolation=cv2.INTER_LINEAR)
+        # Binarize to ensure clean edges for distance transform
+        _, bin_mask = cv2.threshold(alpha_up, 127, 255, cv2.THRESH_BINARY)
+
+        # 2. Compute Distance Maps
+        # dist_out: Distance from object (255) to nearest zero pixel (background)
+        # But wait, standard distanceTransform calculates distance to NEAREST ZERO pixel.
+        # So:
+        # For Outside Distance: We want distance from background pixels to object.
+        #   Input: Invert mask so Object is 0, Background is 255.
+        #   Output: Distance of background pixels to object edge. Object pixels are 0.
+        dist_out = cv2.distanceTransform(255 - bin_mask, cv2.DIST_L2, 5)
+
+        # For Inside Distance: We want distance from object pixels to background.
+        #   Input: Standard mask (Object 255, Bg 0).
+        #   Output: Distance of object pixels to edge. Background pixels are 0.
+        dist_in = cv2.distanceTransform(bin_mask, cv2.DIST_L2, 5)
+
+        # Signed Distance Field (SDF)
+        # Inside is positive, Outside is negative
+        sdf = dist_in - dist_out
+
+        # 3. Thresholding
+        # Note: All parameter values (px) must be scaled by upscale factor
+        border_scaled = border_px * upscale
+        offset_scaled = offset_px * upscale
+
+        # Bleed Mask (Border)
+        # We want pixels where distance to object <= Border
+        # i.e., Outside Dist <= Border  OR  Inside (all inside are valid)
+        # Using SDF: SDF > -Border (pixels closer than Border from outside, plus all inside)
+        _, bleed_mask_up = cv2.threshold(sdf, -border_scaled, 255, cv2.THRESH_BINARY)
+        bleed_mask_up = bleed_mask_up.astype(np.uint8)
+
+        # Cut Mask
+        # Cut Threshold = -(Border + Offset)
+        # If offset is positive (expand): Threshold is more negative (further out)
+        # If offset is negative (contract): Threshold is less negative or even positive (inside)
+        cut_thresh = -(border_scaled + offset_scaled)
+        _, cut_mask_up = cv2.threshold(sdf, cut_thresh, 255, cv2.THRESH_BINARY)
+        cut_mask_up = cut_mask_up.astype(np.uint8)
+
+        # 4. Generate Contours (Vector) from High Res Cut Mask
+        # Because we thresholded a continuous distance field, the edges are naturally smooth circles/lines.
+        contours_up, _ = cv2.findContours(cut_mask_up, cv2.RETR_TREE, cv2.CHAIN_APPROX_SIMPLE)
+
+        # Downscale Contours
+        final_contours = []
+        for cnt in contours_up:
+            # Minimal approx just to remove collinear points, shape is already smooth
+            epsilon = 0.0001 * cv2.arcLength(cnt, True)
+            approx = cv2.approxPolyDP(cnt, epsilon, True)
+
+            cnt_down = approx.astype(np.float32) / upscale
+            final_contours.append(cnt_down)
+
+        # 5. Generate Raster Layers
+        # We need the Bleed Mask at ORIGINAL resolution for the raster image
+        # Downscale bleed_mask_up
+        bleed_mask = cv2.resize(bleed_mask_up, (w, h), interpolation=cv2.INTER_AREA) # INTER_AREA better for downscaling
+
+        # Pad Original Image to fit the expansion
+        # Calculate required padding based on bleed/offset
+        # Max extent is roughly Border + abs(Offset) + Stroke
+        # But we already have the mask computed in "img space", wait.
+        # The distance transform was on the original image size (upscaled).
+        # So "bleed_mask" corresponds to "alpha".
+        # If border > 0, bleed_mask will be clipped at the image edges!
+        # WE NEED TO PAD THE SOURCE BEFORE PROCESSING.
+
+        # --- RESTART WITH PADDING ---
+        pad = int(border_px + abs(offset_px) + stroke_px + 30)
+        orig_padded = ImageOps.expand(orig, border=pad, fill=(0,0,0,0))
+        img_np_padded = np.array(orig_padded)
+        alpha_padded = img_np_padded[:, :, 3]
+
+        # ... Re-run Distance Transform on Padded ...
+        h_p, w_p = alpha_padded.shape
+        h_up, w_up = int(h_p * upscale), int(w_p * upscale)
+
+        alpha_up = cv2.resize(alpha_padded, (w_up, h_up), interpolation=cv2.INTER_LINEAR)
+        _, bin_mask = cv2.threshold(alpha_up, 127, 255, cv2.THRESH_BINARY)
+
+        dist_out = cv2.distanceTransform(255 - bin_mask, cv2.DIST_L2, 5)
+        dist_in = cv2.distanceTransform(bin_mask, cv2.DIST_L2, 5)
+        sdf = dist_in - dist_out
+
+        _, bleed_mask_up = cv2.threshold(sdf, -border_scaled, 255, cv2.THRESH_BINARY)
+        bleed_mask_up = bleed_mask_up.astype(np.uint8)
+
+        _, cut_mask_up = cv2.threshold(sdf, cut_thresh, 255, cv2.THRESH_BINARY)
+        cut_mask_up = cut_mask_up.astype(np.uint8)
+
+        contours_up, _ = cv2.findContours(cut_mask_up, cv2.RETR_TREE, cv2.CHAIN_APPROX_SIMPLE)
+        final_contours = []
+        for cnt in contours_up:
+            epsilon = 0.0001 * cv2.arcLength(cnt, True)
+            approx = cv2.approxPolyDP(cnt, epsilon, True)
+            final_contours.append(approx.astype(np.float32) / upscale)
+
+        bleed_mask = cv2.resize(bleed_mask_up, (w_p, h_p), interpolation=cv2.INTER_AREA)
+
+        # 6. Compositing
+
+        # Layer 1: Border Body (Bleed)
+        r_b, g_b, b_b = border_color
+        border_canvas = Image.new("RGBA", orig_padded.size, (r_b, g_b, b_b, 255))
+        mask_pil = Image.fromarray(bleed_mask, mode="L")
+        final_comp = Image.new("RGBA", orig_padded.size, (0,0,0,0))
+        final_comp.paste(border_canvas, (0,0), mask_pil)
+
+        # Layer 2: Original Image
+        final_comp = Image.alpha_composite(final_comp, orig_padded)
+
+        # Layer 3: Cut Line Stroke (Raster)
+        is_pdf = self.params.get('pdf', False)
+
+        if not is_pdf:
+            stroke_layer_np = np.zeros((h_p, w_p, 4), dtype=np.uint8)
+            r, g, b = stroke_color
+            color_tuple = (r, g, b, 255)
+            # Rasterize contours
+            int_contours = [cnt.astype(np.int32) for cnt in final_contours]
+            cv2.drawContours(stroke_layer_np, int_contours, -1, color_tuple, thickness=stroke_px, lineType=cv2.LINE_AA)
+            stroke_layer_pil = Image.fromarray(stroke_layer_np, mode="RGBA")
+            final_comp = Image.alpha_composite(final_comp, stroke_layer_pil)
+
+        # Crop
+        bbox = final_comp.getbbox()
+        crop_box = None
+        if bbox:
+            l, t, r, b_ = bbox
+            l = max(0, l - 10)
+            t = max(0, t - 10)
+            r = min(final_comp.width, r + 10)
+            b_ = min(final_comp.height, b_ + 10)
+            crop_box = (l, t, r, b_)
+            final_comp = final_comp.crop(crop_box)
+
+        if is_pdf:
+            return final_comp, final_contours, crop_box, (h_p, w_p)
+        else:
+            return final_comp
+
+class StickerPrepperTab(QWidget):
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        self.image_paths = []
+        self.output_dir = None
+
+        # Settings
+        self.p_border = 30
+        self.p_border_color = (0, 0, 0)
+        self.p_offset = 0
+        self.p_stroke = 2
+        self.p_color = (255, 0, 255)
+
+        self.debounce_timer = QTimer()
+        self.debounce_timer.setSingleShot(True)
+        self.debounce_timer.setInterval(300)
+        self.debounce_timer.timeout.connect(self.update_preview)
+
+        self._setup_ui()
+
+    def _setup_ui(self):
+        outer = QVBoxLayout(self)
+        outer.setContentsMargins(8,8,8,8)
+        outer.setSpacing(6)
+        main = QHBoxLayout()
+        outer.addLayout(main)
+
+        left = QVBoxLayout()
+        main.addLayout(left, 1)
+
+        self.list_w = FileDropListWidget()
+        self.list_w.setSelectionMode(QAbstractItemView.ExtendedSelection)
+        self.list_w.files_dropped.connect(self.add_dropped_files)
+        self.list_w.currentItemChanged.connect(self.on_file_changed)
+
+        left.addWidget(QLabel("Input Images (Transparent PNG):"))
+        left.addWidget(self.list_w)
+
+        btns = QHBoxLayout()
+        b_add = QPushButton("Add Images")
+        b_add.setIcon(create_plus_icon())
+        b_add.clicked.connect(self.add_images)
+        b_clr = QPushButton("Clear List")
+        b_clr.clicked.connect(self.clear_list)
+        btns.addWidget(b_add); btns.addWidget(b_clr)
+        left.addLayout(btns)
+
+        grp = QGroupBox("Sticker Settings")
+        glayout = QVBoxLayout(grp)
+
+        # Border
+        b_layout = QHBoxLayout()
+        self.lbl_border = QLabel(f"Border: {self.p_border}px")
+        b_layout.addWidget(self.lbl_border)
+        self.btn_border_color = QPushButton()
+        self.btn_border_color.setFixedSize(24, 24)
+        self.btn_border_color.clicked.connect(self.choose_border_color)
+        self._update_border_color_btn()
+        b_layout.addWidget(self.btn_border_color)
+
+        self.sl_border = QSlider(Qt.Horizontal)
+        self.sl_border.setRange(0, 100)
+        self.sl_border.setValue(self.p_border)
+        self.sl_border.valueChanged.connect(lambda v: (self.lbl_border.setText(f"Border: {v}px"), self.on_param_change()))
+
+        # Offset
+        self.lbl_offset = QLabel(f"Offset: {self.p_offset}px")
+        self.sl_offset = QSlider(Qt.Horizontal)
+        self.sl_offset.setRange(-50, 50)
+        self.sl_offset.setValue(self.p_offset)
+        self.sl_offset.valueChanged.connect(lambda v: (self.lbl_offset.setText(f"Offset: {v}px"), self.on_param_change()))
+
+        # Stroke
+        self.lbl_stroke = QLabel(f"Stroke: {self.p_stroke}px")
+        self.sl_stroke = QSlider(Qt.Horizontal)
+        self.sl_stroke.setRange(1, 20)
+        self.sl_stroke.setValue(self.p_stroke)
+        self.sl_stroke.valueChanged.connect(lambda v: (self.lbl_stroke.setText(f"Stroke: {v}px"), self.on_param_change()))
+
+        # Color
+        c_layout = QHBoxLayout()
+        c_layout.addWidget(QLabel("Stroke Color:"))
+        self.btn_color = QPushButton()
+        self.btn_color.setFixedSize(50, 24)
+        self.btn_color.clicked.connect(self.choose_color)
+        self._update_color_btn()
+        c_layout.addWidget(self.btn_color)
+        c_layout.addStretch()
+
+        glayout.addLayout(b_layout)
+        glayout.addWidget(self.sl_border)
+        glayout.addWidget(self.lbl_offset)
+        glayout.addWidget(self.sl_offset)
+        glayout.addWidget(self.lbl_stroke)
+        glayout.addWidget(self.sl_stroke)
+        glayout.addLayout(c_layout)
+
+        self.chk_pdf = QCheckBox("Output as PDF (Vector)")
+        if not HAS_REPORTLAB:
+            self.chk_pdf.setEnabled(False)
+            self.chk_pdf.setText("Output as PDF (Missing Lib)")
+        glayout.addWidget(self.chk_pdf)
+
+        left.addWidget(grp)
+
+        # Output
+        l_out = QLabel("OUTPUT FOLDER:")
+        l_out.setStyleSheet("font-weight: bold;")
+        left.addWidget(l_out)
+        self.out_lbl = QLabel("(auto)")
+        left.addWidget(self.out_lbl)
+        b_change = QPushButton("Change Folder")
+        b_change.clicked.connect(self.change_output_folder)
+        left.addWidget(b_change)
+
+        b_proc = QPushButton("Process All")
+        b_proc.clicked.connect(self.process_all)
+        left.addWidget(b_proc)
+
+        right = QVBoxLayout()
+        main.addLayout(right, 3)
+        self.preview_widget = ZoomableImageWidget()
+        right.addWidget(self.preview_widget)
+
+    def add_images(self):
+        files, _ = QFileDialog.getOpenFileNames(self, "Add Images", "", "PNG (*.png)")
+        if files: self.add_dropped_files([Path(f) for f in files])
+
+    def add_dropped_files(self, files):
+        for p in files:
+            if p.suffix.lower() == ".png" and p not in self.image_paths:
+                self.image_paths.append(p)
+                item = QListWidgetItem(p.name)
+                item.setData(Qt.UserRole, p)
+                self.list_w.addItem(item)
+        if self.list_w.count() > 0 and self.list_w.currentRow() < 0:
+             self.list_w.setCurrentRow(0)
+
+    def clear_list(self):
+        self.image_paths.clear()
+        self.list_w.clear()
+        self.preview_widget.set_images(None, None)
+
+    def on_file_changed(self, curr, prev):
+        if curr:
+            self.update_preview()
+        else:
+            self.preview_widget.set_images(None, None)
+
+    def on_param_change(self):
+        self.p_border = self.sl_border.value()
+        self.p_offset = self.sl_offset.value()
+        self.p_stroke = self.sl_stroke.value()
+        self.debounce_timer.start()
+
+    def choose_color(self):
+        c = QColorDialog.getColor(QColor(*self.p_color), self, "Color")
+        if c.isValid():
+            self.p_color = (c.red(), c.green(), c.blue())
+            self._update_color_btn()
+            self.on_param_change()
+
+    def choose_border_color(self):
+        c = QColorDialog.getColor(QColor(*self.p_border_color), self, "Border Color")
+        if c.isValid():
+            self.p_border_color = (c.red(), c.green(), c.blue())
+            self._update_border_color_btn()
+            self.on_param_change()
+
+    def _update_color_btn(self):
+        r,g,b = self.p_color
+        self.btn_color.setStyleSheet(f"background-color: rgb({r},{g},{b}); border: 1px solid #666;")
+
+    def _update_border_color_btn(self):
+        r,g,b = self.p_border_color
+        self.btn_border_color.setStyleSheet(f"background-color: rgb({r},{g},{b}); border: 1px solid #666;")
+
+    def change_output_folder(self):
+        d = QFileDialog.getExistingDirectory(self, "Select Folder")
+        if d:
+            self.output_dir = Path(d)
+            self.out_lbl.setText(str(self.output_dir))
+
+    def ensure_out(self, sample):
+        if not self.output_dir:
+            self.output_dir = sample.parent / "LABOKit_Stickers"
+            self.output_dir.mkdir(exist_ok=True)
+            self.out_lbl.setText(str(self.output_dir))
+        return self.output_dir
+
+    def get_params(self):
+        return {
+            "border": self.p_border,
+            "border_c": self.p_border_color,
+            "offset": self.p_offset,
+            "stroke_w": self.p_stroke,
+            "stroke_c": self.p_color,
+            "pdf": self.chk_pdf.isChecked()
+        }
+
+    def update_preview(self):
+        if not self.list_w.currentItem(): return
+        p = self.list_w.currentItem().data(Qt.UserRole)
+        params = self.get_params()
+        self.preview_worker = StickerWorker([p], None, params, mode="preview", parent=self)
+        self.preview_worker.preview_ready.connect(self.on_preview_ready)
+        self.preview_worker.start()
+
+    def on_preview_ready(self, pix):
+        if not self.list_w.currentItem(): return
+        p = self.list_w.currentItem().data(Qt.UserRole)
+        orig = QPixmap(str(p))
+        self.preview_widget.set_image_pixmaps(orig, pix, preserve_zoom=True)
+
+    def process_all(self):
+        if not self.image_paths: return
+        out = self.ensure_out(self.image_paths[0])
+        params = self.get_params()
+
+        self.dlg = QProgressDialog("Processing V2...", "Cancel", 0, len(self.image_paths), self)
+        self.dlg.setWindowModality(Qt.ApplicationModal)
+        self.dlg.setFixedWidth(350)
+        self.dlg.show()
+
+        self.batch_worker = StickerWorker(self.image_paths, out, params, mode="process", parent=self)
+        self.batch_worker.progress.connect(lambda i, msg: (self.dlg.setValue(i), self.dlg.setLabelText(msg)))
+        self.batch_worker.finished.connect(lambda c: (self.dlg.close(), QMessageBox.information(self, "Done", f"Processed {c}")))
+        self.batch_worker.error.connect(lambda e: (self.dlg.close(), QMessageBox.critical(self, "Error", e)))
+        self.dlg.canceled.connect(self.batch_worker.stop)
+        self.batch_worker.start()
+
+def create_tab(parent):
+    return StickerPrepperTab(parent)
