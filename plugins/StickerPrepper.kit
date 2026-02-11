@@ -234,30 +234,46 @@ class StickerWorker(QThread):
 
         def get_kernel(size):
             k_size = 2 * int(size) + 1
-            return cv2.getStructuringElement(cv2.MORPH_RECT, (k_size, k_size))
+            return cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (k_size, k_size))
 
         # Pad image to accommodate dilation
-        # Padding = Border + |Offset| + Stroke + Safety
-        pad = int(border_px + abs(offset_px) + stroke_px + 20)
+        # Padding = Max Expansion + Stroke + Safety
+        # Max Expansion = max(Border, Border + Offset) if Offset > 0 else Border
+        # Let's be generous
+        pad = int(border_px + abs(offset_px) + stroke_px + 30)
         orig_padded = ImageOps.expand(orig, border=pad, fill=(0,0,0,0))
         img_np_padded = np.array(orig_padded)
         alpha_padded = img_np_padded[:, :, 3]
 
-        # WHITE BODY MASK
-        white_body_mask = alpha_padded.copy()
+        # 1. BORDER MASK (BLEED)
+        # Dilate Original Alpha directly
+        border_mask = alpha_padded.copy()
         if border_px > 0:
             kernel_b = get_kernel(border_px)
-            white_body_mask = cv2.dilate(white_body_mask, kernel_b)
+            border_mask = cv2.dilate(border_mask, kernel_b)
 
-        # CUT LINE MASK
-        cut_mask = white_body_mask.copy()
-        if offset_px != 0:
-            if offset_px > 0:
-                k_off = get_kernel(offset_px)
-                cut_mask = cv2.dilate(cut_mask, k_off)
+        # 2. CUT LINE MASK
+        # Calculated independently from Original Alpha
+        # Total Expansion = Border + Offset
+        # If Total > 0: Dilate(Original, Total)
+        # If Total < 0: Erode(Original, |Total|)
+        # If Total == 0: Original
+
+        total_expansion = border_px + offset_px
+        cut_mask = alpha_padded.copy()
+
+        if total_expansion != 0:
+            if total_expansion > 0:
+                k_cut = get_kernel(total_expansion)
+                cut_mask = cv2.dilate(cut_mask, k_cut)
             else:
-                k_off = get_kernel(abs(offset_px))
-                cut_mask = cv2.erode(cut_mask, k_off)
+                k_cut = get_kernel(abs(total_expansion))
+                cut_mask = cv2.erode(cut_mask, k_cut)
+
+        # Smoothing Step (Gaussian Blur + Threshold)
+        # To smooth the "staircase" pixels from dilation
+        cut_mask = cv2.GaussianBlur(cut_mask, (5, 5), 0)
+        _, cut_mask = cv2.threshold(cut_mask, 127, 255, cv2.THRESH_BINARY)
 
         # 3. GENERATE LAYERS
 
@@ -267,7 +283,7 @@ class StickerWorker(QThread):
         border_canvas = Image.new("RGBA", orig_padded.size, (r_b, g_b, b_b, 255))
 
         # Mask for border body
-        mask_pil = Image.fromarray(white_body_mask, mode="L")
+        mask_pil = Image.fromarray(border_mask, mode="L")
 
         # Start composite with transparent
         final_comp = Image.new("RGBA", orig_padded.size, (0,0,0,0))
