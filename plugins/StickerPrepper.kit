@@ -275,6 +275,14 @@ class StickerWorker(QThread):
         cut_mask = cv2.GaussianBlur(cut_mask, (5, 5), 0)
         _, cut_mask = cv2.threshold(cut_mask, 127, 255, cv2.THRESH_BINARY)
 
+        # Supersampling for smooth vector contours
+        # Upscale 2x -> find contours -> scale down
+        # This reduces pixel-step jaggedness in PDF
+        scale_factor = 2.0
+        h, w = cut_mask.shape
+        cut_mask_up = cv2.resize(cut_mask, (int(w * scale_factor), int(h * scale_factor)), interpolation=cv2.INTER_LINEAR)
+        _, cut_mask_up = cv2.threshold(cut_mask_up, 127, 255, cv2.THRESH_BINARY)
+
         # 3. GENERATE LAYERS
 
         # Layer 1: Border Body (Bleed)
@@ -295,10 +303,23 @@ class StickerWorker(QThread):
         final_comp = Image.alpha_composite(final_comp, orig_padded)
 
         # Layer 3: Cut Line Stroke (Raster)
-        # Threshold cut_mask to ensure binary for findContours
-        _, thresh = cv2.threshold(cut_mask, 127, 255, cv2.THRESH_BINARY)
-        # Use RETR_TREE to find internal holes as well
-        contours, hierarchy = cv2.findContours(thresh, cv2.RETR_TREE, cv2.CHAIN_APPROX_SIMPLE)
+        # Use the UPSCALED mask to find contours for better smoothness
+        contours_up, hierarchy = cv2.findContours(cut_mask_up, cv2.RETR_TREE, cv2.CHAIN_APPROX_SIMPLE)
+
+        # Smooth contours using approxPolyDP
+        smooth_contours = []
+        for cnt in contours_up:
+            epsilon = 0.005 * cv2.arcLength(cnt, True) # 0.5% epsilon for smoothing
+            approx = cv2.approxPolyDP(cnt, epsilon, True)
+
+            # Scale back down to original resolution
+            # cnt is numpy array of shape (N, 1, 2)
+            # We need to divide coordinates by scale_factor
+            cnt_down = approx.astype(np.float32) / scale_factor
+            # Convert back to int32 for cv2.drawContours (it expects int)
+            # But keep float for PDF if possible? No, drawContours needs int.
+            # For PDF we can use float.
+            smooth_contours.append(cnt_down)
 
         # For PDF Vector output, we need to return contours and the composite without the stroke
         is_pdf = self.params.get('pdf', False)
@@ -312,7 +333,10 @@ class StickerWorker(QThread):
             r, g, b = stroke_color
             color_tuple = (r, g, b, 255)
 
-            cv2.drawContours(stroke_layer_np, contours, -1, color_tuple, thickness=stroke_px, lineType=cv2.LINE_AA)
+            # Convert float contours to int for raster drawing
+            int_contours = [cnt.astype(np.int32) for cnt in smooth_contours]
+
+            cv2.drawContours(stroke_layer_np, int_contours, -1, color_tuple, thickness=stroke_px, lineType=cv2.LINE_AA)
             stroke_layer_pil = Image.fromarray(stroke_layer_np, mode="RGBA")
             final_comp = Image.alpha_composite(final_comp, stroke_layer_pil)
 
@@ -331,7 +355,7 @@ class StickerWorker(QThread):
             final_comp = final_comp.crop(crop_box)
 
         if is_pdf:
-            return final_comp, contours, crop_box, (orig_padded.height, orig_padded.width)
+            return final_comp, smooth_contours, crop_box, (orig_padded.height, orig_padded.width)
         else:
             return final_comp
 
