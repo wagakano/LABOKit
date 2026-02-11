@@ -1,0 +1,457 @@
+import sys
+import os
+import cv2
+import numpy as np
+from PIL import Image, ImageDraw, ImageOps
+from pathlib import Path
+from PySide6.QtCore import Qt, Signal, QThread, QTimer, QSize, QByteArray, QBuffer, QIODevice
+from PySide6.QtGui import QPixmap, QImage, QColor, QAction, QIcon
+from PySide6.QtWidgets import (
+    QWidget, QVBoxLayout, QHBoxLayout, QPushButton, QLabel,
+    QSlider, QSpinBox, QColorDialog, QFileDialog, QMessageBox,
+    QGroupBox, QFrame, QListWidgetItem, QMenu, QProgressDialog,
+    QAbstractItemView
+)
+
+# Imports from Main App
+try:
+    from ui_shared import FileDropListWidget, ZoomableImageWidget, create_plus_icon, VALID_EXTENSIONS
+    from translations import tr
+except ImportError:
+    # Fallback for testing isolation
+    def tr(k): return k
+    FileDropListWidget = None
+    ZoomableImageWidget = None
+    create_plus_icon = None
+    VALID_EXTENSIONS = {}
+
+PLUGIN_NAME = "Sticker Prepper"
+PLUGIN_VERSION = "1.0"
+HELP_TEXT = """
+<h3>Sticker Prepper</h3>
+<p>Automated Die-Cut Generation for Print-and-Cut Workflows.</p>
+<hr>
+<b>How to use:</b>
+<ol>
+<li><b>Add Images:</b> Drag & Drop transparent PNGs.</li>
+<li><b>Adjust Settings:</b>
+    <ul>
+    <li><b>Border:</b> Width of the white background shape.</li>
+    <li><b>Offset:</b> Adjusts the cut line position relative to the white border (Negative = Inside).</li>
+    <li><b>Stroke:</b> Width of the cut line.</li>
+    </ul>
+</li>
+<li><b>Preview:</b> Check the result in the right panel.</li>
+<li><b>Process:</b> Click 'Process All' to save files to <b>LABOKit_Stickers</b> folder.</li>
+</ol>
+"""
+
+class StickerWorker(QThread):
+    progress = Signal(int, str)
+    finished = Signal(int)
+    error = Signal(str)
+    preview_ready = Signal(QPixmap) # For preview mode
+
+    def __init__(self, paths, out_dir, params, mode="process", parent=None):
+        super().__init__(parent)
+        self.paths = paths
+        self.out_dir = out_dir
+        self.params = params
+        self.mode = mode # "process" or "preview"
+        self.is_running = True
+
+    def run(self):
+        try:
+            if self.mode == "preview":
+                self.run_preview()
+            else:
+                self.run_batch()
+        except Exception as e:
+            self.error.emit(str(e))
+
+    def run_preview(self):
+        if not self.paths: return
+        p = self.paths[0]
+        try:
+            final_img = self.process_image(p)
+            if final_img:
+                # Convert PIL to QPixmap
+                # PIL RGBA -> QImage
+                data = final_img.convert("RGBA").tobytes("raw", "RGBA")
+                qim = QImage(data, final_img.width, final_img.height, QImage.Format_RGBA8888)
+                # Create a deep copy to ensure data persistence
+                pix = QPixmap.fromImage(qim.copy())
+                self.preview_ready.emit(pix)
+        except Exception as e:
+            # print(f"Preview Error: {e}")
+            self.error.emit(str(e))
+
+    def run_batch(self):
+        cnt = 0
+        total = len(self.paths)
+        for i, p in enumerate(self.paths):
+            if not self.is_running: break
+            self.progress.emit(i, f"Processing {p.name}...")
+
+            try:
+                final_img = self.process_image(p)
+                if final_img:
+                    out_path = self.out_dir / f"{p.stem}_sticker.png"
+                    final_img.save(out_path)
+                    cnt += 1
+            except Exception as e:
+                print(f"Error processing {p.name}: {e}")
+
+        self.finished.emit(cnt)
+
+    def process_image(self, path):
+        # 1. Load Image
+        orig = Image.open(path).convert("RGBA")
+
+        # 2. Extract Alpha & Dilate (White Body)
+        # Convert to numpy for CV2 (PIL is RGB/RGBA, cv2 expects array)
+        img_np = np.array(orig)
+        alpha = img_np[:, :, 3]
+
+        border_px = self.params.get('border', 30)
+        offset_px = self.params.get('offset', 0)
+        stroke_px = self.params.get('stroke_w', 2)
+        stroke_color = self.params.get('stroke_c', (255, 0, 255))
+
+        def get_kernel(size):
+            k_size = 2 * int(size) + 1
+            return cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (k_size, k_size))
+
+        # Pad image to accommodate dilation
+        # Padding = Border + |Offset| + Stroke + Safety
+        pad = int(border_px + abs(offset_px) + stroke_px + 20)
+        orig_padded = ImageOps.expand(orig, border=pad, fill=(0,0,0,0))
+        img_np_padded = np.array(orig_padded)
+        alpha_padded = img_np_padded[:, :, 3]
+
+        # WHITE BODY MASK
+        white_body_mask = alpha_padded.copy()
+        if border_px > 0:
+            kernel_b = get_kernel(border_px)
+            white_body_mask = cv2.dilate(white_body_mask, kernel_b)
+
+        # CUT LINE MASK
+        cut_mask = white_body_mask.copy()
+        if offset_px != 0:
+            if offset_px > 0:
+                k_off = get_kernel(offset_px)
+                cut_mask = cv2.dilate(cut_mask, k_off)
+            else:
+                k_off = get_kernel(abs(offset_px))
+                cut_mask = cv2.erode(cut_mask, k_off)
+
+        # 3. GENERATE LAYERS
+
+        # Layer 1: White Body
+        # Create full white image
+        white_canvas = Image.new("RGBA", orig_padded.size, (255, 255, 255, 255))
+        # Mask for white body
+        mask_pil = Image.fromarray(white_body_mask, mode="L")
+
+        # Start composite with transparent
+        final_comp = Image.new("RGBA", orig_padded.size, (0,0,0,0))
+
+        # Paste White using mask
+        final_comp.paste(white_canvas, (0,0), mask_pil)
+
+        # Layer 2: Original Image
+        final_comp = Image.alpha_composite(final_comp, orig_padded)
+
+        # Layer 3: Cut Line Stroke
+        # Threshold cut_mask to ensure binary for findContours
+        _, thresh = cv2.threshold(cut_mask, 127, 255, cv2.THRESH_BINARY)
+        contours, _ = cv2.findContours(thresh, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
+
+        # Draw on separate layer
+        stroke_layer_np = np.zeros((orig_padded.height, orig_padded.width, 4), dtype=np.uint8)
+
+        # Color (R, G, B, A) since we will make PIL Image from it
+        r, g, b = stroke_color
+        color_tuple = (r, g, b, 255)
+
+        cv2.drawContours(stroke_layer_np, contours, -1, color_tuple, thickness=stroke_px, lineType=cv2.LINE_AA)
+
+        stroke_layer_pil = Image.fromarray(stroke_layer_np, mode="RGBA")
+
+        final_comp = Image.alpha_composite(final_comp, stroke_layer_pil)
+
+        # Crop to content + margin
+        bbox = final_comp.getbbox()
+        if bbox:
+            l, t, r, b_ = bbox
+            l = max(0, l - 10)
+            t = max(0, t - 10)
+            r = min(final_comp.width, r + 10)
+            b_ = min(final_comp.height, b_ + 10)
+            final_comp = final_comp.crop((l, t, r, b_))
+
+        return final_comp
+
+    def stop(self):
+        self.is_running = False
+
+
+class StickerPrepperTab(QWidget):
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        self.image_paths = []
+        self.output_dir = None
+        self.output_map = {} # path -> out_path (not fully used in batch but useful for logic)
+
+        # Settings
+        self.p_border = 30
+        self.p_offset = 0
+        self.p_stroke = 2
+        self.p_color = (255, 0, 255)
+
+        self.debounce_timer = QTimer()
+        self.debounce_timer.setSingleShot(True)
+        self.debounce_timer.setInterval(300) # 300ms debounce
+        self.debounce_timer.timeout.connect(self.update_preview)
+
+        self.preview_worker = None
+
+        self._setup_ui()
+
+    def _setup_ui(self):
+        outer = QVBoxLayout(self)
+        outer.setContentsMargins(8,8,8,8)
+        outer.setSpacing(6)
+
+        main = QHBoxLayout()
+        outer.addLayout(main)
+
+        # --- LEFT SIDEBAR ---
+        left = QVBoxLayout()
+        main.addLayout(left, 1) # Stretch 1
+
+        # File List
+        self.list_w = FileDropListWidget()
+        self.list_w.setSelectionMode(QAbstractItemView.ExtendedSelection)
+        self.list_w.files_dropped.connect(self.add_dropped_files)
+        self.list_w.currentItemChanged.connect(self.on_file_changed)
+
+        lbl_files = QLabel("Input Images (Transparent PNG):")
+        lbl_files.setStyleSheet("border:none; background:transparent;")
+        left.addWidget(lbl_files)
+        left.addWidget(self.list_w)
+
+        # Add/Clear Buttons
+        btns = QHBoxLayout()
+        b_add = QPushButton("Add Images")
+        b_add.setIcon(create_plus_icon())
+        b_add.clicked.connect(self.add_images)
+
+        b_clr = QPushButton("Clear List")
+        b_clr.clicked.connect(self.clear_list)
+
+        btns.addWidget(b_add)
+        btns.addWidget(b_clr)
+        left.addLayout(btns)
+
+        # Divider
+        line = QFrame()
+        line.setFrameShape(QFrame.HLine)
+        line.setFrameShadow(QFrame.Sunken)
+        line.setStyleSheet("border: none; background-color: #b3bcd1; min-height: 1px; max-height: 1px; margin: 10px 0;")
+        left.addWidget(line)
+
+        # Settings Group
+        grp = QGroupBox("Sticker Settings")
+        grp.setStyleSheet("QGroupBox { font-weight: bold; border: 1px solid #b3bcd1; border-radius: 6px; margin-top: 6px; } QGroupBox::title { subcontrol-origin: margin; left: 10px; padding: 0 3px; }")
+        glayout = QVBoxLayout(grp)
+        glayout.setSpacing(10)
+
+        # Border
+        self.lbl_border = QLabel(f"Border Thickness: {self.p_border}px")
+        self.sl_border = QSlider(Qt.Horizontal)
+        self.sl_border.setRange(0, 100)
+        self.sl_border.setValue(self.p_border)
+        self.sl_border.valueChanged.connect(lambda v: (self.lbl_border.setText(f"Border Thickness: {v}px"), self.on_param_change()))
+
+        # Offset
+        self.lbl_offset = QLabel(f"Cut Line Offset: {self.p_offset}px")
+        self.sl_offset = QSlider(Qt.Horizontal)
+        self.sl_offset.setRange(-50, 50)
+        self.sl_offset.setValue(self.p_offset)
+        self.sl_offset.valueChanged.connect(lambda v: (self.lbl_offset.setText(f"Cut Line Offset: {v}px"), self.on_param_change()))
+
+        # Stroke
+        self.lbl_stroke = QLabel(f"Stroke Width: {self.p_stroke}px")
+        self.sl_stroke = QSlider(Qt.Horizontal)
+        self.sl_stroke.setRange(1, 20)
+        self.sl_stroke.setValue(self.p_stroke)
+        self.sl_stroke.valueChanged.connect(lambda v: (self.lbl_stroke.setText(f"Stroke Width: {v}px"), self.on_param_change()))
+
+        # Color
+        c_layout = QHBoxLayout()
+        c_layout.addWidget(QLabel("Stroke Color:"))
+        self.btn_color = QPushButton()
+        self.btn_color.setFixedSize(50, 24)
+        self.btn_color.clicked.connect(self.choose_color)
+        self._update_color_btn()
+        c_layout.addWidget(self.btn_color)
+        c_layout.addStretch()
+
+        glayout.addWidget(self.lbl_border)
+        glayout.addWidget(self.sl_border)
+        glayout.addWidget(self.lbl_offset)
+        glayout.addWidget(self.sl_offset)
+        glayout.addWidget(self.lbl_stroke)
+        glayout.addWidget(self.sl_stroke)
+        glayout.addLayout(c_layout)
+
+        left.addWidget(grp)
+
+        # Output & Process
+        left.addSpacing(10)
+
+        l_out = QLabel("OUTPUT FOLDER:")
+        l_out.setStyleSheet("font-weight: bold; border: none; background: transparent;")
+        left.addWidget(l_out)
+        self.out_lbl = QLabel("(auto: LABOKit_Stickers)")
+        self.out_lbl.setWordWrap(True)
+        self.out_lbl.setStyleSheet("color: #666; margin-bottom: 5px; border: none; background: transparent;")
+        left.addWidget(self.out_lbl)
+
+        b_change = QPushButton("Change Folder")
+        b_change.clicked.connect(self.change_output_folder)
+        left.addWidget(b_change)
+
+        left.addSpacing(5)
+
+        b_proc_all = QPushButton("Process All Images")
+        b_proc_all.setStyleSheet("font-weight: bold; padding: 6px;")
+        b_proc_all.clicked.connect(self.process_all)
+        left.addWidget(b_proc_all)
+
+        # --- RIGHT PREVIEW ---
+        right = QVBoxLayout()
+        main.addLayout(right, 3) # Stretch 3
+
+        self.preview_widget = ZoomableImageWidget()
+        right.addWidget(self.preview_widget)
+
+    # --- UI Logic ---
+
+    def add_images(self):
+        files, _ = QFileDialog.getOpenFileNames(self, "Add Images", "", "Images (*.png);;All Files (*)")
+        if files: self.add_dropped_files([Path(f) for f in files])
+
+    def add_dropped_files(self, files):
+        for p in files:
+            if p.suffix.lower() == ".png":
+                if p not in self.image_paths:
+                    self.image_paths.append(p)
+                    item = QListWidgetItem(p.name)
+                    item.setData(Qt.UserRole, p)
+                    self.list_w.addItem(item)
+
+        if self.list_w.count() > 0 and self.list_w.currentRow() < 0:
+            self.list_w.setCurrentRow(0)
+
+    def clear_list(self):
+        self.image_paths.clear()
+        self.list_w.clear()
+        self.preview_widget.set_images(None, None)
+
+    def on_file_changed(self, curr, prev):
+        if curr:
+            p = curr.data(Qt.UserRole)
+            self.update_preview()
+        else:
+            self.preview_widget.set_images(None, None)
+
+    def on_param_change(self):
+        self.p_border = self.sl_border.value()
+        self.p_offset = self.sl_offset.value()
+        self.p_stroke = self.sl_stroke.value()
+        self.debounce_timer.start()
+
+    def choose_color(self):
+        c = QColorDialog.getColor(QColor(*self.p_color), self, "Select Stroke Color")
+        if c.isValid():
+            self.p_color = (c.red(), c.green(), c.blue())
+            self._update_color_btn()
+            self.on_param_change()
+
+    def _update_color_btn(self):
+        r,g,b = self.p_color
+        self.btn_color.setStyleSheet(f"background-color: rgb({r},{g},{b}); border: 1px solid #666; border-radius: 4px;")
+
+    def ensure_out(self, sample_path):
+        if not self.output_dir:
+            self.output_dir = sample_path.parent / "LABOKit_Stickers"
+            self.output_dir.mkdir(exist_ok=True)
+            self.out_lbl.setText(str(self.output_dir))
+        return self.output_dir
+
+    def change_output_folder(self):
+        d = QFileDialog.getExistingDirectory(self, "Select Output Folder")
+        if d:
+            self.output_dir = Path(d)
+            self.out_lbl.setText(str(self.output_dir))
+
+    def get_params(self):
+        return {
+            "border": self.p_border,
+            "offset": self.p_offset,
+            "stroke_w": self.p_stroke,
+            "stroke_c": self.p_color
+        }
+
+    def update_preview(self):
+        if not self.list_w.currentItem(): return
+        p = self.list_w.currentItem().data(Qt.UserRole)
+
+        params = self.get_params()
+
+        # Kill existing preview worker if running?
+        # Ideally, wait or cancel.
+        # For simplicity, we just start a new one, but let's check.
+        # Python threads aren't easily cancellable, but we can set a flag.
+
+        self.preview_worker = StickerWorker([p], None, params, mode="preview", parent=self)
+        self.preview_worker.preview_ready.connect(self.on_preview_ready)
+        self.preview_worker.start()
+
+    def on_preview_ready(self, pix):
+        if not self.list_w.currentItem(): return
+        p = self.list_w.currentItem().data(Qt.UserRole)
+
+        # Load original pixmap for comparison toggle
+        orig_pix = QPixmap(str(p))
+        self.preview_widget.set_image_pixmaps(orig_pix, pix, preserve_zoom=True)
+
+    def process_all(self):
+        if not self.image_paths:
+            QMessageBox.information(self, "Info", "Please add images first.")
+            return
+
+        out = self.ensure_out(self.image_paths[0])
+        params = self.get_params()
+
+        self.dlg = QProgressDialog("Processing Stickers...", "Cancel", 0, len(self.image_paths), self)
+        self.dlg.setWindowModality(Qt.ApplicationModal)
+        self.dlg.setFixedWidth(350)
+        self.dlg.show()
+
+        self.batch_worker = StickerWorker(self.image_paths, out, params, mode="process", parent=self)
+        self.batch_worker.progress.connect(lambda i, msg: (self.dlg.setValue(i), self.dlg.setLabelText(msg)))
+        self.batch_worker.finished.connect(self.on_batch_finished)
+        self.batch_worker.error.connect(lambda e: (self.dlg.close(), QMessageBox.critical(self, "Error", e)))
+        self.dlg.canceled.connect(self.batch_worker.stop)
+
+        self.batch_worker.start()
+
+    def on_batch_finished(self, cnt):
+        self.dlg.close()
+        QMessageBox.information(self, "Done", f"Processed {cnt} stickers.\nSaved to: {self.output_dir}")
+
+def create_tab(parent):
+    return StickerPrepperTab(parent)
