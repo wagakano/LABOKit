@@ -187,16 +187,43 @@ class StickerWorker(QThread):
         # CV2 Contours: List of arrays [x, y]
         # Coordinate system flip: PDF (0,0) is bottom-left. Image (0,0) is top-left.
         # y_pdf = h_pts - (y_img * scale)
+        # Chaikin's Corner Cutting Algorithm
+        def chaikin_smooth(points, iterations=3):
+            if len(points) < 3: return points
+
+            for _ in range(iterations):
+                new_points = []
+                # Close the loop: append start point at end
+                # But points are distinct.
+                # Assuming closed contour (sticker cut)
+                pts_closed = points + [points[0]]
+
+                for i in range(len(pts_closed) - 1):
+                    p0 = pts_closed[i]
+                    p1 = pts_closed[i+1]
+
+                    # Q = 0.75 P0 + 0.25 P1
+                    Q = (0.75 * p0[0] + 0.25 * p1[0], 0.75 * p0[1] + 0.25 * p1[1])
+                    # R = 0.25 P0 + 0.75 P1
+                    R = (0.25 * p0[0] + 0.75 * p1[0], 0.25 * p0[1] + 0.75 * p1[1])
+
+                    new_points.append(Q)
+                    new_points.append(R)
+
+                points = new_points
+            return points
 
         for cnt in contours:
+            # cnt is shape (N, 1, 2) -> Convert to list of (x,y)
+            raw_points = [(pt[0], pt[1]) for pt in cnt[:, 0, :]]
+
+            # Apply Smoothing
+            smoothed_points = chaikin_smooth(raw_points, iterations=3)
+
             path = c.beginPath()
-            # cnt is shape (N, 1, 2)
-            points = cnt[:, 0, :]
 
             first = True
-            for pt in points:
-                x_global, y_global = pt[0], pt[1]
-
+            for x_global, y_global in smoothed_points:
                 # Adjust for crop
                 x_rel = x_global - crop_x
                 y_rel = y_global - crop_y
@@ -333,6 +360,13 @@ class StickerWorker(QThread):
             r, g, b = stroke_color
             color_tuple = (r, g, b, 255)
 
+            # Apply Smoothing to Raster too?
+            # Raster uses cv2.drawContours which draws lines.
+            # To match PDF look, we should ideally smooth here too, but cv2 draws poly lines.
+            # Let's use the Chaikin smoothed points for raster too if we want parity.
+            # BUT: Chaikin returns simple list of points. cv2 needs numpy int32 (N,1,2).
+
+            # For now, keep Raster logic simple (approxPolyDP) as user complained about PDF jaggedness.
             # Convert float contours to int for raster drawing
             int_contours = [cnt.astype(np.int32) for cnt in smooth_contours]
 
