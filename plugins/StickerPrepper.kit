@@ -276,9 +276,9 @@ class StickerWorker(QThread):
         _, cut_mask = cv2.threshold(cut_mask, 127, 255, cv2.THRESH_BINARY)
 
         # Supersampling for smooth vector contours
-        # Upscale 2x -> find contours -> scale down
+        # Upscale 4x -> find contours -> scale down
         # This reduces pixel-step jaggedness in PDF
-        scale_factor = 2.0
+        scale_factor = 4.0
         h, w = cut_mask.shape
         cut_mask_up = cv2.resize(cut_mask, (int(w * scale_factor), int(h * scale_factor)), interpolation=cv2.INTER_LINEAR)
         _, cut_mask_up = cv2.threshold(cut_mask_up, 127, 255, cv2.THRESH_BINARY)
@@ -309,7 +309,7 @@ class StickerWorker(QThread):
         # Smooth contours using approxPolyDP
         smooth_contours = []
         for cnt in contours_up:
-            epsilon = 0.005 * cv2.arcLength(cnt, True) # 0.5% epsilon for smoothing
+            epsilon = 0.0001 * cv2.arcLength(cnt, True) # 0.01% epsilon (Minimal simplification)
             approx = cv2.approxPolyDP(cnt, epsilon, True)
 
             # Scale back down to original resolution
