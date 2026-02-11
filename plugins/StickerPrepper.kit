@@ -259,6 +259,11 @@ class StickerWorker(QThread):
         stroke_px = self.params.get('stroke_w', 2)
         stroke_color = self.params.get('stroke_c', (255, 0, 255))
 
+        # Pre-Smoothing Source Alpha (Optional)
+        # Allows softening jagged pixel art edges before generating the cut line
+        smooth_source = self.params.get('smooth_source', False)
+        blur_strength = self.params.get('blur_strength', 3)
+
         def get_kernel(size):
             k_size = 2 * int(size) + 1
             return cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (k_size, k_size))
@@ -272,9 +277,18 @@ class StickerWorker(QThread):
         img_np_padded = np.array(orig_padded)
         alpha_padded = img_np_padded[:, :, 3]
 
+        # Pre-Blur Source Alpha if requested
+        if smooth_source and blur_strength > 0:
+            k = 2 * blur_strength + 1
+            alpha_blurred = cv2.GaussianBlur(alpha_padded, (k, k), 0)
+            # Threshold back to binary to "round off" the steps
+            _, alpha_processed = cv2.threshold(alpha_blurred, 127, 255, cv2.THRESH_BINARY)
+        else:
+            alpha_processed = alpha_padded.copy()
+
         # 1. BORDER MASK (BLEED)
-        # Dilate Original Alpha directly
-        border_mask = alpha_padded.copy()
+        # Dilate Processed Alpha
+        border_mask = alpha_processed.copy()
         if border_px > 0:
             kernel_b = get_kernel(border_px)
             border_mask = cv2.dilate(border_mask, kernel_b)
@@ -287,7 +301,7 @@ class StickerWorker(QThread):
         # If Total == 0: Original
 
         total_expansion = border_px + offset_px
-        cut_mask = alpha_padded.copy()
+        cut_mask = alpha_processed.copy()
 
         if total_expansion != 0:
             if total_expansion > 0:
@@ -524,6 +538,25 @@ class StickerPrepperTab(QWidget):
             self.chk_pdf.setText("Output as PDF (ReportLab missing)")
         glayout.addWidget(self.chk_pdf)
 
+        # Smoothing Options
+        gsmooth = QGroupBox("Smoothing")
+        glayout_s = QVBoxLayout(gsmooth)
+
+        self.chk_smooth_source = QCheckBox("Smooth Source Edges")
+        self.chk_smooth_source.setChecked(True)
+        self.chk_smooth_source.toggled.connect(self.on_param_change)
+        glayout_s.addWidget(self.chk_smooth_source)
+
+        self.lbl_blur = QLabel("Blur Strength: 3")
+        self.sl_blur = QSlider(Qt.Horizontal)
+        self.sl_blur.setRange(1, 10)
+        self.sl_blur.setValue(3)
+        self.sl_blur.valueChanged.connect(lambda v: (self.lbl_blur.setText(f"Blur Strength: {v}"), self.on_param_change()))
+        glayout_s.addWidget(self.lbl_blur)
+        glayout_s.addWidget(self.sl_blur)
+
+        left.addWidget(gsmooth)
+
         left.addWidget(grp)
 
         # Output & Process
@@ -633,7 +666,9 @@ class StickerPrepperTab(QWidget):
             "offset": self.p_offset,
             "stroke_w": self.p_stroke,
             "stroke_c": self.p_color,
-            "pdf": self.chk_pdf.isChecked()
+            "pdf": self.chk_pdf.isChecked(),
+            "smooth_source": self.chk_smooth_source.isChecked(),
+            "blur_strength": self.sl_blur.value()
         }
 
     def update_preview(self):
