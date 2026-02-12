@@ -12,9 +12,15 @@ import base64
 import ssl
 import requests
 import svgwrite
-# cv2 removed from here
+
+def resource_path(relative_path):
+    try:
+        base_path = sys._MEIPASS
+    except Exception:
+        base_path = os.path.abspath(".")
+    return os.path.join(base_path, relative_path)
+
 from pathlib import Path
-# PIL removed from here (unused)
 from packaging import version
 import urllib3
 urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
