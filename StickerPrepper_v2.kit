@@ -111,14 +111,19 @@ class StickerWorker(QThread):
             try:
                 res = self.process_image(task)
                 if res:
+                    # Format size string: e.g. "4x4" or "4.5x3.2"
+                    w_str = f"{task['w_in']:.1f}".rstrip('0').rstrip('.')
+                    h_str = f"{task['h_in']:.1f}".rstrip('0').rstrip('.')
+                    size_suffix = f"{w_str}x{h_str}"
+
                     if is_pdf and isinstance(res, tuple):
                         # PDF Mode
                         final_comp, contours, crop_box, orig_size = res
-                        out_path = self.out_dir / f"{p.stem}_sticker.pdf"
+                        out_path = self.out_dir / f"{p.stem}_{size_suffix}_PrintReady.pdf"
                         self.save_as_pdf(final_comp, contours, crop_box, orig_size, out_path)
                     else:
                         # PNG Mode
-                        out_path = self.out_dir / f"{p.stem}_sticker.png"
+                        out_path = self.out_dir / f"{p.stem}_{size_suffix}_PrintReady.png"
                         res.save(out_path, dpi=(TARGET_DPI, TARGET_DPI))
                     cnt += 1
             except Exception as e:
