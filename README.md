@@ -17,7 +17,6 @@
 * **Multilanguage:** Supports English, Japanese (日本語), and Indonesian (Bahasa Indonesia).
 
 ## What's New in 3.1
-* **Distribution Change:** Switched to directory-based distribution to ensure faster startup and more stable performance compared to the single-file portable version.
 * **Library Fixes & Performance Update:** Resolves Upscaler issues and general bugs. Build format changed from single-file portable to directory for faster startup speeds.
 * **Improved BG Remover:** Improved BG Remover to remove anime background more accurate.
 * **ImageLAB ASCII:** adding ASCII art generation with 8 ASCII Types (character sets) and color modes.
@@ -34,7 +33,7 @@
 ## 📥 Download
 
 **(Windows)**
-1.  **[Download](https://github.com/wagakano/LABOKit/releases/download/3.1/LABOKit_3.1.zip)**.
+1.  **[Download](https://github.com/wagakano/LABOKit/releases/download/3.1/LABOKit_3.1.zip)**
 2.  Extract `LABOKit_3.1.zip`.
 3.  Run `LABOKit_3.1.exe` and enjoy! (☆▽☆)
 
