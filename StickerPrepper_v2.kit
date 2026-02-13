@@ -267,26 +267,35 @@ class StickerWorker(QThread):
             kernel_b = get_kernel(border_px)
             border_mask = cv2.dilate(border_mask, kernel_b)
 
-        # 2. CUT LINE MASK
+        # 2. CUT LINE MASK (Distance Transform for Smoothness)
         total_expansion = border_px + offset_px
-        cut_mask = alpha_padded.copy()
 
-        if total_expansion != 0:
-            if total_expansion > 0:
-                k_cut = get_kernel(total_expansion)
-                cut_mask = cv2.dilate(cut_mask, k_cut)
-            else:
-                k_cut = get_kernel(abs(total_expansion))
-                cut_mask = cv2.erode(cut_mask, k_cut)
+        # Use Distance Transform to get mathematically perfect expansions (avoids jagged pixels)
+        _, bin_alpha = cv2.threshold(alpha_padded, 127, 255, cv2.THRESH_BINARY)
 
-        # Smoothing
-        cut_mask = cv2.GaussianBlur(cut_mask, (5, 5), 0)
-        _, cut_mask = cv2.threshold(cut_mask, 127, 255, cv2.THRESH_BINARY)
+        if total_expansion == 0:
+            cut_mask = bin_alpha
+        elif total_expansion > 0:
+            # Expand: Distance from background (Inverted)
+            bin_inv = cv2.bitwise_not(bin_alpha)
+            # Distance to nearest zero pixel (inside object)
+            dist = cv2.distanceTransform(bin_inv, cv2.DIST_L2, 5)
+            # Threshold at expansion radius
+            _, cut_mask = cv2.threshold(dist, total_expansion, 255, cv2.THRESH_BINARY_INV)
+            cut_mask = cut_mask.astype(np.uint8)
+        else: # Shrink (Negative Expansion)
+            # Shrink: Distance from background (Normal)
+            # Distance to nearest zero pixel (outside object)
+            dist = cv2.distanceTransform(bin_alpha, cv2.DIST_L2, 5)
+            _, cut_mask = cv2.threshold(dist, abs(total_expansion), 255, cv2.THRESH_BINARY)
+            cut_mask = cut_mask.astype(np.uint8)
 
         # Supersampling for smooth vector contours
-        scale_factor = 4.0 # Reduced from 8x for performance at 300 DPI (already high res)
+        scale_factor = 8.0 # High quality 8x supersampling
         h, w = cut_mask.shape
         cut_mask_up = cv2.resize(cut_mask, (int(w * scale_factor), int(h * scale_factor)), interpolation=cv2.INTER_LINEAR)
+        # Apply slight blur to upscaled mask to round off pixel corners
+        cut_mask_up = cv2.GaussianBlur(cut_mask_up, (5, 5), 0)
         _, cut_mask_up = cv2.threshold(cut_mask_up, 127, 255, cv2.THRESH_BINARY)
 
         # 3. GENERATE LAYERS
@@ -306,7 +315,8 @@ class StickerWorker(QThread):
 
         smooth_contours = []
         for cnt in contours_up:
-            epsilon = 0.0001 * cv2.arcLength(cnt, True)
+            # Use slightly larger epsilon (0.2%) to smooth out micro-jitters
+            epsilon = 0.002 * cv2.arcLength(cnt, True)
             approx = cv2.approxPolyDP(cnt, epsilon, True)
             cnt_down = approx.astype(np.float32) / scale_factor
             smooth_contours.append(cnt_down)
