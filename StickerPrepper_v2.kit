@@ -30,7 +30,7 @@ HAS_REPORTLAB = False
 try:
     from reportlab.pdfgen import canvas
     from reportlab.lib.units import inch, mm
-    from reportlab.lib.colors import PCMYKColor
+    from reportlab.lib.colors import PCMYKColor, PCMYKColorSep
     HAS_REPORTLAB = True
 except ImportError:
     pass
@@ -169,7 +169,12 @@ class StickerWorker(QThread):
 
         # Define Spot Color: CutContour_Cut
         # 100% Magenta (0, 1, 0, 0 CMYK)
-        cut_color = PCMYKColor(0, 100, 0, 0, spotName='CutContour_Cut')
+        # MUST use PCMYKColorSep for Canvas to register it as a Separation!
+        try:
+            cut_color = PCMYKColorSep(0, 100, 0, 0, spotName='CutContour_Cut')
+        except NameError:
+            # Fallback if PCMYKColorSep is not available (older ReportLab)
+            cut_color = PCMYKColor(0, 100, 0, 0, spotName='CutContour_Cut')
 
         c.setStrokeColor(cut_color)
         c.setLineWidth(stroke_w_pts)
