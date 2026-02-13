@@ -294,9 +294,26 @@ class StickerWorker(QThread):
         scale_factor = 8.0 # High quality 8x supersampling
         h, w = cut_mask.shape
         cut_mask_up = cv2.resize(cut_mask, (int(w * scale_factor), int(h * scale_factor)), interpolation=cv2.INTER_LINEAR)
-        # Apply slight blur to upscaled mask to round off pixel corners
-        cut_mask_up = cv2.GaussianBlur(cut_mask_up, (5, 5), 0)
-        _, cut_mask_up = cv2.threshold(cut_mask_up, 127, 255, cv2.THRESH_BINARY)
+
+        # --- CORNER ROUNDING LOGIC ---
+        round_mm = self.params.get('rounding_mm', 0.0)
+        if round_mm > 0:
+            # Calculate Kernel Size in pixels @ 300 DPI * Scale Factor
+            # r_px = mm * DPI / 25.4 * scale
+            r_px_up = int(round_mm * TARGET_DPI / 25.4 * scale_factor)
+
+            # Ensure odd kernel size
+            k_size = 2 * r_px_up + 1
+            if k_size >= 3:
+                # Use Gaussian Blur heavily to round corners, then re-threshold
+                # Sigma = Radius / 3 approx covers the bell curve
+                sigma = r_px_up / 3.0
+                cut_mask_up = cv2.GaussianBlur(cut_mask_up, (k_size, k_size), sigma)
+                _, cut_mask_up = cv2.threshold(cut_mask_up, 127, 255, cv2.THRESH_BINARY)
+        else:
+            # Apply slight blur to upscaled mask to round off pixel corners (Standard Anti-Alias)
+            cut_mask_up = cv2.GaussianBlur(cut_mask_up, (5, 5), 0)
+            _, cut_mask_up = cv2.threshold(cut_mask_up, 127, 255, cv2.THRESH_BINARY)
 
         # 3. GENERATE LAYERS
         # Layer 1: Border Body (Bleed)
@@ -314,9 +331,14 @@ class StickerWorker(QThread):
         contours_up, hierarchy = cv2.findContours(cut_mask_up, cv2.RETR_TREE, cv2.CHAIN_APPROX_SIMPLE)
 
         smooth_contours = []
+
+        # User defined smoothing factor (0-100 -> 0.0% - 1.0%)
+        # Default slider 20 => 0.2% (0.002)
+        sm_val = self.params.get('smoothing', 20)
+        epsilon_factor = sm_val / 10000.0 # 20 / 10000 = 0.002
+
         for cnt in contours_up:
-            # Use slightly larger epsilon (0.2%) to smooth out micro-jitters
-            epsilon = 0.002 * cv2.arcLength(cnt, True)
+            epsilon = epsilon_factor * cv2.arcLength(cnt, True)
             approx = cv2.approxPolyDP(cnt, epsilon, True)
             cnt_down = approx.astype(np.float32) / scale_factor
             smooth_contours.append(cnt_down)
@@ -517,6 +539,28 @@ class StickerPrepperTab(QWidget):
         self.sp_stroke.valueChanged.connect(self.on_param_change)
         s_layout.addWidget(self.sp_stroke)
         glayout.addLayout(s_layout)
+
+        # Contour Smoothing (Epsilon)
+        sm_layout = QHBoxLayout()
+        sm_layout.addWidget(QLabel("Smoothing:"))
+        self.sl_smooth = QSlider(Qt.Horizontal)
+        self.sl_smooth.setRange(1, 100) # 0.1% to 10%
+        self.sl_smooth.setValue(20) # Default 2.0% (was 0.2% hardcoded)
+        self.sl_smooth.valueChanged.connect(self.on_param_change)
+        sm_layout.addWidget(self.sl_smooth)
+        glayout.addLayout(sm_layout)
+
+        # Corner Rounding (Radius)
+        cr_layout = QHBoxLayout()
+        cr_layout.addWidget(QLabel("Corner Radius:"))
+        self.sp_round = QDoubleSpinBox()
+        self.sp_round.setRange(0.0, 50.0)
+        self.sp_round.setSingleStep(0.5)
+        self.sp_round.setSuffix(" mm")
+        self.sp_round.setValue(0.0)
+        self.sp_round.valueChanged.connect(self.on_param_change)
+        cr_layout.addWidget(self.sp_round)
+        glayout.addLayout(cr_layout)
 
         # PDF Option
         self.chk_pdf = QCheckBox("Output as PDF (CutContour_Cut)")
@@ -733,6 +777,8 @@ class StickerPrepperTab(QWidget):
             "offset_mm": self.p_offset_mm,
             "stroke_w_mm": self.p_stroke_mm,
             "stroke_c": self.p_stroke_color,
+            "smoothing": self.sl_smooth.value(),
+            "rounding_mm": self.sp_round.value(),
             "pdf": self.chk_pdf.isChecked()
         }
 
