@@ -186,10 +186,16 @@ class StickerWorker(QThread):
             pass # Older ReportLab versions might fail
 
         # Begin Layer (OCG)
+        # Attempt to set Optional Content Group (Layer) if supported
+        # This helps naming the layer in design software, though Spot Color is the critical part for cutting.
         try:
-            c.beginOCG("CutContour_Cut")
+            if hasattr(c, 'beginOCG'):
+                c.beginOCG("CutContour_Cut")
+            elif hasattr(c, 'markedContent'):
+                # Fallback: Use Marked Content Sequence which some importers respect
+                c.markedContent("CutContour_Cut")
         except:
-            pass # Older ReportLab versions might fail
+            pass
 
         for cnt in contours:
             path = c.beginPath()
@@ -219,7 +225,10 @@ class StickerWorker(QThread):
 
         # End Layer (OCG)
         try:
-            c.endOCG()
+            if hasattr(c, 'endOCG'):
+                c.endOCG()
+            elif hasattr(c, 'endMarkedContent'): # Hypothetical symmetry
+                pass
         except:
             pass
 
