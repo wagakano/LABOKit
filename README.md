@@ -1,6 +1,6 @@
-# LABOKit ⌀ v3.0
+# LABOKit ⌀ 3.1
 
-<img width="1555" height="295" alt="Image" src="https://github.com/user-attachments/assets/34825c09-c071-45e6-91e7-4d0b1f98480d" />
+<img width="1796" height="523" alt="Image" src="https://github.com/user-attachments/assets/2f0b033f-3cfb-4d59-b124-379dcef14b39" />
 
 **LABOKit** is a modular desktop tool for offline image processing Built with Python (PySide6), it aims to provide a fast, simple, and user-friendly batch-processing workflow with a retro "Steins;Gate" divergence meter aesthetic.
 
@@ -16,27 +16,27 @@
 * **Offline Mode:** All processing is done locally on your machine.
 * **Multilanguage:** Supports English, Japanese (日本語), and Indonesian (Bahasa Indonesia).
 
-## What's New in v3.0
+## What's New in 3.1
+* **Distribution Change:** Switched to directory-based distribution to ensure faster startup and more stable performance compared to the single-file portable version.
+* **Library Fixes & Performance Update:** Resolves Upscaler issues and general bugs. Build format changed from single-file portable to directory for faster startup speeds.
+* **Improved BG Remover:** Improved BG Remover to remove anime background more accurate.
+* **ImageLAB ASCII:** adding ASCII art generation with 8 ASCII Types (character sets) and color modes.
+* **Performance Improvement:** All processing (Upscaling, BG Removal, Dithering) now runs on background threads, preventing "Not Responding" freezes.
 * **Drag n Drop:** Import your images instantly by dragging them into the app.
 * **Zoom Feature:** Now you can do zoom-in and out via CTRL + Scroll.
 * **Multilanguage Support:** Added Interface language options for Japanese (日本語) and Indonesian (Bahasa Indonesia).
-* **Performance Boost:** All processing (Upscaling, BG Removal, Dithering) now runs on background threads, preventing "Not Responding" freezes.
-* **Improved BG Remover:** Improved BG Remover to remove anime background more accurate and precise.
 * **DitheringFX v3.3:**
     * **True Error Diffusion:** Implemented accurate Atkinson, Stucki, Burkes, and Sierra algorithms (with total 11 Algorithms).
     * **GIF Support:** Full support for importing, processing, and previewing animated GIFs.
     * **Bloom Effect:** Add retro glow to your dithered images.
     * **Enhanced Controls:** New sliders for Softness, Noise, and Error Bleed.
-* **ImageLAB ASCII:** adding ASCII art generation with 8 ASCII Types (character sets) and color modes.
-* **Improved Stability:** Fixed crashes related to Video Upscaling and GIF rendering.
 
 ## 📥 Download
 
 **(Windows)**
-1.  Go to the **[Releases](https://github.com/wagakano/LABOKit/releases/tag/3.0)** page.
-2.  Download the `LABOKit_v3.0.zip` & Extract.
-3.  Run `LABOKit_v3.0.exe` and enjoy! (☆▽☆)
-> **Startup Notice:** The initial launch may take some time (approx. 15-30 seconds) to extract AI models and libraries.
+1.  **[Download](https://github.com/wagakano/LABOKit/releases/download/3.1/LABOKit_3.1.zip)**.
+2.  Extract `LABOKit_3.1.zip`.
+3.  Run `LABOKit_3.1.exe` and enjoy! (☆▽☆)
 
 **(Linux)**
 * **[Source Code](https://github.com/wagakano/LABOKit/tree/main_linux)**
@@ -56,7 +56,7 @@ LABOKit capabilities can be extended using `.kit` plugins.
 
 ## Available Plugin
 ### 1. Video Upscaler
-**File:** **[VideoUpscaler.kit](https://github.com/wagakano/LABOKit/releases/download/v1.4/VideoUpscaler.kit)**
+**File:** **[VideoUpscaler.kit](https://github.com/wagakano/LABOKit-assets/releases/download/update2/VideoUpscaler.kit)**
 **Status:** Released
 
 Upscale video files significantly using the power of **Real-ESRGAN** and **FFmpeg**. This plugin automates the complex process of frame-by-frame AI enhancement.
@@ -69,13 +69,13 @@ Upscale video files significantly using the power of **Real-ESRGAN** and **FFmpe
 > **⚠️ Note:** This process is resource-intensive (GPU/CPU) and may take a long time depending on the video length and upscaling factor.
 
 ### 2. ONNX Loader
-**File:** **[ONNXLoader.kit](https://github.com/wagakano/LABOKit/releases/download/v2.0/ONNXLoader.kit)**
+**File:** **[ONNXLoader.kit](https://github.com/wagakano/LABOKit-assets/releases/download/update2/ONNXLoader.kit)**
 **Status:** Released
 
 A bridge for advanced users. Allows you to load external `.onnx` Upscaler models into LABOKit's interface, making it easy to test and use custom models found online.
 
 ### 3. QR-Code Generator
-**File:** **[QRCodeGenerator.kit](https://github.com/wagakano/LABOKit/releases/download/v2.0/QRCodeGenerator.kit)**
+**File:** **[QRCodeGenerator.kit](https://github.com/wagakano/LABOKit-assets/releases/download/update2/QRCodeGenerator.kit)**
 **Status:** Released
 
 A batch-able QR-Code generator.
