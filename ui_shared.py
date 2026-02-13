@@ -284,6 +284,12 @@ class DivergenceMeter(QFrame):
         self._running_index = 0
         self.override_message = None
         
+        # Optimization: Cache process object
+        try:
+            self.process = psutil.Process(os.getpid())
+        except:
+            self.process = None
+
         # 8 Small Boxes (Updated from 6)
         font = QFont("Consolas", 9)
         for _ in range(8):
@@ -318,10 +324,13 @@ class DivergenceMeter(QFrame):
         else:
             # Idle / RAM (Process Only)
             try:
-                process = psutil.Process(os.getpid())
-                mem_bytes = process.memory_info().rss
-                ram_mb = mem_bytes / (1024 * 1024)
-                self.status_label.setText(f"App Memory Usage: {ram_mb:.1f} MB")
+                # Optimized: Reuse cached process object
+                if self.process:
+                    mem_bytes = self.process.memory_info().rss
+                    ram_mb = mem_bytes / (1024 * 1024)
+                    self.status_label.setText(f"App Memory Usage: {ram_mb:.1f} MB")
+                else:
+                    self.status_label.setText("SYSTEM READY")
             except:
                 self.status_label.setText("SYSTEM READY")
             self.status_label.setStyleSheet("")

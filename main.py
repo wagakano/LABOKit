@@ -39,7 +39,10 @@ PLUGIN_MANIFEST_URL = "https://raw.githubusercontent.com/wagakano/LABOKit/main_w
 INTERNAL_DIR = Path(getattr(sys, "_MEIPASS", Path(__file__).resolve().parent))
 
 # 2. Persistent Path (User AppData folder: %APPDATA%/LABOKit)
-APP_DATA = Path(os.getenv('APPDATA')) / "LABOKit"
+_app_data = os.getenv('APPDATA')
+if not _app_data:
+    _app_data = os.path.expanduser("~") # Fallback
+APP_DATA = Path(_app_data) / "LABOKit"
 APP_DATA.mkdir(parents=True, exist_ok=True)
 
 MODEL_DIR = APP_DATA / "models"
@@ -303,8 +306,9 @@ class BgRemoverTab(QWidget):
 
     def resizeEvent(self, e):
         super().resizeEvent(e)
-        r = self.list_w.currentRow()
-        if r >= 0: self._update_prev(self.image_paths[r])
+        # Optimized: Reuse loaded pixmap instead of reloading from disk
+        self.preview_widget.fit_to_view()
+        self.preview_widget.update_display()
 
     def on_preset(self, n): self.current_preset_name = n
 
@@ -535,7 +539,9 @@ class UpscalerTab(QWidget):
 
     def resizeEvent(self, e):
         super().resizeEvent(e)
-        if self.view_path: self._update_prev(self.view_path)
+        # Optimized: Reuse loaded pixmap instead of reloading from disk
+        self.preview_widget.fit_to_view()
+        self.preview_widget.update_display()
 
     def ensure_out(self, sample):
         if not self.output_dir:
