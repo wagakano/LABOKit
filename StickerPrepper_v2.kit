@@ -1,0 +1,782 @@
+import sys
+import os
+import cv2
+import numpy as np
+from PIL import Image, ImageDraw, ImageOps
+from pathlib import Path
+from PySide6.QtCore import Qt, Signal, QThread, QTimer, QSize, QByteArray, QBuffer, QIODevice
+from PySide6.QtGui import QPixmap, QImage, QColor, QAction, QIcon
+from PySide6.QtWidgets import (
+    QWidget, QVBoxLayout, QHBoxLayout, QPushButton, QLabel,
+    QSlider, QSpinBox, QDoubleSpinBox, QColorDialog, QFileDialog, QMessageBox,
+    QGroupBox, QFrame, QListWidgetItem, QMenu, QProgressDialog,
+    QAbstractItemView, QCheckBox
+)
+
+# Imports from Main App (Mocked if missing)
+try:
+    from ui_shared import FileDropListWidget, ZoomableImageWidget, create_plus_icon, VALID_EXTENSIONS
+    from translations import tr
+except ImportError:
+    # Fallback for testing isolation
+    def tr(k): return k
+    FileDropListWidget = None
+    ZoomableImageWidget = None
+    create_plus_icon = None
+    VALID_EXTENSIONS = {}
+
+# ReportLab Imports
+HAS_REPORTLAB = False
+try:
+    from reportlab.pdfgen import canvas
+    from reportlab.lib.units import inch, mm
+    from reportlab.lib.colors import PCMYKColor
+    HAS_REPORTLAB = True
+except ImportError:
+    pass
+
+PLUGIN_NAME = "Sticker Prepper V2"
+PLUGIN_VERSION = "2.0"
+HELP_TEXT = """
+<h3>Sticker Prepper V2</h3>
+<p>Automated Die-Cut Generation for Print-and-Cut Workflows.</p>
+<hr>
+<b>Features:</b>
+<ul>
+<li><b>Per-Image Sizing:</b> Set distinct print sizes (Inches) for each image.</li>
+<li><b>Print-Ready PDF:</b> 300 DPI output with Spot Color (CutContour_Cut).</li>
+<li><b>Precise Control:</b> Millimeter-based Border, Offset, and Stroke settings.</li>
+</ul>
+"""
+
+# Constants
+TARGET_DPI = 300.0
+
+class StickerWorker(QThread):
+    progress = Signal(int, str)
+    finished = Signal(int)
+    error = Signal(str)
+    preview_ready = Signal(QPixmap) # For preview mode
+
+    def __init__(self, tasks, out_dir, params, mode="process", parent=None):
+        super().__init__(parent)
+        self.tasks = tasks # List of dicts: {'path': Path, 'w_in': float, 'h_in': float}
+        self.out_dir = out_dir
+        self.params = params
+        self.mode = mode # "process" or "preview"
+        self.is_running = True
+
+    def run(self):
+        try:
+            if self.mode == "preview":
+                self.run_preview()
+            else:
+                self.run_batch()
+        except Exception as e:
+            self.error.emit(str(e))
+
+    def run_preview(self):
+        if not self.tasks: return
+        task = self.tasks[0]
+        try:
+            # Force PDF param false for preview to always get Raster
+            is_pdf_req = self.params.get('pdf', False)
+            self.params['pdf'] = False # Force raster for preview
+
+            # Process with the specific task settings (size)
+            final_img = self.process_image(task)
+
+            self.params['pdf'] = is_pdf_req # Restore
+
+            if final_img:
+                # Convert PIL to QPixmap
+                data = final_img.convert("RGBA").tobytes("raw", "RGBA")
+                qim = QImage(data, final_img.width, final_img.height, QImage.Format_RGBA8888)
+                pix = QPixmap.fromImage(qim.copy())
+                self.preview_ready.emit(pix)
+        except Exception as e:
+            import traceback; traceback.print_exc()
+            self.error.emit(str(e))
+
+    def run_batch(self):
+        cnt = 0
+        total = len(self.tasks)
+        is_pdf = self.params.get('pdf', False)
+
+        for i, task in enumerate(self.tasks):
+            if not self.is_running: break
+            p = task['path']
+            self.progress.emit(i, f"Processing {p.name}...")
+
+            try:
+                res = self.process_image(task)
+                if res:
+                    if is_pdf and isinstance(res, tuple):
+                        # PDF Mode
+                        final_comp, contours, crop_box, orig_size = res
+                        out_path = self.out_dir / f"{p.stem}_sticker.pdf"
+                        self.save_as_pdf(final_comp, contours, crop_box, orig_size, out_path)
+                    else:
+                        # PNG Mode
+                        out_path = self.out_dir / f"{p.stem}_sticker.png"
+                        res.save(out_path, dpi=(TARGET_DPI, TARGET_DPI))
+                    cnt += 1
+            except Exception as e:
+                print(f"Error processing {p.name}: {e}")
+                import traceback; traceback.print_exc()
+
+        self.finished.emit(cnt)
+
+    def save_as_pdf(self, image_pil, contours, crop_box, orig_size, out_path):
+        if not HAS_REPORTLAB:
+            raise ImportError("ReportLab is not installed. PDF output unavailable.")
+
+        # 1. Setup Canvas
+        # Page size = Image size (in points)
+        # ReportLab uses points (1/72 inch).
+        # Image is at TARGET_DPI (300).
+        scale = 72.0 / TARGET_DPI
+
+        w_px, h_px = image_pil.size
+        w_pts, h_pts = w_px * scale, h_px * scale
+
+        c = canvas.Canvas(str(out_path), pagesize=(w_pts, h_pts))
+
+        # 2. Draw Raster Image
+        import tempfile
+        with tempfile.NamedTemporaryFile(suffix='.png', delete=False) as tf:
+            image_pil.save(tf, format='PNG', dpi=(TARGET_DPI, TARGET_DPI))
+            tf.close()
+            # Draw image filling the page
+            c.drawImage(tf.name, 0, 0, width=w_pts, height=h_pts, mask='auto')
+            os.unlink(tf.name)
+
+        # 3. Draw Vectors (Cut Line)
+        # Contours are in pixels relative to orig_padded (before crop)
+        # Need to adjust for Crop
+        crop_x, crop_y = 0, 0
+        if crop_box:
+            crop_x, crop_y = crop_box[0], crop_box[1] # left, top
+
+        stroke_w_mm = self.params.get('stroke_w_mm', 0.1) # Default tiny hairline for cut
+        # Convert stroke width from mm to points
+        stroke_w_pts = stroke_w_mm * 2.83465
+
+        # Define Spot Color: CutContour_Cut
+        # 100% Magenta (0, 1, 0, 0 CMYK)
+        cut_color = PCMYKColor(0, 100, 0, 0, spotName='CutContour_Cut')
+
+        c.setStrokeColor(cut_color)
+        c.setLineWidth(stroke_w_pts)
+
+        # Try to set Overprint (Cut line should overprint image)
+        try:
+            c.setOverprintMask(1)
+        except:
+            pass # Older ReportLab versions might fail
+
+        # Begin Layer (OCG)
+        try:
+            c.beginOCG("CutContour_Cut")
+        except:
+            pass # Older ReportLab versions might fail
+
+        for cnt in contours:
+            path = c.beginPath()
+            points = cnt[:, 0, :] # Shape (N, 2)
+
+            first = True
+            for pt in points:
+                x_global, y_global = pt[0], pt[1]
+
+                # Adjust for crop
+                x_rel = x_global - crop_x
+                y_rel = y_global - crop_y
+
+                # Scale to points
+                x_pdf = x_rel * scale
+                # Flip Y (PDF origin bottom-left vs Image top-left)
+                y_pdf = h_pts - (y_rel * scale)
+
+                if first:
+                    path.moveTo(x_pdf, y_pdf)
+                    first = False
+                else:
+                    path.lineTo(x_pdf, y_pdf)
+
+            path.close()
+            c.drawPath(path, stroke=1, fill=0)
+
+        # End Layer (OCG)
+        try:
+            c.endOCG()
+        except:
+            pass
+
+        c.save()
+
+    def process_image(self, task):
+        path = task['path']
+        target_w_in = task['w_in']
+        target_h_in = task['h_in']
+
+        # 1. Load Image
+        orig = Image.open(path).convert("RGBA")
+
+        # 2. Resize to Target Size (Inches @ 300 DPI)
+        target_w_px = int(target_w_in * TARGET_DPI)
+        target_h_px = int(target_h_in * TARGET_DPI)
+
+        # High-quality resize
+        if (target_w_px, target_h_px) != orig.size:
+            orig = orig.resize((target_w_px, target_h_px), Image.Resampling.LANCZOS)
+
+        # 3. Extract Alpha & Dilate (White Body)
+        img_np = np.array(orig)
+        alpha = img_np[:, :, 3]
+
+        # Convert Params (mm -> px @ 300 DPI)
+        # 1 inch = 25.4 mm
+        mm_to_px = lambda mm: int(mm * TARGET_DPI / 25.4)
+
+        border_px = mm_to_px(self.params.get('border_mm', 2.0))
+        offset_px = mm_to_px(self.params.get('offset_mm', 0.0))
+        stroke_px_visual = max(1, mm_to_px(self.params.get('stroke_w_mm', 0.2))) # For PNG visual only
+
+        border_color = self.params.get('border_c', (0, 0, 0)) # Default Black
+        stroke_color = self.params.get('stroke_c', (255, 0, 255))
+
+        def get_kernel(size):
+            k_size = 2 * int(size) + 1
+            return cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (k_size, k_size))
+
+        # Pad image to accommodate dilation
+        pad = int(border_px + abs(offset_px) + stroke_px_visual + 50)
+        orig_padded = ImageOps.expand(orig, border=pad, fill=(0,0,0,0))
+        img_np_padded = np.array(orig_padded)
+        alpha_padded = img_np_padded[:, :, 3]
+
+        # 1. BORDER MASK (BLEED)
+        border_mask = alpha_padded.copy()
+        if border_px > 0:
+            kernel_b = get_kernel(border_px)
+            border_mask = cv2.dilate(border_mask, kernel_b)
+
+        # 2. CUT LINE MASK
+        total_expansion = border_px + offset_px
+        cut_mask = alpha_padded.copy()
+
+        if total_expansion != 0:
+            if total_expansion > 0:
+                k_cut = get_kernel(total_expansion)
+                cut_mask = cv2.dilate(cut_mask, k_cut)
+            else:
+                k_cut = get_kernel(abs(total_expansion))
+                cut_mask = cv2.erode(cut_mask, k_cut)
+
+        # Smoothing
+        cut_mask = cv2.GaussianBlur(cut_mask, (5, 5), 0)
+        _, cut_mask = cv2.threshold(cut_mask, 127, 255, cv2.THRESH_BINARY)
+
+        # Supersampling for smooth vector contours
+        scale_factor = 4.0 # Reduced from 8x for performance at 300 DPI (already high res)
+        h, w = cut_mask.shape
+        cut_mask_up = cv2.resize(cut_mask, (int(w * scale_factor), int(h * scale_factor)), interpolation=cv2.INTER_LINEAR)
+        _, cut_mask_up = cv2.threshold(cut_mask_up, 127, 255, cv2.THRESH_BINARY)
+
+        # 3. GENERATE LAYERS
+        # Layer 1: Border Body (Bleed)
+        r_b, g_b, b_b = border_color
+        border_canvas = Image.new("RGBA", orig_padded.size, (r_b, g_b, b_b, 255))
+        mask_pil = Image.fromarray(border_mask, mode="L")
+
+        final_comp = Image.new("RGBA", orig_padded.size, (0,0,0,0))
+        final_comp.paste(border_canvas, (0,0), mask_pil)
+
+        # Layer 2: Original Image
+        final_comp = Image.alpha_composite(final_comp, orig_padded)
+
+        # Layer 3: Cut Line Stroke (Raster)
+        contours_up, hierarchy = cv2.findContours(cut_mask_up, cv2.RETR_TREE, cv2.CHAIN_APPROX_SIMPLE)
+
+        smooth_contours = []
+        for cnt in contours_up:
+            epsilon = 0.0001 * cv2.arcLength(cnt, True)
+            approx = cv2.approxPolyDP(cnt, epsilon, True)
+            cnt_down = approx.astype(np.float32) / scale_factor
+            smooth_contours.append(cnt_down)
+
+        is_pdf = self.params.get('pdf', False)
+
+        if not is_pdf:
+            # Draw visual stroke for PNG
+            stroke_layer_np = np.zeros((orig_padded.height, orig_padded.width, 4), dtype=np.uint8)
+            r, g, b = stroke_color
+            color_tuple = (r, g, b, 255)
+            int_contours = [cnt.astype(np.int32) for cnt in smooth_contours]
+            cv2.drawContours(stroke_layer_np, int_contours, -1, color_tuple, thickness=stroke_px_visual, lineType=cv2.LINE_AA)
+            stroke_layer_pil = Image.fromarray(stroke_layer_np, mode="RGBA")
+            final_comp = Image.alpha_composite(final_comp, stroke_layer_pil)
+
+        # Crop
+        bbox = final_comp.getbbox()
+        crop_box = None
+        if bbox:
+            l, t, r, b_ = bbox
+            l = max(0, l - 10)
+            t = max(0, t - 10)
+            r = min(final_comp.width, r + 10)
+            b_ = min(final_comp.height, b_ + 10)
+            crop_box = (l, t, r, b_)
+            final_comp = final_comp.crop(crop_box)
+
+        if is_pdf:
+            return final_comp, smooth_contours, crop_box, (orig_padded.height, orig_padded.width)
+        else:
+            return final_comp
+
+    def stop(self):
+        self.is_running = False
+
+
+class StickerPrepperTab(QWidget):
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        self.image_paths = []
+        self.output_dir = None
+
+        # Default Params (Millimeters)
+        self.p_border_mm = 2.0  # ~2mm bleed is standard
+        self.p_offset_mm = 0.0
+        self.p_stroke_mm = 0.2  # Hairline
+        self.p_border_color = (255, 255, 255) # Default White for stickers
+        self.p_stroke_color = (255, 0, 255)   # Magenta
+
+        self.debounce_timer = QTimer()
+        self.debounce_timer.setSingleShot(True)
+        self.debounce_timer.setInterval(300)
+        self.debounce_timer.timeout.connect(self.update_preview)
+
+        self.preview_worker = None
+
+        # Enforce Dark Text for White Backgrounds
+        self.setStyleSheet("""
+            QLabel, QCheckBox, QGroupBox, QRadioButton { color: #333333; }
+            QSpinBox, QDoubleSpinBox { color: #333333; background-color: #ffffff; }
+        """)
+
+        self._setup_ui()
+
+    def _setup_ui(self):
+        outer = QVBoxLayout(self)
+        outer.setContentsMargins(8,8,8,8)
+        outer.setSpacing(6)
+
+        main = QHBoxLayout()
+        outer.addLayout(main)
+
+        # --- LEFT SIDEBAR ---
+        left = QVBoxLayout()
+        main.addLayout(left, 1)
+
+        # File List
+        self.list_w = FileDropListWidget()
+        self.list_w.setSelectionMode(QAbstractItemView.ExtendedSelection)
+        self.list_w.files_dropped.connect(self.add_dropped_files)
+        self.list_w.currentItemChanged.connect(self.on_file_changed)
+
+        lbl_files = QLabel("Input Images (Transparent PNG):")
+        lbl_files.setStyleSheet("border:none; background:transparent; font-weight: bold;")
+        left.addWidget(lbl_files)
+        left.addWidget(self.list_w)
+
+        # Add/Clear Buttons
+        btns = QHBoxLayout()
+        b_add = QPushButton("Add Images")
+        b_add.setIcon(create_plus_icon())
+        b_add.clicked.connect(self.add_images)
+
+        b_clr = QPushButton("Clear List")
+        b_clr.clicked.connect(self.clear_list)
+
+        btns.addWidget(b_add)
+        btns.addWidget(b_clr)
+        left.addLayout(btns)
+
+        # Divider
+        line = QFrame()
+        line.setFrameShape(QFrame.HLine)
+        line.setFrameShadow(QFrame.Sunken)
+        line.setStyleSheet("border: none; background-color: #b3bcd1; min-height: 1px; max-height: 1px; margin: 10px 0;")
+        left.addWidget(line)
+
+        # --- IMAGE SIZE SETTINGS (Per Image) ---
+        grp_size = QGroupBox("Print Size (Selected Image)")
+        grp_size.setStyleSheet("QGroupBox { font-weight: bold; border: 1px solid #b3bcd1; border-radius: 6px; margin-top: 6px; } QGroupBox::title { subcontrol-origin: margin; left: 10px; padding: 0 3px; }")
+        gl_size = QVBoxLayout(grp_size)
+
+        # Width / Height
+        wh_layout = QHBoxLayout()
+
+        v_w = QVBoxLayout()
+        v_w.addWidget(QLabel("Width (in):"))
+        self.sp_w = QDoubleSpinBox()
+        self.sp_w.setRange(0.1, 100.0)
+        self.sp_w.setSingleStep(0.1)
+        self.sp_w.setValue(0.0)
+        self.sp_w.valueChanged.connect(lambda: self.on_size_changed('w'))
+        v_w.addWidget(self.sp_w)
+
+        v_h = QVBoxLayout()
+        v_h.addWidget(QLabel("Height (in):"))
+        self.sp_h = QDoubleSpinBox()
+        self.sp_h.setRange(0.1, 100.0)
+        self.sp_h.setSingleStep(0.1)
+        self.sp_h.setValue(0.0)
+        self.sp_h.valueChanged.connect(lambda: self.on_size_changed('h'))
+        v_h.addWidget(self.sp_h)
+
+        wh_layout.addLayout(v_w)
+        wh_layout.addLayout(v_h)
+        gl_size.addLayout(wh_layout)
+
+        self.chk_aspect = QCheckBox("Lock Aspect Ratio")
+        self.chk_aspect.setChecked(True)
+        gl_size.addWidget(self.chk_aspect)
+
+        left.addWidget(grp_size)
+
+        # --- STICKER SETTINGS (Global) ---
+        grp = QGroupBox("Sticker Settings")
+        grp.setStyleSheet("QGroupBox { font-weight: bold; border: 1px solid #b3bcd1; border-radius: 6px; margin-top: 6px; } QGroupBox::title { subcontrol-origin: margin; left: 10px; padding: 0 3px; }")
+        glayout = QVBoxLayout(grp)
+        glayout.setSpacing(10)
+
+        # Border (Millimeters)
+        b_layout = QHBoxLayout()
+        b_layout.addWidget(QLabel("Border (Bleed):"))
+
+        self.btn_border_color = QPushButton()
+        self.btn_border_color.setFixedSize(20, 20)
+        self.btn_border_color.clicked.connect(self.choose_border_color)
+        self._update_border_color_btn()
+        b_layout.addWidget(self.btn_border_color)
+
+        self.sp_border = QDoubleSpinBox()
+        self.sp_border.setRange(0.0, 50.0)
+        self.sp_border.setSingleStep(0.5)
+        self.sp_border.setSuffix(" mm")
+        self.sp_border.setValue(self.p_border_mm)
+        self.sp_border.valueChanged.connect(self.on_param_change)
+        b_layout.addWidget(self.sp_border)
+
+        glayout.addLayout(b_layout)
+
+        # Offset (Millimeters)
+        o_layout = QHBoxLayout()
+        o_layout.addWidget(QLabel("Cut Offset:"))
+        self.sp_offset = QDoubleSpinBox()
+        self.sp_offset.setRange(-10.0, 10.0)
+        self.sp_offset.setSingleStep(0.1)
+        self.sp_offset.setSuffix(" mm")
+        self.sp_offset.setValue(self.p_offset_mm)
+        self.sp_offset.valueChanged.connect(self.on_param_change)
+        o_layout.addWidget(self.sp_offset)
+        glayout.addLayout(o_layout)
+
+        # Stroke (Millimeters) - Visual only for PNG, Actual for PDF
+        s_layout = QHBoxLayout()
+        s_layout.addWidget(QLabel("Stroke Width:"))
+
+        self.btn_color = QPushButton()
+        self.btn_color.setFixedSize(20, 20)
+        self.btn_color.clicked.connect(self.choose_color)
+        self._update_color_btn()
+        s_layout.addWidget(self.btn_color)
+
+        self.sp_stroke = QDoubleSpinBox()
+        self.sp_stroke.setRange(0.01, 5.0)
+        self.sp_stroke.setSingleStep(0.05)
+        self.sp_stroke.setSuffix(" mm")
+        self.sp_stroke.setValue(self.p_stroke_mm)
+        self.sp_stroke.valueChanged.connect(self.on_param_change)
+        s_layout.addWidget(self.sp_stroke)
+        glayout.addLayout(s_layout)
+
+        # PDF Option
+        self.chk_pdf = QCheckBox("Output as PDF (CutContour_Cut)")
+        self.chk_pdf.setChecked(True)
+        if not HAS_REPORTLAB:
+            self.chk_pdf.setEnabled(False)
+            self.chk_pdf.setText("Output as PDF (ReportLab missing)")
+        glayout.addWidget(self.chk_pdf)
+
+        left.addWidget(grp)
+
+        # Output & Process
+        left.addSpacing(10)
+
+        l_out = QLabel("OUTPUT FOLDER:")
+        l_out.setStyleSheet("font-weight: bold; border: none; background: transparent;")
+        left.addWidget(l_out)
+        self.out_lbl = QLabel("(auto: LABOKit_Stickers)")
+        self.out_lbl.setWordWrap(True)
+        self.out_lbl.setStyleSheet("color: #666; margin-bottom: 5px; border: none; background: transparent;")
+        left.addWidget(self.out_lbl)
+
+        b_change = QPushButton("Change Folder")
+        b_change.clicked.connect(self.change_output_folder)
+        left.addWidget(b_change)
+
+        left.addSpacing(5)
+
+        b_proc_all = QPushButton("Process All Images")
+        b_proc_all.setStyleSheet("font-weight: bold; padding: 6px; background-color: #4CAF50; color: white;")
+        b_proc_all.clicked.connect(self.process_all)
+        left.addWidget(b_proc_all)
+
+        # Spacer
+        left.addStretch()
+
+        # --- RIGHT PREVIEW ---
+        right = QVBoxLayout()
+        main.addLayout(right, 3)
+
+        self.preview_widget = ZoomableImageWidget()
+        right.addWidget(self.preview_widget)
+
+        # Init State
+        self.sp_w.setEnabled(False)
+        self.sp_h.setEnabled(False)
+
+    # --- UI Logic ---
+
+    def add_images(self):
+        files, _ = QFileDialog.getOpenFileNames(self, "Add Images", "", "Images (*.png);;All Files (*)")
+        if files: self.add_dropped_files([Path(f) for f in files])
+
+    def add_dropped_files(self, files):
+        for p in files:
+            if p.suffix.lower() == ".png":
+                if p not in self.image_paths:
+                    self.image_paths.append(p)
+                    item = QListWidgetItem(p.name)
+
+                    # Calculate Default Size in Inches (Assuming 300 DPI for print quality or Keep Original)
+                    # User said: "Set all images... sometimes need different print sizes".
+                    # Defaulting to preserving original pixel count at 300 DPI is a safe start.
+                    try:
+                        with Image.open(p) as im:
+                            w_px, h_px = im.size
+                            # Default to 300 DPI size
+                            w_in = w_px / TARGET_DPI
+                            h_in = h_px / TARGET_DPI
+                    except:
+                        w_in, h_in = 1.0, 1.0
+
+                    # Store data
+                    data = {
+                        'path': p,
+                        'w_in': w_in,
+                        'h_in': h_in
+                    }
+                    item.setData(Qt.UserRole, data)
+                    self.list_w.addItem(item)
+
+        if self.list_w.count() > 0 and self.list_w.currentRow() < 0:
+            self.list_w.setCurrentRow(0)
+
+    def clear_list(self):
+        self.image_paths.clear()
+        self.list_w.clear()
+        self.preview_widget.set_images(None, None)
+        self.sp_w.setEnabled(False)
+        self.sp_h.setEnabled(False)
+
+    def on_file_changed(self, curr, prev):
+        if curr:
+            data = curr.data(Qt.UserRole)
+
+            # Block signals to prevent feedback loop
+            self.sp_w.blockSignals(True)
+            self.sp_h.blockSignals(True)
+
+            self.sp_w.setValue(data['w_in'])
+            self.sp_h.setValue(data['h_in'])
+
+            self.sp_w.blockSignals(False)
+            self.sp_h.blockSignals(False)
+
+            self.sp_w.setEnabled(True)
+            self.sp_h.setEnabled(True)
+
+            self.update_preview()
+        else:
+            self.preview_widget.set_images(None, None)
+            self.sp_w.setEnabled(False)
+            self.sp_h.setEnabled(False)
+
+    def on_size_changed(self, mode):
+        # Update ALL selected items
+        items = self.list_w.selectedItems()
+        if not items: return
+
+        # We use the sidebar values as the target for the "primary" change
+        # But we must respect aspect ratios individually if locked.
+
+        target_w = self.sp_w.value()
+        target_h = self.sp_h.value()
+
+        # Block signals to avoid feedback while iterating
+        self.sp_w.blockSignals(True)
+        self.sp_h.blockSignals(True)
+
+        for item in items:
+            data = item.data(Qt.UserRole)
+            old_w = data['w_in']
+            old_h = data['h_in']
+
+            # Determine new size for this specific item
+            item_new_w = target_w
+            item_new_h = target_h
+
+            if self.chk_aspect.isChecked():
+                ratio = old_w / old_h if old_h > 0 else 1.0
+                if mode == 'w':
+                    # Width changed, calculate matching height for this item
+                    item_new_w = target_w
+                    item_new_h = item_new_w / ratio
+                else:
+                    # Height changed, calculate matching width
+                    item_new_h = target_h
+                    item_new_w = item_new_h * ratio
+
+            # Update Item Data
+            data['w_in'] = item_new_w
+            data['h_in'] = item_new_h
+            item.setData(Qt.UserRole, data)
+
+            # If this is the "Current" (last clicked) item, update the sidebar to match exactly
+            # (In case aspect ratio math shifted it slightly for the displayed item)
+            if item == self.list_w.currentItem():
+                if mode == 'w':
+                    self.sp_h.setValue(item_new_h)
+                else:
+                    self.sp_w.setValue(item_new_w)
+
+        self.sp_w.blockSignals(False)
+        self.sp_h.blockSignals(False)
+
+        # Trigger preview update
+        self.debounce_timer.start()
+
+    def on_param_change(self):
+        self.p_border_mm = self.sp_border.value()
+        self.p_offset_mm = self.sp_offset.value()
+        self.p_stroke_mm = self.sp_stroke.value()
+        self.debounce_timer.start()
+
+    def choose_color(self):
+        c = QColorDialog.getColor(QColor(*self.p_stroke_color), self, "Select Stroke Color")
+        if c.isValid():
+            self.p_stroke_color = (c.red(), c.green(), c.blue())
+            self._update_color_btn()
+            self.on_param_change()
+
+    def choose_border_color(self):
+        c = QColorDialog.getColor(QColor(*self.p_border_color), self, "Select Border Color")
+        if c.isValid():
+            self.p_border_color = (c.red(), c.green(), c.blue())
+            self._update_border_color_btn()
+            self.on_param_change()
+
+    def _update_color_btn(self):
+        r,g,b = self.p_stroke_color
+        self.btn_color.setStyleSheet(f"background-color: rgb({r},{g},{b}); border: 1px solid #666;")
+
+    def _update_border_color_btn(self):
+        r,g,b = self.p_border_color
+        self.btn_border_color.setStyleSheet(f"background-color: rgb({r},{g},{b}); border: 1px solid #666;")
+
+    def ensure_out(self, sample_path):
+        if not self.output_dir:
+            self.output_dir = sample_path.parent / "LABOKit_Stickers"
+            self.output_dir.mkdir(exist_ok=True)
+            self.out_lbl.setText(str(self.output_dir))
+        return self.output_dir
+
+    def change_output_folder(self):
+        d = QFileDialog.getExistingDirectory(self, "Select Output Folder")
+        if d:
+            self.output_dir = Path(d)
+            self.out_lbl.setText(str(self.output_dir))
+
+    def get_global_params(self):
+        return {
+            "border_mm": self.p_border_mm,
+            "border_c": self.p_border_color,
+            "offset_mm": self.p_offset_mm,
+            "stroke_w_mm": self.p_stroke_mm,
+            "stroke_c": self.p_stroke_color,
+            "pdf": self.chk_pdf.isChecked()
+        }
+
+    def update_preview(self):
+        curr = self.list_w.currentItem()
+        if not curr: return
+        data = curr.data(Qt.UserRole)
+
+        params = self.get_global_params()
+
+        # Preview Task (One Item)
+        task = data # {'path': ..., 'w_in': ..., 'h_in': ...}
+
+        self.preview_worker = StickerWorker([task], None, params, mode="preview", parent=self)
+        self.preview_worker.preview_ready.connect(self.on_preview_ready)
+        self.preview_worker.start()
+
+    def on_preview_ready(self, pix):
+        curr = self.list_w.currentItem()
+        if not curr: return
+
+        # Load original pixmap for comparison toggle
+        # Note: Original might be different size than preview (since we resize in preview)
+        # But ZoomableImageWidget handles different sizes fine
+        p = curr.data(Qt.UserRole)['path']
+        orig_pix = QPixmap(str(p))
+        self.preview_widget.set_image_pixmaps(orig_pix, pix, preserve_zoom=True)
+
+    def process_all(self):
+        count = self.list_w.count()
+        if count == 0:
+            QMessageBox.information(self, "Info", "Please add images first.")
+            return
+
+        # Collect all tasks
+        tasks = []
+        for i in range(count):
+            item = self.list_w.item(i)
+            tasks.append(item.data(Qt.UserRole))
+
+        out = self.ensure_out(tasks[0]['path'])
+        params = self.get_global_params()
+
+        self.dlg = QProgressDialog("Processing Stickers...", "Cancel", 0, len(tasks), self)
+        self.dlg.setWindowModality(Qt.ApplicationModal)
+        self.dlg.setFixedWidth(350)
+        self.dlg.show()
+
+        self.batch_worker = StickerWorker(tasks, out, params, mode="process", parent=self)
+        self.batch_worker.progress.connect(lambda i, msg: (self.dlg.setValue(i), self.dlg.setLabelText(msg)))
+        self.batch_worker.finished.connect(self.on_batch_finished)
+        self.batch_worker.error.connect(lambda e: (self.dlg.close(), QMessageBox.critical(self, "Error", e)))
+        self.dlg.canceled.connect(self.batch_worker.stop)
+
+        self.batch_worker.start()
+
+    def on_batch_finished(self, cnt):
+        self.dlg.close()
+        QMessageBox.information(self, "Done", f"Processed {cnt} stickers.\nSaved to: {self.output_dir}")
+
+def create_tab(parent):
+    return StickerPrepperTab(parent)
