@@ -1,5 +1,5 @@
 {
   "version": "3.2.0",
-  "url": "https://github.com/wagakano/LABOKit/releases/download/3.2/LABOKit_v3.2_Patch.zip",
+  "url": "https://github.com/wagakano/LABOKit/releases/download/3.2/LABOKit_v3.2_Setup.exe",
   "changelog": "3.2 - Added AI Watermark Remover Plugin (Powered by LaMa). Introduced new interactive brushing UI for masking. Major UI/UX Improvements. Plugins Update."
 }
