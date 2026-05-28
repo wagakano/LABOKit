@@ -1,4 +1,4 @@
-# LABOKit ⌀ 3.1
+# LABOKit ⌀ 3.2
 
 <img width="1796" height="523" alt="Image" src="https://github.com/user-attachments/assets/2f0b033f-3cfb-4d59-b124-379dcef14b39" />
 
@@ -15,6 +15,32 @@
 * **Plugin System:** Extend functionality using `.kit` files.
 * **Offline Mode:** All processing is done locally on your machine.
 * **Multilanguage:** Supports English, Japanese (日本語), and Indonesian (Bahasa Indonesia).
+
+## What's New in 3.2
+
+**Major UI/UX Improvements (v3.2)**
+* **Split-View Slider:** Completely redesigned the before/after image comparison slider. It now features a modern, iOS-style frosted glass pill handle with interaction arrows and a vibrant orange accent line, replacing the old basic line slider.
+* **Unified Output Layout:** Standardized the "Output Folder" UI across all plugins. The path display, "Change Folder", and "Open Folder" buttons have been moved into a clean, intuitive block directly beneath the loaded images list on the left sidebar.
+* **Modernized Lists & Buttons:** Upgraded the FileDropListWidget with rounded corners, subtle drop-zone borders, and a sleek layout for the "Add Images" and "Clear List" action buttons.
+* **Overall Aesthetics:** Applied modern UI tokens, smooth hover states, updated typography weights, and rounded border-radius designs throughout the app's control panels for a significantly more premium feel.
+
+**Core System & Engine**
+* **Translation Engine Overhaul:** Fully implemented a robust i18n system (translations.py) and passed it into the plugin context for cross-language support.
+* **Canvas Renderer Re-written:** Re-architected the ZoomableImageWidget backend. Removed QScrollArea wrappers in favor of a direct SplitImageLabel painter. This entirely fixes the blank preview rendering bug (collapsed layouts).
+* **Official Windows Installer:** LABOKit now ships as an official Windows installer (`.exe`) with a streamlined setup process, rather than a standalone portable zip.
+
+**Plugin Updates**
+* **Dithering FX (v3.4):** 
+  * Completely Live Previews: All sliders (Brightness, Dither Scale, Bloom, etc.) now instantly trigger background rendering while being dragged.
+  * Live Animations: Rendering Animated GIFs is now fully live in the background—no more modal progress bars blocking the UI while tweaking settings.
+  * Massive Algorithmic Optimization: Refactored the core Python pixel loops. Implemented 256-color lookup tables for Error Diffusion (Atkinson, Stucki, etc.) and fast C-level array multiplication for Pattern Mapping (Bayer, Halftone, etc.), yielding over a 10x performance speedup.
+  * Disabled the Split View slider to optimize the interface. Add Animation to static image.
+* **QR Code Generator (v1.5):** 
+  * Batch Generator Mode: Overhauled the UI layout to include a dedicated Multi-Line Text Input box specifically for the "Paste List" batch generator mode.
+* **Quick Vector (v1.7):** 
+  * Removed the redundant "Preview Zoom" slider to unify controls with the new global core zooming engine.
+* **ImageLAB (v2.3):** 
+  * Updated UI/UX.
 
 ## What's New in 3.1
 * **Library Fixes & Performance Update:** Resolves Upscaler issues and general bugs. Build format changed from single-file portable to directory for faster startup speeds.
@@ -33,9 +59,8 @@
 ## 📥 Download
 
 **(Windows)**
-1.  **[Download](https://github.com/wagakano/LABOKit/releases/download/3.1/LABOKit_3.1.zip)**
-2.  Extract `LABOKit_3.1.zip`.
-3.  Run `LABOKit_3.1.exe` and enjoy! (☆▽☆)
+1.  **[Download](https://github.com/wagakano/LABOKit/releases/download/3.2/LABOKit_3.2.exe)**
+2.  Run the installer `LABOKit_3.2.exe` and enjoy! (☆▽☆)
 
 **(Linux)**
 * **[Source Code](https://github.com/wagakano/LABOKit/tree/main_linux)**
@@ -62,7 +87,7 @@ Upscale video files significantly using the power of **Real-ESRGAN** and **FFmpe
 
 **Workflow:**
 1.  **Extract:** Breaks down the video into individual frames.
-2.  **Upscale:** Processes frames in batch using AI models (Scale 2x - 4x).
+2.  **Upscale:** Processes frames in batch using modules (Scale 2x - 4x).
 3.  **Merge:** Recombines frames into a video file while preserving the original audio.
 
 > **⚠️ Note:** This process is resource-intensive (GPU/CPU) and may take a long time depending on the video length and upscaling factor.
@@ -79,6 +104,13 @@ A bridge for advanced users. Allows you to load external `.onnx` Upscaler models
 
 A batch-able QR-Code generator.
 
+### 4. Watermark Remover
+**File:** **[WatermarkRemover.kit](https://github.com/wagakano/LABOKit-assets/releases/download/update2/WatermarkRemover.kit)**
+**Status:** Released
+
+Remove watermarks, text, or objects from your images using state-of-the-art Inpainting (LaMa).
+* **Features:** Built-in interactive brush masking UI, auto-model downloading, and seamless background blending.
+
 ## Advanced Plugins
 Also you can get the **Advanced Plugin Bundle** by supporting the development (Donation/Pay What You Want).
 
@@ -93,6 +125,7 @@ Give your images a stunning retro aesthetic. Apply old-school shading and color 
 * **GIF Support:** Full support for importing, processing, and previewing animated GIFs.
 * **Bloom Effect:** Add retro glow to your dithered images.
 * **Enhanced Controls:** New sliders for Softness, Noise, and Error Bleed.
+* **Animation Support:** Animate your static image with dither effect!
 * 🍌 If you're from r/steinsgate, you can get this Plugin for free! Just DM me your email (u/Lazy-Time-1807) and I'll send the .kit to you.
 
 ### 3. Image Converter
@@ -110,39 +143,6 @@ LABOKit is free and open-source. By purchasing this bundle (Pay What You Want), 
 
 *By supporting, you get the `LABOKit_Advanced_Plugins.zip` containing all 3 plugins above.*
 
-## Developer Setup (Source Code)
-> **⚠️ Note:** You do NOT need to follow these steps if you just want to use the app. Please download the ready-to-use .exe from the **[Releases](https://github.com/wagakano/LABOKit/releases)** Page.
-
-### Prerequisites
-* Python 3.10+
-* Windows (Recommended)
-
-### Setup
-1.  Clone the repository:
-    ```bash
-    git clone [https://github.com/wagakano/LABOKit.git](https://github.com/wagakano/LABOKit.git)
-    cd LABOKit
-    ```
-
-2.  Install dependencies:
-    ```bash
-    pip install -r requirements.txt
-    ```
-    *(Note: PyTorch and RealESRGAN modules are required for full feature support)*
-
-3.  **Model Setup**
-    * BG Remover (rembg)
-      * **Manual (Offline):** for manual setup, download [u2net.onnx](https://github.com/danielgatis/rembg/releases/download/v0.0.0/u2net.onnx) and [isnet-anime.onnx](https://github.com/danielgatis/rembg/releases/download/v0.0.0/isnet-anime.onnx), create a folder named `models` in the project root, and place the file there (`LABOKit/models/`).
-    * Upscaler (realesrgan) - ensure the `realesrgan_ncnn` folder (containing the executable) and the `models` folder (containing .pth files) are correctly placed in the project directory.
-        * Download [realesrgan-ncnn-vulkan.exe](https://github.com/xinntao/Real-ESRGAN?tab=readme-ov-file#portable-executable-files-ncnn) and the models (e.g., `realesrgan-x4plus.bin`, etc.).
-        * Place them in the `realesrgan_ncnn/` folder inside the project directory.\
-        * Add `realesr-general-x4v3.pth` into `realesrgan_ncnn/models/`
-        * *(Note: Ensure the executable path matches the setup in `main.py`)*
-
-4.  Run the application:
-    ```bash
-    python main.py
-    ```
 
 ## How to Use
 > A detailed user guide explaining all terms and features is available directly inside the app. Just go to the **Help** menu in the top bar!

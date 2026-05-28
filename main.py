@@ -84,6 +84,55 @@ IMAGE_FILTER = (
     "*.JPG *.JPEG *.PNG *.BMP *.TIF *.TIFF *.WEBP *.GIF)"
 )
 
+APP_VERSION = "3.2"
+
+class AppUpdater(QThread):
+    update_available = Signal(str, str, str) # version, download_url, changelog
+    
+    def run(self):
+        try:
+            import requests
+            url = "https://raw.githubusercontent.com/wagakano/LABOKit-assets/main/app_manifest.json"
+            response = requests.get(url, timeout=5)
+            if response.status_code == 200:
+                data = response.json()
+                latest_version = data.get("version", "0.0")
+                if latest_version != APP_VERSION:
+                    self.update_available.emit(latest_version, data.get("download_url"), data.get("changelog", "No changelog provided."))
+        except Exception as e:
+            print(f"Failed to check for app updates: {e}")
+
+class PatchDownloader(QThread):
+    progress = Signal(int)
+    finished = Signal(str)
+    error = Signal(str)
+    
+    def __init__(self, url):
+        super().__init__()
+        self.url = url
+        
+    def run(self):
+        try:
+            response = requests.get(self.url, stream=True, timeout=10)
+            response.raise_for_status()
+            total_size = int(response.headers.get('content-length', 0))
+            
+            import tempfile
+            patch_path = Path(tempfile.gettempdir()) / "labokit_patch.zip"
+            
+            downloaded = 0
+            with open(patch_path, 'wb') as f:
+                for chunk in response.iter_content(chunk_size=8192):
+                    if chunk:
+                        f.write(chunk)
+                        downloaded += len(chunk)
+                        if total_size > 0:
+                            self.progress.emit(int((downloaded / total_size) * 100))
+                            
+            self.finished.emit(str(patch_path))
+        except Exception as e:
+            self.error.emit(str(e))
+
 # --- LAZY LOADING AI ENGINE ---
 AI_MODULES = None
 GLOBAL_UPSAMPLER_CACHE = {}
@@ -1021,7 +1070,85 @@ class LABOKitMainWindow(QMainWindow):
 
         self._refresh_plugin_menu()
 
+        # Check for updates
+        self.updater = AppUpdater()
+        self.updater.update_available.connect(self.on_update_available)
+        self.updater.start()
+
     def _refresh_plugin_menu(self):
+        if hasattr(self, "menu_plugins"):
+            self.menu_plugins.clear()
+            if not self.loaded_plugins:
+                action = QAction("(No Plugins)", self)
+                action.setEnabled(False)
+                self.menu_plugins.addAction(action)
+            else:
+                for p in self.loaded_plugins:
+                    action = QAction(p["name"], self)
+                    # When clicked, switch to that tab
+                    action.triggered.connect(lambda checked, t=p["tab"]: self.tabs.setCurrentWidget(t))
+                    self.menu_plugins.addAction(action)
+
+    def on_update_available(self, version, download_url, changelog):
+        msg = QMessageBox(self)
+        msg.setWindowTitle("Update Available")
+        msg.setText(f"A new version of LABOKit (v{version}) is available!\n\nChangelog:\n{changelog}\n\nWould you like to download and install it now?")
+        msg.setStandardButtons(QMessageBox.Yes | QMessageBox.No)
+        if msg.exec() == QMessageBox.Yes:
+            self.apply_update(download_url)
+            
+    def apply_update(self, url):
+        self.progress_dialog = QProgressDialog("Downloading update...", "Cancel", 0, 100, self)
+        self.progress_dialog.setWindowModality(Qt.WindowModal)
+        self.progress_dialog.setAutoClose(True)
+        self.progress_dialog.show()
+        
+        self.downloader = PatchDownloader(url)
+        self.downloader.progress.connect(self.progress_dialog.setValue)
+        self.downloader.error.connect(lambda e: QMessageBox.critical(self, "Update Failed", str(e)))
+        self.downloader.finished.connect(self.on_download_finished)
+        self.downloader.start()
+        
+    def on_download_finished(self, patch_path):
+        import tempfile
+        import subprocess
+        
+        patch_path_obj = Path(patch_path)
+        bat_path = Path(tempfile.gettempdir()) / "labokit_updater.bat"
+        target_dir = Path(sys.executable).parent if getattr(sys, 'frozen', False) else Path(__file__).parent
+        
+        if patch_path_obj.suffix.lower() == '.exe':
+            bat_content = f"""@echo off
+timeout /t 2 /nobreak > NUL
+echo Installing Update...
+start /wait "" "{patch_path_obj}" /SILENT /DIR="{target_dir}"
+start "" "{target_dir}\\LABOKit.exe"
+del "{patch_path_obj}"
+del "%~f0"
+"""
+        else:
+            bat_content = f"""@echo off
+timeout /t 2 /nobreak > NUL
+echo Updating LABOKit...
+tar -xf "{patch_path_obj}" -C "{target_dir}"
+if %errorlevel% neq 0 (
+    echo Extraction failed!
+    pause
+    exit /b %errorlevel%
+)
+start "" "{target_dir}\\LABOKit.exe"
+del "{patch_path_obj}"
+del "%~f0"
+"""
+        with open(bat_path, "w", encoding="utf-8") as f:
+            f.write(bat_content)
+            
+        QMessageBox.information(self, "Update Ready", "LABOKit will now close to apply the update.")
+        
+        subprocess.Popen(["cmd.exe", "/c", str(bat_path)], creationflags=subprocess.CREATE_NO_WINDOW)
+        QApplication.quit()
+        
+    def populate_plugin_menu(self):
         if hasattr(self, "menu_plugins"):
             self.menu_plugins.clear()
             if not self.loaded_plugins:
@@ -1379,13 +1506,22 @@ def global_exception_handler(exc_type, exc_value, exc_traceback):
 
 def main():
     sys.excepthook = global_exception_handler
+    
+    # --- Windows Taskbar Icon Fix ---
+    try:
+        import ctypes
+        myappid = 'wagakano.labokit.advanced.3.2' # arbitrary string
+        ctypes.windll.shell32.SetCurrentProcessExplicitAppUserModelID(myappid)
+    except Exception:
+        pass
+        
     app = QApplication(sys.argv)
     app.setApplicationName("LABOKit Advanced")
     if ICON_PATH.exists(): app.setWindowIcon(QIcon(str(ICON_PATH)))
     default_font = QFont("Consolas", 9)
     app.setFont(default_font)
 
-    # Simple Splash (Image Only)
+    # Revert to Qt Splash Screen
     splash_img_path = INTERNAL_DIR / "splash.png"
     pix = QPixmap(str(splash_img_path)) if splash_img_path.exists() else QPixmap(400,100)
     if not splash_img_path.exists(): pix.fill(Qt.white)
