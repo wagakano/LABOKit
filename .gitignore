@@ -13,3 +13,9 @@ dist/
 realesrgan_ncnn/
 potrace/
 models/
+
+# Private plugins
+LABOKit Plugins/
+plugins/
+*.kit
+

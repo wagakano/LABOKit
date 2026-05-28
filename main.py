@@ -3,15 +3,15 @@ import sys
 import os
 import random
 import subprocess
-import importlib.util
-import importlib.machinery
 import shutil
-import json
-import urllib.request
-import base64
-import ssl
-import requests
-import svgwrite
+import psutil
+
+# Ensure main directory is in path for plugins to import other modules
+script_dir = os.path.dirname(os.path.abspath(__file__))
+if script_dir not in sys.path:
+    sys.path.insert(0, script_dir)
+
+
 
 def resource_path(relative_path):
     try:
@@ -29,7 +29,7 @@ urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
 from translations import tr, set_language, CURRENT_LANG
 
 # --- APP INFO ---
-APP_VERSION = "3.1.0"
+APP_VERSION = "3.2.0"
 APP_UPDATE_URL = "https://raw.githubusercontent.com/wagakano/LABOKit/main_windows/latest_version.json"
 PLUGIN_MANIFEST_URL = "https://raw.githubusercontent.com/wagakano/LABOKit/main_windows/plugins_manifest.json"
 
@@ -59,7 +59,8 @@ ICON_PATH = INTERNAL_DIR / "labokit.ico"
 remove = None
 
 # --- IMPORTS ---
-from PySide6.QtCore import Qt, QSize, QTimer, QUrl, QRectF, QThread, Signal
+from PySide6.QtCore import Qt, QSize, QTimer, QUrl, QRectF, QThread, Signal, QObject, QDateTime, QEvent
+
 from PySide6.QtGui import QAction, QPixmap, QFont, QIcon, QDesktopServices, QPainterPath, QRegion, QColor, QPalette
 from PySide6.QtWidgets import (
     QApplication, QMainWindow, QWidget, QVBoxLayout, QHBoxLayout,
@@ -70,6 +71,14 @@ from PySide6.QtWidgets import (
 )
 from ui_shared import FileDropListWidget, ZoomableImageWidget, DivergenceMeter, create_plus_icon, VALID_EXTENSIONS
 
+# --- MONKEYPATCH FOR CLICKABLE BUTTON CURSOR ---
+_orig_btn_init = QPushButton.__init__
+def _new_btn_init(self, *args, **kwargs):
+    _orig_btn_init(self, *args, **kwargs)
+    self.setCursor(Qt.PointingHandCursor)
+QPushButton.__init__ = _new_btn_init
+
+
 IMAGE_FILTER = (
     "Images (*.jpg *.jpeg *.png *.bmp *.tif *.tiff *.webp *.gif "
     "*.JPG *.JPEG *.PNG *.BMP *.TIF *.TIFF *.WEBP *.GIF)"
@@ -77,6 +86,8 @@ IMAGE_FILTER = (
 
 # --- LAZY LOADING AI ENGINE ---
 AI_MODULES = None
+GLOBAL_UPSAMPLER_CACHE = {}
+GLOBAL_REMBG_SESSION_CACHE = {}
 
 def load_ai_engine():
     global AI_MODULES
@@ -164,6 +175,21 @@ def deploy_assets():
             except Exception as e:
                 print(f"Failed to deploy built-in {item.name}: {e}")
 
+    # 4b. Local Plugins for Development/Testing
+    # If there is a local 'LABOKit Plugins/3.0' directory, copy the plugins to PLUGIN_DIR
+    local_dev_plugins = Path(__file__).resolve().parent / "LABOKit Plugins" / "3.0"
+    if local_dev_plugins.exists():
+        PLUGIN_DIR.mkdir(exist_ok=True)
+        for item in local_dev_plugins.glob("*.kit"):
+            if "stickerprepper" in item.name.lower():
+                continue
+            dst_item = PLUGIN_DIR / item.name
+            try:
+                shutil.copy2(item, dst_item)
+                print(f"[System] Developer plugin deployed/updated: {item.name}")
+            except Exception as e:
+                print(f"Failed to deploy dev plugin {item.name}: {e}")
+
 # ==========================================
 # TABS
 # ==========================================
@@ -186,18 +212,31 @@ class BgRemoverTab(QWidget):
         
         # Left Panel (Controls)
         left = QVBoxLayout(); main.addLayout(left, 1)
+        
+        # Loaded Images Box
+        list_box = QFrame()
+        list_box_layout = QVBoxLayout(list_box)
+        list_box_layout.setContentsMargins(6, 6, 6, 6)
+        list_box_layout.setSpacing(5)
+        
         self.list_w = FileDropListWidget()
         self.list_w.setContextMenuPolicy(Qt.CustomContextMenu)
         self.list_w.customContextMenuRequested.connect(self.show_list_context_menu)
         self.list_w.files_dropped.connect(self.add_dropped_files)
         self.list_w.currentRowChanged.connect(self.on_file_selected)
-        lbl = QLabel(tr("lbl_loaded_bg")); lbl.setStyleSheet("border:none; background:transparent;")
-        left.addWidget(lbl); left.addWidget(self.list_w)
-        # Buttons (Add/Clear) moved to bottom area
+        lbl = QLabel(tr("lbl_loaded_bg"))
+        lbl.setStyleSheet("font-weight: bold; background-color: #e2e7f2; border: 1px solid #cbd2e1; border-radius: 3px; padding: 4px 6px; color: #333d51;")
+        list_box_layout.addWidget(lbl)
+        list_box_layout.addWidget(self.list_w)
+        
+        # Buttons (Add/Clear)
         btns = QHBoxLayout()
         b_add = QPushButton(tr("btn_add")); b_add.setIcon(create_plus_icon()); b_add.clicked.connect(self.add_images)
         b_clr = QPushButton(tr("btn_clear")); b_clr.clicked.connect(self.clear_list)
-        btns.addWidget(b_add); btns.addWidget(b_clr); left.addLayout(btns)
+        btns.addWidget(b_add); btns.addWidget(b_clr)
+        list_box_layout.addLayout(btns)
+        
+        left.addWidget(list_box)
 
         # Divider
         line = QFrame()
@@ -212,8 +251,13 @@ class BgRemoverTab(QWidget):
         self.out_lbl.setStyleSheet("color: #666; margin-bottom: 5px; border: none; background: transparent;")
         left.addWidget(self.out_lbl)
 
+        out_btn_lay = QHBoxLayout()
+        out_btn_lay.setSpacing(5)
         b_change = QPushButton(tr("btn_change")); b_change.clicked.connect(self.change_output_folder)
-        left.addWidget(b_change)
+        b_open_out = QPushButton(tr("btn_open_out", "Open Folder")); b_open_out.clicked.connect(self.open_output_folder)
+        out_btn_lay.addWidget(b_change)
+        out_btn_lay.addWidget(b_open_out)
+        left.addLayout(out_btn_lay)
         
         pres_row = QVBoxLayout() 
         pres_row.setSpacing(5)
@@ -306,9 +350,8 @@ class BgRemoverTab(QWidget):
 
     def resizeEvent(self, e):
         super().resizeEvent(e)
-        # Optimized: Reuse loaded pixmap instead of reloading from disk
-        self.preview_widget.fit_to_view()
-        self.preview_widget.update_display()
+        # The preview widget handles fit+update via its own debounce timer
+
 
     def on_preset(self, n): self.current_preset_name = n
 
@@ -323,6 +366,15 @@ class BgRemoverTab(QWidget):
         d = QFileDialog.getExistingDirectory(self, "Select Folder")
         if d:
             self.output_dir = Path(d); self.out_lbl.setText(f"BG OUTPUT FOLDER: {self.output_dir}")
+
+    def open_output_folder(self):
+        d = self.output_dir
+        if not d and self.image_paths:
+            d = self.image_paths[0].parent / "LABOKit_BG"
+        if d and d.exists():
+            QDesktopServices.openUrl(QUrl.fromLocalFile(str(d)))
+        else:
+            QMessageBox.information(self, "Info", "Output folder does not exist yet. Process an image first.")
 
     def proc_sel(self):
         sel = [i.data(Qt.UserRole) for i in self.list_w.selectedItems()]
@@ -415,19 +467,31 @@ class UpscalerTab(QWidget):
         
         # Left Panel (Controls)
         left = QVBoxLayout(); main.addLayout(left, 1)
+        
+        # Loaded Images Box
+        list_box = QFrame()
+        list_box_layout = QVBoxLayout(list_box)
+        list_box_layout.setContentsMargins(6, 6, 6, 6)
+        list_box_layout.setSpacing(5)
+        
         self.list_w = FileDropListWidget()
         self.list_w.setContextMenuPolicy(Qt.CustomContextMenu)
         self.list_w.customContextMenuRequested.connect(self.show_list_context_menu)
         self.list_w.files_dropped.connect(self.add_dropped_files)
         self.list_w.currentItemChanged.connect(self.on_item)
-        lbl = QLabel(tr("lbl_loaded_up")); lbl.setStyleSheet("border:none; background:transparent;")
-        left.addWidget(lbl); left.addWidget(self.list_w)
+        lbl = QLabel(tr("lbl_loaded_up"))
+        lbl.setStyleSheet("font-weight: bold; background-color: #e2e7f2; border: 1px solid #cbd2e1; border-radius: 3px; padding: 4px 6px; color: #333d51;")
+        list_box_layout.addWidget(lbl)
+        list_box_layout.addWidget(self.list_w)
         
-        # Buttons
+        # Buttons (Add/Clear)
         btns = QHBoxLayout()
         b_add = QPushButton(tr("btn_add")); b_add.setIcon(create_plus_icon()); b_add.clicked.connect(self.add_images)
         b_clr = QPushButton(tr("btn_clear")); b_clr.clicked.connect(self.clear_list)
-        btns.addWidget(b_add); btns.addWidget(b_clr); left.addLayout(btns)
+        btns.addWidget(b_add); btns.addWidget(b_clr)
+        list_box_layout.addLayout(btns)
+        
+        left.addWidget(list_box)
 
         # Divider
         line = QFrame()
@@ -442,8 +506,13 @@ class UpscalerTab(QWidget):
         self.out_lbl.setStyleSheet("color: #666; margin-bottom: 5px; border: none; background: transparent;")
         left.addWidget(self.out_lbl)
 
+        out_btn_lay = QHBoxLayout()
+        out_btn_lay.setSpacing(5)
         b_change = QPushButton(tr("btn_change")); b_change.clicked.connect(self.change_output_folder)
-        left.addWidget(b_change)
+        b_open_out = QPushButton(tr("btn_open_out", "Open Folder")); b_open_out.clicked.connect(self.open_output_folder)
+        out_btn_lay.addWidget(b_change)
+        out_btn_lay.addWidget(b_open_out)
+        left.addLayout(out_btn_lay)
         
         opt_layout = QVBoxLayout()
         opt_layout.setSpacing(5)
@@ -539,9 +608,8 @@ class UpscalerTab(QWidget):
 
     def resizeEvent(self, e):
         super().resizeEvent(e)
-        # Optimized: Reuse loaded pixmap instead of reloading from disk
-        self.preview_widget.fit_to_view()
-        self.preview_widget.update_display()
+        # The preview widget handles fit+update via its own debounce timer
+
 
     def ensure_out(self, sample):
         if not self.output_dir:
@@ -553,7 +621,16 @@ class UpscalerTab(QWidget):
     def change_output_folder(self):
         d = QFileDialog.getExistingDirectory(self, "Select Folder")
         if d:
-            self.output_dir = Path(d); self.out_lbl.setText(f"UPSCALE OUTPUT FOLDER: {self.output_dir}")
+            self.output_dir = Path(d); self.out_lbl.setText(f"UPSCALER FOLDER: {self.output_dir}")
+
+    def open_output_folder(self):
+        d = self.output_dir
+        if not d and self.image_paths:
+            d = self.image_paths[0].parent / "LABOKit_Upscaled"
+        if d and d.exists():
+            QDesktopServices.openUrl(QUrl.fromLocalFile(str(d)))
+        else:
+            QMessageBox.information(self, "Info", "Output folder does not exist yet. Process an image first.")
 
     def proc_sel(self):
         sel = [i.data(Qt.UserRole) for i in self.list_w.selectedItems()]
@@ -655,7 +732,7 @@ class CustomTitleBar(QWidget):
         layout.setContentsMargins(10, 0, 10, 0)
         layout.setSpacing(8)
 
-        self.title_lbl = QLabel("LABOKit")
+        self.title_lbl = QLabel("LABOKit 3.2")
         self.title_lbl.setStyleSheet("font-weight: bold; color: #333; border: none; background: transparent;")
         self.title_lbl.setAttribute(Qt.WA_TransparentForMouseEvents)
 
@@ -741,6 +818,8 @@ class AppUpdateChecker(QThread):
     found_update = Signal(str, str, str) # version, url, changelog
 
     def run(self):
+        import urllib.request
+        import json
         try:
             with urllib.request.urlopen(APP_UPDATE_URL) as url:
                 data = json.loads(url.read().decode())
@@ -754,6 +833,9 @@ class PluginUpdater(QThread):
     update_found = Signal(str, str, str, str) 
 
     def run(self):
+        import urllib.request
+        import json
+        import base64
         try:
             if not PLUGIN_DIR.exists(): return
             
@@ -804,7 +886,7 @@ class PluginUpdater(QThread):
 class LABOKitMainWindow(QMainWindow):
     def __init__(self):
         super().__init__()
-        self.setWindowTitle("LABOKit")
+        self.setWindowTitle("LABOKit 3.2")
         
         screen = QApplication.primaryScreen().geometry()
         screen_height = screen.height()
@@ -856,13 +938,44 @@ class LABOKitMainWindow(QMainWindow):
         
         self.main_layout.addWidget(self.tabs)
         self.main_layout.addWidget(self.meter) # Added global meter
-        self.main_layout.addSpacing(5) 
+        
+        self.inactivity_timer = QTimer(self)
+        self.inactivity_timer.timeout.connect(self.purge_ai_models)
+        self.inactivity_timer.start(300000) # 5 mins
 
         self.loaded_plugins = []
         self._setup_menu()
         self._load_plugins()
         self.check_app_updates()
         self.check_plugin_updates()
+
+    def purge_ai_models(self):
+        global GLOBAL_REMBG_SESSION_CACHE, GLOBAL_UPSAMPLER_CACHE
+        purged = False
+        if GLOBAL_REMBG_SESSION_CACHE or GLOBAL_UPSAMPLER_CACHE:
+            GLOBAL_REMBG_SESSION_CACHE.clear()
+            GLOBAL_UPSAMPLER_CACHE.clear()
+            import gc
+            gc.collect()
+            purged = True
+        
+        # Use status_label directly (not set_message) so we don't trigger the
+        # fast-animation mode — this is an informational notice, not active work
+        if purged and hasattr(self, 'meter'):
+            self.meter.status_label.setText("➤ AI Models Unloaded (RAM freed)")
+            self.meter.status_label.setStyleSheet(
+                "background-color: #fef3c7; border: 1px solid #f59e0b; color: #92400e;"
+            )
+            self._purge_notice_active = True
+
+    def reset_inactivity(self):
+        if hasattr(self, 'inactivity_timer'):
+            self.inactivity_timer.start(300000)
+            # Clear purge notice on next activity
+            if getattr(self, '_purge_notice_active', False) and hasattr(self, 'meter'):
+                self.meter.status_label.setStyleSheet("")
+                self._purge_notice_active = False
+
 
     def resizeEvent(self, event):
         path = QPainterPath()
@@ -873,6 +986,8 @@ class LABOKitMainWindow(QMainWindow):
         
         super().resizeEvent(event)
     def _load_plugins(self):
+        import importlib.util
+        import importlib.machinery
         if not PLUGIN_DIR.exists(): PLUGIN_DIR.mkdir(parents=True, exist_ok=True)
         
         # Remove old tabs
@@ -889,9 +1004,11 @@ class LABOKitMainWindow(QMainWindow):
                 loader = importlib.machinery.SourceFileLoader(mod_name, str(f))
                 spec = importlib.util.spec_from_file_location(mod_name, str(f), loader=loader)
                 mod = importlib.util.module_from_spec(spec)
+                mod.tr = tr
                 spec.loader.exec_module(mod)
                 
                 if hasattr(mod, "create_tab"):
+                    mod.tr = tr
                     tab = mod.create_tab(self)
                     # Pass meter if supported
                     if hasattr(tab, "set_meter"):
@@ -1021,6 +1138,7 @@ class LABOKitMainWindow(QMainWindow):
         self.plugin_updater.start()
 
     def download_and_install_plugin(self, name, new_ver, log, url):
+        import requests
         try:
             prog = QProgressDialog(f"Auto-updating {name} to v{new_ver}...", None, 0, 0, self)
             prog.setWindowModality(Qt.WindowModal)
@@ -1115,6 +1233,10 @@ class UpscalerWorker(QThread):
             self.error.emit(str(e))
             
     def init_upsampler(self, model_name):
+        global GLOBAL_UPSAMPLER_CACHE
+        if model_name in GLOBAL_UPSAMPLER_CACHE:
+            return GLOBAL_UPSAMPLER_CACHE[model_name]
+
         ai = load_ai_engine()
         if not ai:
             return None
@@ -1141,6 +1263,7 @@ class UpscalerWorker(QThread):
                 half=False,   
                 gpu_id=None
             )
+            GLOBAL_UPSAMPLER_CACHE[model_name] = upsampler
             return upsampler
 
         except Exception as e:
@@ -1186,8 +1309,13 @@ class BgRemovalWorker(QThread):
             import rembg
             from rembg import new_session
             
-            # Create session
-            session = new_session(model_name=self.model_name)
+            # Create session (with cache lookup)
+            global GLOBAL_REMBG_SESSION_CACHE
+            if self.model_name in GLOBAL_REMBG_SESSION_CACHE:
+                session = GLOBAL_REMBG_SESSION_CACHE[self.model_name]
+            else:
+                session = new_session(model_name=self.model_name)
+                GLOBAL_REMBG_SESSION_CACHE[self.model_name] = session
             
             cnt = 0
             for i, p in enumerate(self.paths):
@@ -1211,9 +1339,48 @@ class BgRemovalWorker(QThread):
     def stop(self):
         self.is_running = False
 
+class InactivityFilter(QObject):
+    def __init__(self, main_window):
+        super().__init__()
+        self.main_window = main_window
+        self._last_reset_ms = 0  # Cooldown to avoid resetting on every mouse-move
+
+    def eventFilter(self, obj, event):
+        if event.type() in (event.Type.MouseMove, event.Type.MouseButtonPress, event.Type.KeyPress):
+            # Throttle: only call reset_inactivity() at most every 500ms
+            now = QDateTime.currentMSecsSinceEpoch()
+            if now - self._last_reset_ms > 500:
+                self._last_reset_ms = now
+                self.main_window.reset_inactivity()
+        return False
+
+
+
+def global_exception_handler(exc_type, exc_value, exc_traceback):
+    if issubclass(exc_type, KeyboardInterrupt):
+        sys.__excepthook__(exc_type, exc_value, exc_traceback)
+        return
+    import traceback
+    from datetime import datetime
+    err_msg = "".join(traceback.format_exception(exc_type, exc_value, exc_traceback))
+    try:
+        with open("crash_log.txt", "a") as f:
+            f.write(f"\n--- Crash at {datetime.now()} ---\n")
+            f.write(err_msg)
+    except: pass
+    try:
+        msg = QMessageBox()
+        msg.setIcon(QMessageBox.Critical)
+        msg.setText("LABOKit encountered a critical error.")
+        msg.setDetailedText(err_msg)
+        msg.setWindowTitle("Fatal Error")
+        msg.exec()
+    except: pass
+
 def main():
+    sys.excepthook = global_exception_handler
     app = QApplication(sys.argv)
-    app.setApplicationName("LABOKit")
+    app.setApplicationName("LABOKit Advanced")
     if ICON_PATH.exists(): app.setWindowIcon(QIcon(str(ICON_PATH)))
     default_font = QFont("Consolas", 9)
     app.setFont(default_font)
@@ -1226,6 +1393,16 @@ def main():
     splash = QSplashScreen(pix.scaledToWidth(400, Qt.SmoothTransformation), Qt.WindowStaysOnTopHint)
     splash.show(); app.processEvents()
 
+    class CursorFilter(QObject):
+        def eventFilter(self, obj, event):
+            if event.type() == QEvent.Enter:
+                if isinstance(obj, QPushButton):
+                    obj.setCursor(Qt.PointingHandCursor)
+            return super().eventFilter(obj, event)
+
+    cursor_filter = CursorFilter()
+    app.installEventFilter(cursor_filter)
+
     # Worker Setup
     worker = StartupWorker()
     
@@ -1234,16 +1411,29 @@ def main():
         try:
             # Style
             app.setStyleSheet("""
+                QMessageBox { font-family: "Consolas"; }
                 QMainWindow { background-color: #e9edf5; }
                 QTabWidget::pane { border: 1px solid #b3bcd1; border-radius: 4px; top: -1px; }
                 QTabBar::tab { background-color: #dde4f5; border: 1px solid #b3bcd1; padding: 4px 12px; border-top-left-radius: 4px; border-top-right-radius: 4px; color: #1c2333; }
                 QTabBar::tab:selected { background-color: #f5f7fb; }
+                QPushButton { background-color: qlineargradient(x1:0, y1:0, x2:0, y2:1, stop:0 #ffffff, stop:1 #e0e5ec); border: 1px solid #a3b0c2; border-radius: 4px; padding: 6px; color: #1c2333; }
+                QPushButton:hover { background-color: qlineargradient(x1:0, y1:0, x2:0, y2:1, stop:0 #ffffff, stop:1 #d0d8e6); border: 1px solid #8294aa; }
+                QPushButton:pressed { background-color: #d0d8e6; }
+                QListWidget { background-color: #ffffff; border: 1px solid #b3bcd1; border-radius: 4px; outline: 0; padding: 4px; }
+                QListWidget::item:selected { background-color: #cce0ff; color: #1c2333; border-radius: 3px; }
+                QListWidget::item:hover { background-color: #e6f0ff; border-radius: 3px; }
+                QComboBox { border: 1px solid #b3bcd1; border-radius: 4px; padding: 4px 8px; background-color: #ffffff; }
+                QComboBox::drop-down { border-left: 1px solid #b3bcd1; }
+                QScrollBar:vertical { background: #e9edf5; width: 12px; margin: 0px 0px 0px 0px; border-radius: 6px; }
+                QScrollBar::handle:vertical { background: #b3bcd1; min-height: 20px; border-radius: 6px; }
+                QScrollBar::add-line:vertical, QScrollBar::sub-line:vertical { height: 0px; }
+                QLabel#SectionHeader { background-color: #dce3f0; border-radius: 4px; padding: 4px; }
+                QLabel { padding: 2px; }
                 QMenuBar { background-color: #dbe2f2; color: #1c2333; border-bottom: 1px solid #b3bcd1; }
                 QMenuBar::item { background: transparent; padding: 3px 8px; color: #1c2333; }
                 QMenuBar::item:selected { background-color: #cfe2ff; color: #101522; }
                 QMenu { background-color: #f7f9fc; border: 1px solid #b3bcd1; }
                 QMenu::item { padding: 4px 20px; color: #1c2333; }
-                QMenu::item:selected { background-color: #cfe2ff; color: #101522; }
                 QListWidget { background-color: #f7f9fc; border: 1px solid #b3bcd1; border-radius: 4px; }
                 QListWidget::item { padding: 4px 6px; color: #1c2333; }
                 QListWidget::item:selected { color: #102039; }
@@ -1265,12 +1455,17 @@ def main():
 
             # Attach to app to prevent GC
             app.main_window = LABOKitMainWindow()
+            
+            # Install inactivity filter
+            app.inactivity_filter = InactivityFilter(app.main_window)
+            app.installEventFilter(app.inactivity_filter)
+
             app.main_window.show()
             splash.finish(app.main_window)
         except Exception as e:
             print(f"Error during startup: {e}")
 
-    worker.finished.connect(on_complete, Qt.QueuedConnection)
+    worker.finished.connect(lambda: QTimer.singleShot(0, app, on_complete))
     worker.start()
 
     sys.exit(app.exec())

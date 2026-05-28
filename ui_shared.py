@@ -1,7 +1,7 @@
-from PySide6.QtCore import Qt, Signal, QTimer, QPoint, QSize
-from PySide6.QtGui import QPixmap, QPainter, QColor, QPen, QIcon, QAction, QFont, QCursor, QGuiApplication, QMovie
+from PySide6.QtCore import Qt, Signal, QTimer, QPoint, QSize, QRunnable, QThreadPool, QObject
+from PySide6.QtGui import QPixmap, QPainter, QColor, QPen, QIcon, QAction, QFont, QCursor, QGuiApplication, QMovie, QImage
 from PySide6.QtWidgets import (
-    QListWidget, QScrollArea, QLabel, QPushButton, QMenu, QFrame, QHBoxLayout, QApplication
+    QListWidget, QScrollArea, QLabel, QPushButton, QMenu, QFrame, QHBoxLayout, QApplication, QWidget, QVBoxLayout, QSlider
 )
 import random
 from pathlib import Path
@@ -12,6 +12,10 @@ VALID_EXTENSIONS = {
     ".jpg", ".jpeg", ".png", ".bmp", ".tif", ".tiff", ".webp", ".gif"
 }
 
+# --- Module-level icon cache (created once, reused everywhere) ---
+_PLUS_ICON_CACHE = None
+
+
 class FileDropListWidget(QListWidget):
     files_dropped = Signal(list)
 
@@ -21,6 +25,7 @@ class FileDropListWidget(QListWidget):
 
     def dragEnterEvent(self, event):
         if event.mimeData().hasUrls():
+            self.setStyleSheet("background-color: #e0e5f0; border: 2px dashed #4b556b;")
             event.accept()
         else:
             event.ignore()
@@ -31,7 +36,12 @@ class FileDropListWidget(QListWidget):
         else:
             event.ignore()
 
+    def dragLeaveEvent(self, event):
+        self.setStyleSheet("")
+        super().dragLeaveEvent(event)
+
     def dropEvent(self, event):
+        self.setStyleSheet("")
         if event.mimeData().hasUrls():
             files = []
             for u in event.mimeData().urls():
@@ -43,60 +53,151 @@ class FileDropListWidget(QListWidget):
         else:
             event.ignore()
 
+class SplitImageLabel(QLabel):
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        self.slider_ratio = 0.5
+        self.is_dragging = False
+        self.setMouseTracking(True)
+        
+        self.orig_pixmap = None
+        self.res_pixmap = None
+        self.active_movie = None
+        self.show_split = False
+
+    def set_images(self, orig, res, use_split):
+        self.orig_pixmap = orig
+        self.res_pixmap = res
+        self.show_split = use_split
+        self.active_movie = None
+        self.setPixmap(QPixmap()) # clear super label
+        self.update()
+
+    def set_movie_override(self, movie):
+        self.active_movie = movie
+        self.orig_pixmap = None
+        self.res_pixmap = None
+        self.setMovie(movie)
+
+    def mousePressEvent(self, event):
+        if self.show_split and self.orig_pixmap and self.res_pixmap and event.button() == Qt.LeftButton:
+            self.is_dragging = True
+            self.update_slider(event.pos().x())
+        else:
+            super().mousePressEvent(event)
+
+    def mouseMoveEvent(self, event):
+        if self.show_split and self.orig_pixmap and self.res_pixmap:
+            split_x = int(self.width() * self.slider_ratio)
+            if abs(event.pos().x() - split_x) < 20 or self.is_dragging:
+                self.setCursor(Qt.SplitHCursor)
+                if self.is_dragging:
+                    self.update_slider(event.pos().x())
+            else:
+                self.setCursor(Qt.ArrowCursor)
+        else:
+            self.setCursor(Qt.ArrowCursor)
+        super().mouseMoveEvent(event)
+
+    def mouseReleaseEvent(self, event):
+        if event.button() == Qt.LeftButton:
+            self.is_dragging = False
+            self.setCursor(Qt.ArrowCursor)
+        super().mouseReleaseEvent(event)
+
+    def update_slider(self, x):
+        self.slider_ratio = max(0.01, min(0.99, x / self.width()))
+        self.update()
+
+    def paintEvent(self, event):
+        if self.active_movie:
+            super().paintEvent(event)
+            return
+
+        painter = QPainter(self)
+        w, h = self.width(), self.height()
+        
+        if self.show_split and self.orig_pixmap and self.res_pixmap:
+            split_x = int(w * self.slider_ratio)
+            painter.drawPixmap(0, 0, split_x, h, self.orig_pixmap, 0, 0, split_x, h)
+            painter.drawPixmap(split_x, 0, w - split_x, h, self.res_pixmap, split_x, 0, w - split_x, h)
+            
+            painter.setPen(QPen(QColor(255, 153, 51), 2))
+            painter.drawLine(split_x, 0, split_x, h)
+            painter.setBrush(QColor(255, 153, 51))
+            painter.drawEllipse(QPoint(split_x, h // 2), 6, 6)
+        elif self.res_pixmap and not self.show_split:
+            painter.drawPixmap(0, 0, self.res_pixmap)
+        elif self.orig_pixmap:
+            painter.drawPixmap(0, 0, self.orig_pixmap)
+        else:
+            super().paintEvent(event)
+
 class ZoomableImageWidget(QScrollArea):
     def __init__(self, parent=None):
         super().__init__(parent)
+        self.setFrameShape(QFrame.NoFrame)
+        self.setStyleSheet("border: none; background: transparent;")
         self.setWidgetResizable(True)
         self.setAlignment(Qt.AlignCenter)
         
-        self.image_label = QLabel()
+        self.image_label = SplitImageLabel()
         self.image_label.setAlignment(Qt.AlignCenter)
         self.image_label.setStyleSheet("background: transparent;")
         self.setWidget(self.image_label)
         
-        self.original_pixmap = None
+        self.original_image = None
         self.original_movie = None 
-        self._original_movie_size = QSize() # Cache size to prevent shrinking
+        self._original_movie_size = QSize()
         
-        self.result_pixmap = None
+        self.result_image = None
         self.result_movie = None   
         self._result_movie_size = QSize()
         
-        self.current_target_pixmap = None
-        self.current_target_movie = None
-        
         self.scale_factor = 1.0
+        self.auto_fit = True
         
-        # Toggle Button (Top-Right)
-        self.btn_toggle = QPushButton("Show Original", self)
+        self._scale_timer = QTimer(self)
+        self._scale_timer.setSingleShot(True)
+        self._scale_timer.setInterval(50)
+        self._scale_timer.timeout.connect(self._do_update_display)
+
+        self.btn_toggle = QPushButton("Split View", self)
         self.btn_toggle.setCheckable(True)
+        self.btn_toggle.setChecked(True)
         self.btn_toggle.setCursor(Qt.PointingHandCursor)
         self.btn_toggle.clicked.connect(self.update_display)
         self.btn_toggle.hide()
         self.btn_toggle.setStyleSheet("""
-            QPushButton {
-                background-color: rgba(255, 255, 255, 0.9);
-                border: 1px solid #999;
-                border-radius: 4px;
-                padding: 6px 10px;
-                color: #333;
-                font-weight: bold;
-            }
-            QPushButton:checked {
-                background-color: #ff9933; /* Orange accent */
-                color: white;
-                border: 1px solid #d67a18;
-            }
+            QPushButton { background-color: rgba(255, 255, 255, 0.9); border: 1px solid #999; border-radius: 4px; padding: 6px 10px; color: #333; font-weight: bold; }
+            QPushButton:checked { background-color: #ff9933; color: white; border: 1px solid #d67a18; }
         """)
-        
         self.setFocusPolicy(Qt.StrongFocus)
 
+        self.zoom_slider = QSlider(Qt.Horizontal, self)
+        self.zoom_slider.setRange(10, 1000) # 0.1x to 10.0x
+        self.zoom_slider.setValue(100)
+        self.zoom_slider.setFixedWidth(150)
+        self.zoom_slider.valueChanged.connect(self._on_zoom_slider)
+        self.zoom_slider.setStyleSheet("""
+            QSlider { background: rgba(255, 255, 255, 0.7); border-radius: 4px; padding: 2px; }
+            QSlider::groove:horizontal { border: 1px solid #999; height: 6px; background: #eee; border-radius: 3px; }
+            QSlider::handle:horizontal { background: #ff9933; border: 1px solid #d67a18; width: 14px; margin: -4px 0; border-radius: 7px; }
+        """)
+        self.zoom_slider.hide()
+
+        # Debounce timer for resize events to avoid flooding the thread pool
+        self._resize_timer = QTimer(self)
+        self._resize_timer.setSingleShot(True)
+        self._resize_timer.setInterval(150)
+        self._resize_timer.timeout.connect(self._do_fit_and_update)
+
+
     def set_images(self, original_path, result_path):
-        self.original_pixmap = None
+        self.original_image = None
         self.original_movie = None
         self._original_movie_size = QSize()
-        
-        self.result_pixmap = None
+        self.result_image = None
         self.result_movie = None
         self._result_movie_size = QSize()
         
@@ -106,11 +207,10 @@ class ZoomableImageWidget(QScrollArea):
                 if p.suffix.lower() == ".gif":
                     self.original_movie = QMovie(str(p))
                     self.original_movie.start()
-                    # Capture size immediately if possible, or wait for frame
                     self.original_movie.jumpToFrame(0)
                     self._original_movie_size = self.original_movie.currentImage().size()
                 else:
-                    self.original_pixmap = QPixmap(str(p))
+                    self.original_image = QImage(str(p))
 
         if result_path:
             p = Path(result_path)
@@ -121,53 +221,75 @@ class ZoomableImageWidget(QScrollArea):
                     self.result_movie.jumpToFrame(0)
                     self._result_movie_size = self.result_movie.currentImage().size()
                 else:
-                    self.result_pixmap = QPixmap(str(p))
+                    self.result_image = QImage(str(p))
         
         self.fit_to_view()
-        self.btn_toggle.setChecked(False)
         
-        has_orig = bool(self.original_pixmap or self.original_movie)
-        has_res = bool(self.result_pixmap or self.result_movie)
-        self.btn_toggle.setVisible(has_orig and has_res)
+        has_orig = bool(self.original_image or self.original_movie)
+        has_res = bool(self.result_image or self.result_movie)
+        self.btn_toggle.setVisible(has_orig and has_res and not (self.original_movie or self.result_movie))
         
+        if has_orig or has_res:
+            self.zoom_slider.show()
+        else:
+            self.zoom_slider.hide()
+            
         self.update_display()
 
     def set_image_pixmaps(self, original_pixmap, result_pixmap, preserve_zoom=False):
-        self.original_pixmap = original_pixmap
+        self.original_image = None
         self.original_movie = None
         self._original_movie_size = QSize()
-        
-        self.result_pixmap = result_pixmap
+        self.result_image = None
         self.result_movie = None
         self._result_movie_size = QSize()
         
+        if original_pixmap and not original_pixmap.isNull():
+            self.original_image = original_pixmap.toImage().copy()
+        if result_pixmap and not result_pixmap.isNull():
+            self.result_image = result_pixmap.toImage().copy()
+            
         if not preserve_zoom:
             self.fit_to_view()
+            
+        has_orig = bool(self.original_image)
+        has_res = bool(self.result_image)
+        self.btn_toggle.setVisible(has_orig and has_res)
         
-        self.btn_toggle.setChecked(False)
-        self.btn_toggle.setVisible(bool(self.original_pixmap and self.result_pixmap))
+        if has_orig or has_res:
+            self.zoom_slider.show()
+        else:
+            self.zoom_slider.hide()
+            
         self.update_display()
 
-    def set_result_pixmap(self, result_pixmap):
-        self.result_pixmap = result_pixmap
-        self.result_movie = None
-        self._result_movie_size = QSize()
+    def set_result_pixmap(self, pixmap, preserve_zoom=True):
+        if pixmap and not pixmap.isNull():
+            self.result_image = pixmap.toImage().copy()
+        else:
+            self.result_image = None
+            
+        if not preserve_zoom:
+            self.fit_to_view()
+            
+        has_orig = bool(self.original_image or self.original_movie)
+        has_res = bool(self.result_image or self.result_movie)
+        self.btn_toggle.setVisible(has_orig and has_res and not (self.original_movie or self.result_movie))
         
-        has_orig = bool(self.original_pixmap or self.original_movie)
-        self.btn_toggle.setVisible(has_orig and bool(self.result_pixmap))
-        
-        if not self.btn_toggle.isChecked():
-            self.update_display()
+        if has_orig or has_res:
+            self.zoom_slider.show()
+        else:
+            self.zoom_slider.hide()
+            
+        self.update_display()
 
     def fit_to_view(self):
         target_size = QSize(0,0)
-        
-        if self.original_pixmap: target_size = self.original_pixmap.size()
+        if self.original_image: target_size = self.original_image.size()
         elif self.original_movie: target_size = self._original_movie_size
-        elif self.result_pixmap: target_size = self.result_pixmap.size()
+        elif self.result_image: target_size = self.result_image.size()
         elif self.result_movie: target_size = self._result_movie_size
         
-        # FIX: Check isEmpty() instead of isValid() because QSize(0,0).isValid() is True
         if target_size.isValid() and not target_size.isEmpty():
             w_ratio = self.width() / target_size.width()
             h_ratio = self.height() / target_size.height()
@@ -175,82 +297,113 @@ class ZoomableImageWidget(QScrollArea):
             self.scale_factor = min(fit_scale, 1.0) * 0.95 
         else:
             self.scale_factor = 1.0
+            
+        self.auto_fit = True
+        
+        self.zoom_slider.blockSignals(True)
+        self.zoom_slider.setValue(int(self.scale_factor * 100))
+        self.zoom_slider.blockSignals(False)
 
     def update_display(self):
-        self.current_target_pixmap = None
-        self.current_target_movie = None
+        # Debounce the update call to prevent UI thread lockup on slider drag
+        self._scale_timer.start()
 
-        if self.btn_toggle.isChecked():
-            if self.original_movie: self.current_target_movie = self.original_movie
-            else: self.current_target_pixmap = self.original_pixmap
-        else:
-            if self.result_movie: self.current_target_movie = self.result_movie
-            elif self.result_pixmap: self.current_target_pixmap = self.result_pixmap
-            elif self.original_movie: self.current_target_movie = self.original_movie
-            else: self.current_target_pixmap = self.original_pixmap
-        
-        self._refresh_view()
-
-    def _refresh_view(self):
-        if self.current_target_movie:
-            movie = self.current_target_movie
-            if not movie.isValid():
-                self.image_label.setText("Invalid Movie")
+    def _do_update_display(self):
+        try:
+            import shiboken6
+            if not shiboken6.isValid(self) or not shiboken6.isValid(self.image_label):
                 return
+        except:
+            pass
             
-            # Determine base size to scale from
-            base_size = QSize()
-            if movie == self.original_movie: base_size = self._original_movie_size
-            elif movie == self.result_movie: base_size = self._result_movie_size
-            
-            # If invalid (not cached yet), try to get it
-            if not base_size.isValid() or base_size.isEmpty():
-                if movie.currentPixmap().isNull(): movie.jumpToFrame(0)
-                base_size = movie.currentImage().size()
-                # Update cache
-                if movie == self.original_movie: self._original_movie_size = base_size
-                elif movie == self.result_movie: self._result_movie_size = base_size
-
+        if self.original_movie or self.result_movie:
+            movie = self.result_movie if self.result_movie else self.original_movie
+            if not self.btn_toggle.isChecked() and self.original_movie:
+                movie = self.original_movie
+                
+            base_size = self._result_movie_size if movie == self.result_movie else self._original_movie_size
             if base_size.isValid() and not base_size.isEmpty():
-                new_size = base_size * self.scale_factor
-                # Only update if changed to avoid flicker
+                new_size = QSize(int(base_size.width() * self.scale_factor), int(base_size.height() * self.scale_factor))
                 if movie.scaledSize() != new_size:
                     movie.setScaledSize(new_size)
-            
-            self.image_label.setMovie(movie)
-            if movie.state() != QMovie.Running:
-                movie.start()
-                
-        elif self.current_target_pixmap and not self.current_target_pixmap.isNull():
-            new_size = self.current_target_pixmap.size() * self.scale_factor
-            scaled = self.current_target_pixmap.scaled(
-                new_size, Qt.KeepAspectRatio, Qt.SmoothTransformation
-            )
-            self.image_label.setPixmap(scaled)
-            self.image_label.adjustSize()
+                self.image_label.setFixedSize(new_size)
+            self.image_label.set_movie_override(movie)
         else:
-            self.image_label.setPixmap(QPixmap())
-            self.image_label.setText("No Image")
+            base_size = QSize(0,0)
+            if self.original_image: base_size = self.original_image.size()
+            elif self.result_image: base_size = self.result_image.size()
+            
+            if base_size.isValid() and not base_size.isEmpty():
+                new_size = QSize(int(base_size.width() * self.scale_factor), int(base_size.height() * self.scale_factor))
+                
+                # Perform scaling synchronously
+                orig_scaled = QImage()
+                res_scaled = QImage()
+                if new_size.width() > 0 and new_size.height() > 0:
+                    if self.original_image and not self.original_image.isNull():
+                        orig_scaled = self.original_image.scaled(new_size, Qt.KeepAspectRatio, Qt.SmoothTransformation)
+                    if self.result_image and not self.result_image.isNull():
+                        res_scaled = self.result_image.scaled(new_size, Qt.KeepAspectRatio, Qt.SmoothTransformation)
+                    
+                self.on_images_scaled(orig_scaled, res_scaled)
+            else:
+                self.image_label.set_images(None, None, False)
+
+    def on_images_scaled(self, orig_scaled, res_scaled):
+        # Update label on main thread
+        o_pix = QPixmap.fromImage(orig_scaled) if not orig_scaled.isNull() else None
+        r_pix = QPixmap.fromImage(res_scaled) if not res_scaled.isNull() else None
         
+        if o_pix or r_pix:
+            target = o_pix if o_pix else r_pix
+            self.image_label.setFixedSize(target.size())
+            
+        use_split = self.btn_toggle.isChecked() and o_pix and r_pix
+        if not self.btn_toggle.isChecked() and o_pix:
+            r_pix = None # only show original if split is disabled
+        self.image_label.set_images(o_pix, r_pix, use_split)
+
+    def _on_zoom_slider(self, val):
+        self.auto_fit = False
+        self.scale_factor = val / 100.0
+        self.update_display()
+
     def set_zoom_level(self, zoom_float):
         self.scale_factor = zoom_float
-        self._refresh_view()
+        self.zoom_slider.blockSignals(True)
+        self.zoom_slider.setValue(int(zoom_float * 100))
+        self.zoom_slider.blockSignals(False)
+        self.update_display()
 
     def wheelEvent(self, event):
         if event.modifiers() & Qt.ControlModifier:
+            self.auto_fit = False
             delta = event.angleDelta().y()
             if delta > 0: self.scale_factor *= 1.25
             else: self.scale_factor *= 0.8
             self.scale_factor = max(0.1, min(self.scale_factor, 10.0))
-            self._refresh_view()
+            self.zoom_slider.blockSignals(True)
+            self.zoom_slider.setValue(int(self.scale_factor * 100))
+            self.zoom_slider.blockSignals(False)
+            self.update_display()
             event.accept()
         else:
             super().wheelEvent(event)
+
+    def _do_fit_and_update(self):
+        """Deferred resize handler — called once after resize settles."""
+        if self.auto_fit:
+            self.fit_to_view()
+        self.update_display()
 
     def resizeEvent(self, event):
         super().resizeEvent(event)
         bw, bh = self.btn_toggle.width(), self.btn_toggle.height()
         self.btn_toggle.move(self.width() - bw - 20, 20)
+        self.zoom_slider.move(self.width() - self.zoom_slider.width() - 20, self.height() - self.zoom_slider.height() - 20)
+        # Debounce: defer fit-to-view until resize stops
+        self._resize_timer.start()
+
 
 class DivergenceMeter(QFrame):
     RUNNING_VALUES = [
@@ -310,12 +463,17 @@ class DivergenceMeter(QFrame):
             
         self.timer = QTimer(self)
         self.timer.timeout.connect(self._update_text)
-        self.timer.start(100) 
-        self._update_text() 
+        self.timer.start(120)
+        self._update_text()
 
     def set_message(self, text):
         self.override_message = text
         self._update_status_box()
+        # Speed up animation when processing, slow down when idle
+        if text:
+            self.timer.setInterval(15)
+        else:
+            self.timer.setInterval(120)
 
     def _update_status_box(self):
         if self.override_message:
@@ -336,15 +494,23 @@ class DivergenceMeter(QFrame):
             self.status_label.setStyleSheet("")
 
     def _update_text(self):
+        if not self.isVisible():
+            return
         idx = self._running_index % len(self.labels)
         self._running_index += 1
         val = random.choice(self.RUNNING_VALUES)
         self.labels[idx].setText(f"{val}  •")
         
-        if not self.override_message and self._running_index % 10 == 0: 
+        # Only refresh RAM display when idle (no active message) to avoid
+        # polling psutil at 30ms while the worker is busy
+        if not self.override_message and self._running_index % 30 == 0:
             self._update_status_box()
 
+
 def create_plus_icon():
+    global _PLUS_ICON_CACHE
+    if _PLUS_ICON_CACHE is not None:
+        return _PLUS_ICON_CACHE
     pix = QPixmap(16, 16)
     pix.fill(Qt.transparent)
     painter = QPainter(pix)
@@ -355,4 +521,6 @@ def create_plus_icon():
     painter.drawLine(8, 3, 8, 13)
     painter.drawLine(3, 8, 13, 8)
     painter.end()
-    return QIcon(pix)
+    _PLUS_ICON_CACHE = QIcon(pix)
+    return _PLUS_ICON_CACHE
+
