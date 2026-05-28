@@ -113,12 +113,16 @@ class PatchDownloader(QThread):
         
     def run(self):
         try:
-            response = requests.get(self.url, stream=True, timeout=10)
+            import tempfile
+            import requests
+            from urllib.parse import urlparse
+            # Preserve original extension from URL (.exe or .zip)
+            url_filename = Path(urlparse(self.url).path).name or "labokit_update.zip"
+            patch_path = Path(tempfile.gettempdir()) / url_filename
+            
+            response = requests.get(self.url, stream=True, timeout=300)
             response.raise_for_status()
             total_size = int(response.headers.get('content-length', 0))
-            
-            import tempfile
-            patch_path = Path(tempfile.gettempdir()) / "labokit_patch.zip"
             
             downloaded = 0
             with open(patch_path, 'wb') as f:
