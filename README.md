@@ -19,10 +19,9 @@
 ## What's New in 3.2
 
 **Major UI/UX Improvements (v3.2)**
-* **Split-View Slider:** Completely redesigned the before/after image comparison slider. It now features a modern, iOS-style frosted glass pill handle with interaction arrows and a vibrant orange accent line, replacing the old basic line slider.
+* **Split-View Slider:** Completely redesigned the before/after image comparison slider.
 * **Unified Output Layout:** Standardized the "Output Folder" UI across all plugins. The path display, "Change Folder", and "Open Folder" buttons have been moved into a clean, intuitive block directly beneath the loaded images list on the left sidebar.
 * **Modernized Lists & Buttons:** Upgraded the FileDropListWidget with rounded corners, subtle drop-zone borders, and a sleek layout for the "Add Images" and "Clear List" action buttons.
-* **Overall Aesthetics:** Applied modern UI tokens, smooth hover states, updated typography weights, and rounded border-radius designs throughout the app's control panels for a significantly more premium feel.
 
 **Core System & Engine**
 * **Translation Engine Overhaul:** Fully implemented a robust i18n system (translations.py) and passed it into the plugin context for cross-language support.
@@ -59,8 +58,8 @@
 ## 📥 Download
 
 **(Windows)**
-1.  **[Download](https://github.com/wagakano/LABOKit/releases/download/3.2/LABOKit_3.2.exe)**
-2.  Run the installer `LABOKit_3.2.exe` and enjoy! (☆▽☆)
+1.  **[Download](https://github.com/wagakano/LABOKit/releases/download/3.2/LABOKit_v3.2_Setup.exe)**
+2.  Run the installer and enjoy! (☆▽☆)
 
 **(Linux)**
 * **[Source Code](https://github.com/wagakano/LABOKit/tree/main_linux)**
