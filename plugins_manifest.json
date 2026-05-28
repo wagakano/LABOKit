@@ -1,43 +1,43 @@
 {
     "DitheringFX": {
         "version": "3.4",
-        "url_encoded": "aHR0cHM6Ly9yYXcuZ2l0aHVidXNlcmNvbnRlbnQuY29tL3dhZ2FrYW5vL0xBQk9LaXQtYXNzZXRzL21haW4vRGl0aGVyaW5nRlgua2l0", 
+        "url_encoded": "aHR0cHM6Ly9naXRodWIuY29tL3dhZ2FrYW5vL0xBQk9LaXQtYXNzZXRzL3JlbGVhc2VzL2Rvd25sb2FkL3VwZGF0ZTIvRGl0aGVyaW5nRlgua2l0", 
         "changelog": "1. Removed obsolete Preview GIF button.<br>2. Made all slider adjustments and previews completely live in the background.<br>3. Optimized core algorithms (Error Diffusion & Pattern Mapping) for a 10x+ speedup.<br>4. Disabled Split-View slider."
     },
     "QuickVector": {
         "version": "1.7",
-        "url_encoded": "aHR0cHM6Ly9yYXcuZ2l0aHVidXNlcmNvbnRlbnQuY29tL3dhZ2FrYW5vL0xBQk9LaXQtYXNzZXRzL21haW4vUXVpY2tWZWN0b3Iua2l0",
+        "url_encoded": "aHR0cHM6Ly9naXRodWIuY29tL3dhZ2FrYW5vL0xBQk9LaXQtYXNzZXRzL3JlbGVhc2VzL2Rvd25sb2FkL3VwZGF0ZTIvUXVpY2tWZWN0b3Iua2l0",
         "changelog": "1. Disabled Split View slider.<br>2. Removed redundant Preview Zoom slider."
     },
     "IMGConverter": {
         "version": "1.8",
-        "url_encoded": "aHR0cHM6Ly9yYXcuZ2l0aHVidXNlcmNvbnRlbnQuY29tL3dhZ2FrYW5vL0xBQk9LaXQtYXNzZXRzL21haW4vSU1HQ29udmVydGVyLmtpdA==",
+        "url_encoded": "aHR0cHM6Ly9naXRodWIuY29tL3dhZ2FrYW5vL0xBQk9LaXQtYXNzZXRzL3JlbGVhc2VzL2Rvd25sb2FkL3VwZGF0ZTIvSU1HQ29udmVydGVyLmtpdA==",
         "changelog": "Updated UI for 3.2 Compatibility and Modernized UI."
     },
     "VideoUpscaler": {
         "version": "1.4",
-        "url_encoded": "aHR0cHM6Ly9yYXcuZ2l0aHVidXNlcmNvbnRlbnQuY29tL3dhZ2FrYW5vL0xBQk9LaXQtYXNzZXRzL21haW4vVmlkZW9VcHNjYWxlci5raXQ=",
+        "url_encoded": "aHR0cHM6Ly9naXRodWIuY29tL3dhZ2FrYW5vL0xBQk9LaXQtYXNzZXRzL3JlbGVhc2VzL2Rvd25sb2FkL3VwZGF0ZTIvVmlkZW9VcHNjYWxlci5raXQ=",
         "changelog": "Updated UI for 3.2 Compatibility and Modernized UI."
     },
     "ONNXLoader": {
         "version": "1.2",
-        "url_encoded": "aHR0cHM6Ly9yYXcuZ2l0aHVidXNlcmNvbnRlbnQuY29tL3dhZ2FrYW5vL0xBQk9LaXQtYXNzZXRzL21haW4vT05OWExvYWRlci5raXQ=",
+        "url_encoded": "aHR0cHM6Ly9naXRodWIuY29tL3dhZ2FrYW5vL0xBQk9LaXQtYXNzZXRzL3JlbGVhc2VzL2Rvd25sb2FkL3VwZGF0ZTIvT05OWExvYWRlci5raXQ=",
         "changelog": "Updated UI for 3.2 Compatibility and Modernized UI."
     },
     "QRCodeGenerator": {
         "version": "1.8",
-        "url_encoded": "aHR0cHM6Ly9yYXcuZ2l0aHVidXNlcmNvbnRlbnQuY29tL3dhZ2FrYW5vL0xBQk9LaXQtYXNzZXRzL21haW4vUVJDb2RlR2VuZXJhdG9yLmtpdA==",
+        "url_encoded": "aHR0cHM6Ly9naXRodWIuY29tL3dhZ2FrYW5vL0xBQk9LaXQtYXNzZXRzL3JlbGVhc2VzL2Rvd25sb2FkL3VwZGF0ZTIvUVJDb2RlR2VuZXJhdG9yLmtpdA==",
         "changelog": "1. Integrated Translation support.<br>2. Added Multi-Line Text Input for Paste List Batch Generator.<br>3. Updated UI for 3.2 Compatibility."
     },
     "ImageLAB": {
         "version": "3.5",
-        "url_encoded": "aHR0cHM6Ly9yYXcuZ2l0aHVidXNlcmNvbnRlbnQuY29tL3dhZ2FrYW5vL0xBQk9LaXQtYXNzZXRzL21haW4vSW1hZ2VMQUIua2l0",
+        "url_encoded": "aHR0cHM6Ly9naXRodWIuY29tL3dhZ2FrYW5vL0xBQk9LaXQtYXNzZXRzL3JlbGVhc2VzL2Rvd25sb2FkL3VwZGF0ZTIvSW1hZ2VMQUIua2l0",
         "changelog": "1. Disabled Split View slider for a cleaner UI.<br>2. Updated UI for 3.2 Compatibility."
     },
     "WatermarkRemover": {
         "version": "1.0",
-        "url_encoded": "aHR0cHM6Ly9yYXcuZ2l0aHVidXNlcmNvbnRlbnQuY29tL3dhZ2FrYW5vL0xBQk9LaXQtYXNzZXRzL21haW4vV2F0ZXJtYXJrUmVtb3Zlci5raXQ=",
-        "changelog": "1. Initial release of AI Watermark Remover.<br>2. Implemented LaMa-based inpainting."
+        "url_encoded": "aHR0cHM6Ly9naXRodWIuY29tL3dhZ2FrYW5vL0xBQk9LaXQtYXNzZXRzL3JlbGVhc2VzL2Rvd25sb2FkL3VwZGF0ZTIvV2F0ZXJtYXJrUmVtb3Zlci5raXQ=",
+        "changelog": "1. Initial release of Watermark Remover.<br>2. Implemented LaMa-based inpainting."
     },
     "_message": "If you are able to decode the links, congratulation you get the plugins for free~!"
 }

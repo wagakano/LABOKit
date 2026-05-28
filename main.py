@@ -84,7 +84,7 @@ IMAGE_FILTER = (
     "*.JPG *.JPEG *.PNG *.BMP *.TIF *.TIFF *.WEBP *.GIF)"
 )
 
-APP_VERSION = "3.2"
+
 
 class AppUpdater(QThread):
     update_available = Signal(str, str, str) # version, download_url, changelog

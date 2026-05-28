@@ -59,7 +59,7 @@
 
 **(Windows)**
 1.  **[Download](https://github.com/wagakano/LABOKit/releases/download/3.2/LABOKit_v3.2_Setup.exe)**
-2.  Run the installer and enjoy! (☆▽☆)
+2.  Run the installer `LABOKit_v3.2_Setup.exe` and enjoy! (☆▽☆)
 
 **(Linux)**
 * **[Source Code](https://github.com/wagakano/LABOKit/tree/main_linux)**
