@@ -15,6 +15,9 @@
 * **Plugin System:** Extend functionality using `.kit` files.
 * **Offline Mode:** All processing is done locally on your machine.
 * **Multilanguage:** Supports English, Japanese (日本語), and Indonesian (Bahasa Indonesia).
+  
+<img width="1200" height="800" alt="Image" src="https://github.com/user-attachments/assets/6738e1d1-5892-4af8-93f0-0e00ed375786" />
+<img width="1200" height="800" alt="Image" src="https://github.com/user-attachments/assets/86b91723-42a6-4814-8c98-056d0c93bed8" />
 
 ## What's New in 3.2
 
