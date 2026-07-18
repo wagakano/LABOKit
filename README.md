@@ -38,6 +38,7 @@
 *   **Modular Layout**: Core tabs and workers are split out of `main.py` into separate modules (`bg_remover_tab.py`, `upscaler_tab.py`, `core_config.py`) to reduce file complexity.
 *   **Robust Update Checker**: Patched urllib utilities to fix `url2pathname` import issues.
 *   **Pymatting/Rembg Initializations**: Implemented dynamic metadata overrides at startup to bypass PyInstaller frozen package crashes.
+*   **Antivirus & Path Robustness**: Implemented fallback execution paths for `realesrgan-ncnn-vulkan.exe`, `ffmpeg.exe`, and `ffprobe.exe` to run directly from the installer's internal folder (`_internal`) if copying to the user's AppData directory fails or is blocked by antivirus programs.
 
 ## What's New in 3.2
 
