@@ -62,6 +62,7 @@ class BgRemoverTab(QWidget):
         super().__init__(parent)
         self.meter = meter
         self.image_paths = []
+        self.image_paths_set = set() # O(1) membership check
         self.output_dir = None
         self.output_map = {}
         self.current_preset_name = core_config.DEFAULT_PRESET_NAME
@@ -154,8 +155,9 @@ class BgRemoverTab(QWidget):
         if not files: return
         for f in files:
             p = Path(f)
-            if p not in self.image_paths:
+            if p not in self.image_paths_set:
                 self.image_paths.append(p)
+                self.image_paths_set.add(p)
                 item = QListWidgetItem(p.name); item.setData(Qt.UserRole, p)
                 self.list_w.addItem(item)
         if self.list_w.count()>0: self.list_w.setCurrentRow(0)
@@ -163,15 +165,16 @@ class BgRemoverTab(QWidget):
     def add_dropped_files(self, files):
         for p in files:
             if p.suffix.lower() in VALID_EXTENSIONS:
-                if p not in self.image_paths:
+                if p not in self.image_paths_set:
                     self.image_paths.append(p)
+                    self.image_paths_set.add(p)
                     item = QListWidgetItem(p.name); item.setData(Qt.UserRole, p)
                     self.list_w.addItem(item)
         if self.list_w.count() > 0 and self.list_w.currentRow() < 0:
             self.list_w.setCurrentRow(0)
 
     def clear_list(self):
-        self.image_paths.clear(); self.output_map.clear(); self.list_w.clear()
+        self.image_paths.clear(); self.image_paths_set.clear(); self.output_map.clear(); self.list_w.clear()
         self.preview_widget.set_images(None, None) # Explicitly clear
 
     def on_file_selected(self, row):
@@ -194,6 +197,7 @@ class BgRemoverTab(QWidget):
             self.list_w.takeItem(row)
             if row < len(self.image_paths):
                 path = self.image_paths.pop(row)
+                self.image_paths_set.discard(path)
                 if path in self.output_map:
                     del self.output_map[path]
             # Clear preview if list empty or selection changed
