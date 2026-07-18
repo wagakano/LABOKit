@@ -11,6 +11,31 @@ script_dir = os.path.dirname(os.path.abspath(__file__))
 if script_dir not in sys.path:
     sys.path.insert(0, script_dir)
 
+# --- NUMBA MISSING NJIT PATCH FOR PYMATTING (dependency of REMBG) ---
+import sys
+import types
+try:
+    from numba import njit
+except ImportError:
+    try:
+        import numpy as np
+        ndindex = np.ndindex
+    except ImportError:
+        ndindex = lambda *args: []
+
+    numba_mock = types.ModuleType("numba")
+    def _dummy_jit(*args, **kwargs):
+        def decorator(func): return func
+        if len(args) == 1 and callable(args[0]): return args[0]
+        return decorator
+    numba_mock.njit = _dummy_jit
+    numba_mock.jit = _dummy_jit
+    numba_mock.prange = range
+    numba_mock.pndindex = ndindex
+    sys.modules["numba"] = numba_mock
+    sys.modules["numba.core"] = types.ModuleType("numba.core")
+    sys.modules["numba.core.decorators"] = numba_mock
+
 # --- PYINSTALLER IMPORTLIB.METADATA PATCH FOR REMBG/PYMATTING ---
 import importlib.metadata
 _orig_version = importlib.metadata.version
