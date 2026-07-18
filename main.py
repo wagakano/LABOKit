@@ -31,7 +31,10 @@ from upscaler_tab import UpscalerTab
 _orig_btn_init = QPushButton.__init__
 def _new_btn_init(self, *args, **kwargs):
     _orig_btn_init(self, *args, **kwargs)
-    self.setCursor(Qt.PointingHandCursor)
+    if self.isEnabled():
+        self.setCursor(Qt.PointingHandCursor)
+    else:
+        self.setCursor(Qt.ForbiddenCursor)
 QPushButton.__init__ = _new_btn_init
 
 class AppUpdater(QThread):
@@ -777,9 +780,12 @@ def main():
 
     class CursorFilter(QObject):
         def eventFilter(self, obj, event):
-            if event.type() == QEvent.Enter:
-                if isinstance(obj, QPushButton):
-                    obj.setCursor(Qt.PointingHandCursor)
+            if isinstance(obj, QPushButton):
+                if event.type() in (QEvent.Enter, QEvent.EnabledChange):
+                    if obj.isEnabled():
+                        obj.setCursor(Qt.PointingHandCursor)
+                    else:
+                        obj.setCursor(Qt.ForbiddenCursor)
             return super().eventFilter(obj, event)
 
     cursor_filter = CursorFilter()
@@ -801,6 +807,7 @@ def main():
                 QPushButton { background-color: qlineargradient(x1:0, y1:0, x2:0, y2:1, stop:0 #ffffff, stop:1 #e0e5ec); border: 1px solid #a3b0c2; border-radius: 4px; padding: 6px; color: #1c2333; }
                 QPushButton:hover { background-color: qlineargradient(x1:0, y1:0, x2:0, y2:1, stop:0 #ffffff, stop:1 #d0d8e6); border: 1px solid #8294aa; }
                 QPushButton:pressed { background-color: #d0d8e6; }
+                QPushButton:disabled { background-color: #e9edf5; color: #8893a8; border: 1px solid #c2c9d6; }
                 QListWidget { background-color: #ffffff; border: 1px solid #b3bcd1; border-radius: 4px; outline: 0; padding: 4px; }
                 QListWidget::item:selected { background-color: #cce0ff; color: #1c2333; border-radius: 3px; }
                 QListWidget::item:hover { background-color: #e6f0ff; border-radius: 3px; }
@@ -826,10 +833,12 @@ def main():
                 QPushButton { color: #1c2333; background-color: qlineargradient(x1:0, y1:0, x2:0, y2:1, stop:0 #ffffff, stop:1 #d8dfee); border: 1px solid #9ca7c2; border-radius: 5px; padding: 4px 12px; }
                 QPushButton:hover { background-color: qlineargradient(x1:0, y1:0, x2:0, y2:1, stop:0 #ffffff, stop:1 #e6ecf7); }
                 QPushButton:pressed { background-color: qlineargradient(x1:0, y1:0, x2:0, y2:1, stop:0 #cfd6e8, stop:1 #b0bdd7); }
+                QPushButton:disabled { background-color: #e9edf5; color: #8893a8; border: 1px solid #c2c9d6; }
                 QProgressDialog { background-color: #f5f7fb; }
                 QDialog, QMessageBox { background-color: #f5f7fb; }
                 QDialog QLabel, QMessageBox QLabel { color: #1c2333; }
                 QDialog QPushButton, QMessageBox QPushButton { color: #1c2333; background-color: qlineargradient(x1:0, y1:0, x2:0, y2:1, stop:0 #ffffff, stop:1 #d8dfee); border: 1px solid #9ca7c2; border-radius: 5px; padding: 4px 12px; }
+                QDialog QPushButton:disabled, QMessageBox QPushButton:disabled { background-color: #e9edf5; color: #8893a8; border: 1px solid #c2c9d6; }
                 QPlainTextEdit { background-color: #f5f7fb; color: #1c2333; border: 1px solid #b3bcd1; border-radius: 4px; }
                 QComboBox { background-color: #f7f9fc; border: 1px solid #b3bcd1; border-radius: 4px; padding: 2px 6px; color: #1c2333; }
                 QComboBox QAbstractItemView { background-color: #ffffff; border: 1px solid #b3bcd1; selection-background-color: #cfe2ff; color: #1c2333; selection-color: #101522; }
