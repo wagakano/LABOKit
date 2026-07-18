@@ -39,5 +39,10 @@
         "url_encoded": "aHR0cHM6Ly9naXRodWIuY29tL3dhZ2FrYW5vL0xBQk9LaXQtYXNzZXRzL3JlbGVhc2VzL2Rvd25sb2FkL3VwZGF0ZTIvV2F0ZXJtYXJrUmVtb3Zlci5raXQ=",
         "changelog": "1. Initial release of Watermark Remover.<br>2. Implemented LaMa-based inpainting."
     },
+    "ImageSequencer": {
+        "version": "1.0",
+        "url_encoded": "-",
+        "changelog": "1. Initial release of Image Sequencer built-in plugin."
+    },
     "_message": "If you are able to decode the links, congratulation you get the plugins for free~!"
 }

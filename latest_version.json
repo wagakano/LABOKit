@@ -1,5 +1,5 @@
 {
-  "version": "3.2.0",
-  "url": "https://github.com/wagakano/LABOKit/releases/download/3.2/LABOKit_v3.2_Setup.exe",
-  "changelog": "3.2 - Added AI Watermark Remover Plugin (Powered by LaMa). Introduced new interactive brushing UI for masking. Major UI/UX Improvements. Plugins Update."
+  "version": "3.3.0",
+  "url": "https://github.com/wagakano/LABOKit/releases/download/3.3/LABOKit_v3.3_Setup.exe",
+  "changelog": "3.3 - Added Image Sequencer Plugin (GIF & MP4). Fixed QR Code Generator loading. Added extra options for BG Remover. Multi-Language updates."
 }

@@ -1,6 +1,13 @@
-# LABOKit ⌀ 3.2
+# LABOKit ⌀ 3.3
 
 <img width="1796" height="523" alt="Image" src="https://github.com/user-attachments/assets/2f0b033f-3cfb-4d59-b124-379dcef14b39" />
+
+<p align="left">
+  <a href="https://github.com/wagakano/LABOKit/releases/latest"><img src="https://img.shields.io/badge/VERSION-v3.3.0-d93f3f?style=flat-square" alt="Version" /></a>
+  <a href="https://github.com/wagakano/LABOKit/blob/main/LICENSE"><img src="https://img.shields.io/badge/LICENSE-MIT-dfb317?style=flat-square" alt="License" /></a>
+  <a href="https://github.com/wagakano/LABOKit/stargazers"><img src="https://img.shields.io/github/stars/wagakano/LABOKit?style=flat-square&label=STARS&color=dfb317" alt="Stars" /></a>
+  <a href="https://github.com/wagakano/LABOKit/releases"><img src="https://img.shields.io/github/downloads/wagakano/LABOKit/total?style=flat-square&label=DOWNLOADS&color=007ec6" alt="Downloads" /></a>
+</p>
 
 **LABOKit** is a modular desktop tool for offline image processing Built with Python (PySide6), it aims to provide a fast, simple, and user-friendly batch-processing workflow with a retro "Steins;Gate" divergence meter aesthetic.
 
@@ -18,6 +25,22 @@
   
 <img width="1200" height="800" alt="Image" src="https://github.com/user-attachments/assets/6738e1d1-5892-4af8-93f0-0e00ed375786" />
 <img width="1200" height="800" alt="Image" src="https://github.com/user-attachments/assets/86b91723-42a6-4814-8c98-056d0c93bed8" />
+
+## What's New in 3.3
+
+**New Built-in Plugin: Image Sequencer**
+*   **Create Animations Easily**: Convert sequence frames (PNG, JPG, BMP, etc.) into high-quality animated GIFs or MP4 videos.
+*   **Natural Sorting**: Automatically orders frames using natural alphanumeric sorting.
+*   **Customization**: Adjust output frame rate (1-60 FPS) and background fill colors (Transparent, White, Black).
+
+**Core Background Remover Models**
+*   **Performance (`u2netp`)**: Super-fast, lightweight background removal.
+*   **Human Portrait (`silueta`)**: Rapid, specialized human silhouette extraction.
+
+**System Re-architecture & Stability (Checkup Mode)**
+*   **Modular Layout**: Core tabs and workers are split out of `main.py` into separate modules (`bg_remover_tab.py`, `upscaler_tab.py`, `core_config.py`) to reduce file complexity.
+*   **Robust Update Checker**: Patched urllib utilities to fix `url2pathname` import issues.
+*   **Pymatting/Rembg Initializations**: Implemented dynamic metadata overrides at startup to bypass PyInstaller frozen package crashes.
 
 ## What's New in 3.2
 
@@ -61,8 +84,8 @@
 ## 📥 Download
 
 **(Windows)**
-1.  **[Download](https://github.com/wagakano/LABOKit/releases/download/3.2/LABOKit_v3.2_Setup.exe)**
-2.  Run the installer `LABOKit_v3.2_Setup.exe` and enjoy! (☆▽☆)
+1.  **[Download](https://github.com/wagakano/LABOKit/releases/download/3.3/LABOKit_v3.3_Setup.exe)**
+2.  Run the installer `LABOKit_v3.3_Setup.exe` and enjoy! (☆▽☆)
 
 **(Linux)**
 * **[Source Code](https://github.com/wagakano/LABOKit/tree/main_linux)**

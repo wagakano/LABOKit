@@ -230,7 +230,21 @@ Full license text:
 https://github.com/psf/requests/blob/main/LICENSE
 
 
-14. FFmpeg
+14. qrcode
+----------
+
+Project: qrcode – Python QR Code image generator
+Author: Lincoln Loop and contributors
+Homepage: https://github.com/lincolnloop/python-qrcode
+
+License: BSD 3-Clause License
+
+qrcode is used for generating QR Code images in the QR Code Generator plugin.
+Full license text:
+https://github.com/lincolnloop/python-qrcode/blob/master/LICENSE
+
+
+15. FFmpeg
 ----------
 
 Project: FFmpeg
@@ -246,7 +260,7 @@ Full license text and legal info:
 https://ffmpeg.org/legal.html
 
 
-15. General Notes
+16. General Notes
 ----------------
 
 - LABOKit does not provide or claim ownership of the machine learning models
@@ -261,7 +275,7 @@ https://ffmpeg.org/legal.html
   documentation of each project.
 
 
-16. Creative inspiration
+17. Creative inspiration
 -----------------------
 
 The overall concept, aesthetic, and naming of LABOKit are partly inspired by
