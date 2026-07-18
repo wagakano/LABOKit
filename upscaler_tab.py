@@ -55,7 +55,7 @@ class UpscalerWorker(QThread):
                             "-s", "4"
                         ]
                         flags = subprocess.CREATE_NO_WINDOW if sys.platform=="win32" else 0
-                        subprocess.run(cmd, capture_output=True, creationflags=flags, cwd=str(core_config.REALESRGAN_DIR))
+                        subprocess.run(cmd, capture_output=True, creationflags=flags, cwd=str(core_config.REALESRGAN_RUN_DIR))
                         success = opath.exists()
 
                     if success:

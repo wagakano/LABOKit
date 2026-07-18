@@ -79,7 +79,20 @@ FFMPEG_DIR = APP_DATA / "ffmpeg"
 
 # Setup Environment Variables
 os.environ["U2NET_HOME"] = str(MODEL_DIR)
-REALESRGAN_EXE = REALESRGAN_DIR / "realesrgan-ncnn-vulkan.exe"
+
+# Fallback: check if the executable exists in AppData, if not use the bundled version directly
+_realesrgan_exe_appdata = REALESRGAN_DIR / "realesrgan-ncnn-vulkan.exe"
+_realesrgan_exe_internal = INTERNAL_DIR / "realesrgan_ncnn" / "realesrgan-ncnn-vulkan.exe"
+
+if _realesrgan_exe_appdata.exists():
+    REALESRGAN_EXE = _realesrgan_exe_appdata
+    REALESRGAN_RUN_DIR = REALESRGAN_DIR
+elif _realesrgan_exe_internal.exists():
+    REALESRGAN_EXE = _realesrgan_exe_internal
+    REALESRGAN_RUN_DIR = INTERNAL_DIR / "realesrgan_ncnn"
+else:
+    REALESRGAN_EXE = _realesrgan_exe_appdata
+    REALESRGAN_RUN_DIR = REALESRGAN_DIR
 
 # Icon & Assets
 ICON_PATH = INTERNAL_DIR / "labokit.ico"
