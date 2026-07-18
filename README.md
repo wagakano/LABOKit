@@ -170,7 +170,194 @@ LABOKit is free and open-source. By purchasing this bundle (Pay What You Want), 
 ## How to Use
 > A detailed user guide explaining all terms and features is available directly inside the app. Just go to the **Help** menu in the top bar!
 
+---
+
+## 🏗️ Project Structure
+
+```
+LABOKit/
+├── main.py                 # Main entry point, window, plugin loader, update checker
+├── core_config.py          # Shared paths, constants, lazy AI engine loader
+├── bg_remover_tab.py       # Background Remover tab & worker thread
+├── upscaler_tab.py         # Upscaler tab & worker thread (Vulkan + PyTorch)
+├── ui_shared.py            # Reusable UI components (FileDropListWidget, ZoomableImageWidget, etc.)
+├── translations.py         # i18n dictionary & helper (en, ja, id)
+├── latest_version.json     # Version metadata for in-app update checker
+├── plugins_manifest.json   # Plugin registry with versions & download URLs
+├── LABOKit_Installer.iss   # Inno Setup installer script
+├── splash.png              # Splash screen image
+├── labokit.ico             # Application icon
+│
+├── plugins/                # .kit plugin files (Python modules)
+│   ├── ImageLAB.kit        # Built-in: Creative effects, ASCII art, glitches
+│   ├── ImageSequencer.kit  # Built-in: GIF & MP4 sequence compiler
+│   └── ...                 # Additional downloadable plugins
+│
+├── models/                 # AI model weights (U2Net, etc.)
+├── ffmpeg/                 # Bundled ffmpeg.exe for video processing
+├── realesrgan_ncnn/        # Real-ESRGAN Vulkan CLI executable & models
+└── scratch/                # Developer utility scripts (make_patch.py, tests)
+```
+
+### Runtime Paths (Windows)
+
+On startup, LABOKit copies bundled assets into the user's local AppData directory for persistent access:
+
+| Asset | Location |
+|---|---|
+| AI Models (U2Net) | `%APPDATA%/LABOKit/models/` |
+| Real-ESRGAN CLI | `%APPDATA%/LABOKit/realesrgan/` |
+| FFmpeg | `%APPDATA%/LABOKit/ffmpeg/` |
+| Plugins | `%APPDATA%/LABOKit/plugins/` |
+
+> **Note:** If antivirus software blocks copying `.exe` files to AppData, LABOKit will automatically fall back to running them directly from the installation directory.
+
+---
+
+## 🔧 Prerequisites
+
+* **Python 3.12** (recommended)
+* **Git**
+* A GPU with **Vulkan** support (optional, for Real-ESRGAN Vulkan mode)
+
+### Required External Assets (not in repo — `.gitignore`'d)
+
+These directories must be placed in the project root before running from source:
+
+| Directory | Contents | Source |
+|---|---|---|
+| `models/` | U2Net model weights (`.onnx`) | Auto-downloaded by `rembg` on first use |
+| `ffmpeg/` | `ffmpeg.exe` | [ffmpeg.org](https://ffmpeg.org/download.html) |
+| `realesrgan_ncnn/` | `realesrgan-ncnn-vulkan.exe` + model files | [Real-ESRGAN releases](https://github.com/xinntao/Real-ESRGAN-ncnn-vulkan/releases) |
+
+---
+
+## 🚀 Running from Source
+
+1. **Clone the repository:**
+   ```bash
+   git clone https://github.com/wagakano/LABOKit.git
+   cd LABOKit
+   git checkout main_windows
+   ```
+
+2. **Create and activate a virtual environment:**
+   ```bash
+   python -m venv .venv
+   .venv\Scripts\activate        # Windows
+   # source .venv/bin/activate   # Linux/macOS
+   ```
+
+3. **Install dependencies:**
+   ```bash
+   pip install -r requirements.txt
+   ```
+
+4. **Run the application:**
+   ```bash
+   python main.py
+   ```
+   Or use the provided batch file:
+   ```bash
+   LABOKit.bat
+   ```
+
+---
+
+## 📦 Building
+
+### Standalone Executable (PyInstaller)
+
+```bash
+.venv\Scripts\pyinstaller LABOKit.spec
+```
+
+Output: `dist/LABOKit/LABOKit.exe`
+
+### Windows Installer (Inno Setup)
+
+Requires [Inno Setup 6](https://jrsoftware.org/isinfo.php) installed.
+
+```bash
+"C:\Program Files (x86)\Inno Setup 6\ISCC.exe" LABOKit_Installer.iss
+```
+
+Output: `dist/LABOKit_v3.3_Setup.exe`
+
+### Update Patch (for in-app silent updater)
+
+```bash
+python scratch/make_patch.py
+```
+
+Output: `dist/LABOKit_v3.3_Patch.zip`
+
+---
+
+## 🧩 Plugin Development
+
+Plugins are standard Python files renamed with the `.kit` extension. They are loaded dynamically at startup from `%APPDATA%/LABOKit/plugins/`.
+
+### Minimal Plugin Template
+
+```python
+# LABOKit Plugin: My Plugin
+# ID: labokit.my_plugin
+
+from PySide6.QtWidgets import QWidget, QVBoxLayout, QLabel
+
+PLUGIN_ID = "labokit.my_plugin"
+PLUGIN_NAME = "My Plugin"
+PLUGIN_VERSION = "1.0"
+
+HELP_TEXT = "<h3>My Plugin</h3><p>Description here.</p>"
+
+def create_tab(ctx=None):
+    tab = QWidget()
+    layout = QVBoxLayout(tab)
+    layout.addWidget(QLabel("Hello from My Plugin!"))
+    return tab
+```
+
+### Plugin Context (`ctx`)
+
+The `create_tab(ctx)` function receives a context dictionary with:
+
+| Key | Type | Description |
+|---|---|---|
+| `tr` | `function` | Translation helper — `tr("key")` |
+| `app_data` | `Path` | `%APPDATA%/LABOKit` |
+| `plugin_dir` | `Path` | Plugin installation directory |
+
+### Installing Plugins
+
+* **Via the app:** `Config` > `Load Plugin (.kit)...`
+* **Manually:** Copy the `.kit` file into `%APPDATA%/LABOKit/plugins/`
+
+---
+
+## 🤝 Contributing
+
+Contributions are welcome! Here's how to get started:
+
+1. **Fork** the repository
+2. **Create a feature branch:** `git checkout -b feature/my-feature`
+3. **Commit your changes:** `git commit -m "Add my feature"`
+4. **Push to the branch:** `git push origin feature/my-feature`
+5. **Open a Pull Request**
+
+### Guidelines
+* All heavy processing must run in a **QThread** worker to avoid freezing the GUI.
+* Use `tr("key")` for all user-facing strings (see `translations.py`).
+* Preserve existing comments and docstrings.
+* Update `CHANGELOG.md` with every change.
+
+---
+
 ## 📄 License & Credits
-See [LABOKit_NOTICE.txt](LABOKit_NOTICE.txt) for detailed license information regarding third-party components (rembg, Real-ESRGAN, Qt, etc.).
+
+This project is licensed under the [MIT License](LICENSE).
+
+See [LABOKit_NOTICE.txt](LABOKit_NOTICE.txt) for detailed license information regarding third-party components (rembg, Real-ESRGAN, Qt/PySide6, Pillow, FFmpeg, etc.).
 
 **LABOKit** is a fan-inspired tool and is not affiliated with the creators of Steins;Gate.
