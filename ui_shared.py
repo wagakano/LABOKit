@@ -53,6 +53,16 @@ class FileDropListWidget(QListWidget):
         else:
             event.ignore()
 
+    def paintEvent(self, event):
+        super().paintEvent(event)
+        if self.count() == 0:
+            painter = QPainter(self.viewport())
+            painter.setPen(QColor(153, 153, 153))
+            font = painter.font()
+            font.setItalic(True)
+            painter.setFont(font)
+            painter.drawText(self.viewport().rect(), Qt.AlignCenter, "Drop files here")
+
 class SplitImageLabel(QLabel):
     def __init__(self, parent=None):
         super().__init__(parent)
