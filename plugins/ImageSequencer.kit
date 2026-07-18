@@ -1,0 +1,489 @@
+# LABOKit Plugin: Image Sequencer
+# ID: labokit.image_sequencer
+# Author: Kano & Antigravity
+# Description: Converts image sequences to animated GIF or MP4 video.
+
+import os
+import sys
+import subprocess
+import shutil
+import tempfile
+import re
+from pathlib import Path
+from PySide6.QtCore import Qt, QThread, Signal, QTimer
+from PySide6.QtGui import QPixmap, QFont
+from PySide6.QtWidgets import (
+    QWidget, QVBoxLayout, QHBoxLayout, QLabel, QPushButton, 
+    QFileDialog, QMessageBox, QFrame, QProgressBar, QSlider,
+    QComboBox, QPlainTextEdit, QListWidgetItem
+)
+from ui_shared import FileDropListWidget, ZoomableImageWidget, create_plus_icon
+
+# Import Translations
+try:
+    from translations import tr
+except ImportError:
+    def tr(key, default=None): return default if default else key
+
+# --- STANDARD PLUGIN VARIABLES ---
+PLUGIN_ID = "labokit.image_sequencer"
+PLUGIN_NAME = "Image Sequencer"
+PLUGIN_VERSION = "1.0"
+
+# --- HELP TEXT ---
+HELP_TEXT = (
+    "<h3>Image Sequencer Guide</h3>"
+    "<p>Converts a sequence of PNG or JPG images into an animated GIF or MP4 video.</p>"
+    "<hr>"
+    "<b>How to Use:</b>"
+    "<ol>"
+    "<li>Drag & drop images into the list or click 'Add Images'.</li>"
+    "<li>Set the desired Frame Rate (FPS) and Output Format.</li>"
+    "<li>Select an output folder and click 'Generate Sequence'.</li>"
+    "</ol>"
+    "<i>Note: Frame order is sorted alphanumerically based on filenames.</i>"
+)
+
+# --- WORKER THREAD ---
+class SequenceWorker(QThread):
+    progress_log = Signal(str)
+    progress_val = Signal(int)
+    finished = Signal(str)
+    error = Signal(str)
+
+    def __init__(self, paths, output_path, format_type, fps, bg_color):
+        super().__init__()
+        self.paths = paths
+        self.output_path = output_path
+        self.format_type = format_type.upper()
+        self.fps = fps
+        self.bg_color = bg_color.lower()
+        self.is_running = True
+
+        app_data_str = os.getenv('APPDATA')
+        if not app_data_str:
+            app_data_str = os.path.expanduser("~")
+        app_data = Path(app_data_str) / "LABOKit"
+        
+        local_ffmpeg = app_data / "ffmpeg" / "ffmpeg.exe"
+        try:
+            base_dir = Path(sys._MEIPASS)
+        except AttributeError:
+            base_dir = Path(__file__).resolve().parent.parent
+            
+        internal_ffmpeg = base_dir / "ffmpeg" / "ffmpeg.exe"
+        if local_ffmpeg.exists():
+            self.ffmpeg_exe = str(local_ffmpeg)
+        elif internal_ffmpeg.exists():
+            self.ffmpeg_exe = str(internal_ffmpeg)
+        else:
+            self.ffmpeg_exe = str(local_ffmpeg)
+
+    def run(self):
+        try:
+            if not self.paths:
+                raise ValueError("No images selected.")
+
+            self.progress_log.emit(f"Sorting {len(self.paths)} frames...")
+            def natural_sort_key(s):
+                return [int(text) if text.isdigit() else text.lower() for text in re.split(r'(\d+)', s.name)]
+            
+            sorted_paths = sorted(self.paths, key=natural_sort_key)
+
+            if self.format_type == "GIF":
+                self.progress_log.emit("Generating animated GIF...")
+                self.generate_gif(sorted_paths)
+            else:
+                self.progress_log.emit("Generating MP4 Video...")
+                self.generate_mp4(sorted_paths)
+
+            if self.is_running:
+                self.finished.emit(str(self.output_path))
+
+        except Exception as e:
+            self.error.emit(str(e))
+
+    def generate_gif(self, paths):
+        from PIL import Image
+        imgs = []
+        total = len(paths)
+        
+        first_img = Image.open(paths[0])
+        target_size = first_img.size
+        
+        for i, p in enumerate(paths):
+            if not self.is_running: return
+            self.progress_log.emit(f"Processing frame {i+1}/{total}: {p.name}")
+            self.progress_val.emit(int((i / total) * 80))
+            
+            img = Image.open(p)
+            if img.size != target_size:
+                img = img.resize(target_size, Image.Resampling.LANCZOS)
+            
+            # Ensure image is converted to RGBA so transparency can be extracted reliably
+            img_rgba = img.convert('RGBA')
+            
+            # Apply background color
+            if self.bg_color == "white":
+                bg = Image.new("RGBA", img.size, (255, 255, 255, 255))
+                bg.paste(img_rgba, (0, 0), img_rgba)
+                img = bg.convert('RGB')
+            elif self.bg_color == "black":
+                bg = Image.new("RGBA", img.size, (0, 0, 0, 255))
+                bg.paste(img_rgba, (0, 0), img_rgba)
+                img = bg.convert('RGB')
+            else:
+                if img.mode not in ('RGB', 'RGBA', 'P'):
+                    img = img.convert('RGB')
+            imgs.append(img)
+
+        if not self.is_running: return
+        self.progress_log.emit("Saving animated GIF...")
+        duration = int(1000 / self.fps)
+        
+        imgs[0].save(
+            self.output_path,
+            save_all=True,
+            append_images=imgs[1:],
+            duration=duration,
+            loop=0,
+            disposal=2
+        )
+        self.progress_val.emit(100)
+        self.progress_log.emit("Done saving GIF.")
+
+    def generate_mp4(self, paths):
+        import shutil
+        import tempfile
+        from PIL import Image
+        import subprocess
+
+        temp_dir = Path(tempfile.mkdtemp(prefix="labokit_seq_"))
+        try:
+            total = len(paths)
+            first_img = Image.open(paths[0])
+            w, h = first_img.size
+            
+            # H.264 requires width and height to be divisible by 2
+            if w % 2 != 0: w += 1
+            if h % 2 != 0: h += 1
+            target_size = (w, h)
+
+            for i, p in enumerate(paths):
+                if not self.is_running: return
+                self.progress_log.emit(f"Preparing frame {i+1}/{total}: {p.name}")
+                self.progress_val.emit(int((i / total) * 70))
+
+                img = Image.open(p)
+                if img.size != target_size:
+                    img = img.resize(target_size, Image.Resampling.LANCZOS)
+                
+                # Ensure image is converted to RGBA so transparency can be extracted reliably
+                img_rgba = img.convert('RGBA')
+                
+                # Apply background color (default to black for transparent option in MP4)
+                if self.bg_color == "white":
+                    bg = Image.new("RGBA", img.size, (255, 255, 255, 255))
+                    bg.paste(img_rgba, (0, 0), img_rgba)
+                    img = bg.convert('RGB')
+                else:
+                    bg = Image.new("RGBA", img.size, (0, 0, 0, 255))
+                    bg.paste(img_rgba, (0, 0), img_rgba)
+                    img = bg.convert('RGB')
+                
+                frame_name = f"frame_{i+1:08d}.png"
+                img.save(temp_dir / frame_name)
+
+            if not self.is_running: return
+            self.progress_log.emit("Rendering MP4 video with FFmpeg...")
+            self.progress_val.emit(80)
+
+            cmd = [
+                self.ffmpeg_exe,
+                "-r", str(self.fps),
+                "-i", str(temp_dir / "frame_%08d.png"),
+                "-c:v", "libx264",
+                "-crf", "18",
+                "-pix_fmt", "yuv420p",
+                "-y",
+                str(self.output_path)
+            ]
+
+            flags = subprocess.CREATE_NO_WINDOW if sys.platform == "win32" else 0
+            result = subprocess.run(cmd, capture_output=True, text=True, creationflags=flags)
+            
+            if result.returncode != 0:
+                raise RuntimeError(f"FFmpeg failed: {result.stderr}")
+
+            self.progress_val.emit(100)
+            self.progress_log.emit("Done rendering MP4.")
+
+        finally:
+            try: shutil.rmtree(temp_dir)
+            except: pass
+
+    def stop(self):
+        self.is_running = False
+
+# --- PLUGIN UI ---
+class ImageSequencerPlugin(QWidget):
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        self.meter = None
+        self.image_paths = []
+        self.output_dir = None
+        self.worker = None
+        
+        self.init_ui()
+
+    def set_meter(self, meter):
+        self.meter = meter
+
+    def init_ui(self):
+        outer = QVBoxLayout(self)
+        outer.setContentsMargins(8, 8, 8, 8)
+        outer.setSpacing(6)
+
+        main_layout = QHBoxLayout()
+        outer.addLayout(main_layout, stretch=1)
+
+        # === LEFT PANEL (Controls) ===
+        left_layout = QVBoxLayout()
+        main_layout.addLayout(left_layout, 1)
+
+        # Loaded list
+        list_box = QFrame()
+        list_box_layout = QVBoxLayout(list_box)
+        list_box_layout.setContentsMargins(6, 6, 6, 6)
+        list_box_layout.setSpacing(5)
+
+        lbl_loaded = QLabel(tr("lbl_loaded_seq", "LOADED IMAGES:"))
+        lbl_loaded.setStyleSheet("font-weight: bold; background-color: #e2e7f2; border: 1px solid #cbd2e1; border-radius: 3px; padding: 4px 6px; color: #333d51;")
+        list_box_layout.addWidget(lbl_loaded)
+
+        self.list_w = FileDropListWidget()
+        self.list_w.files_dropped.connect(self.add_dropped_files)
+        list_box_layout.addWidget(self.list_w)
+
+        btn_row = QHBoxLayout()
+        btn_add = QPushButton(tr("btn_add", "Add Images"))
+        btn_add.setIcon(create_plus_icon())
+        btn_add.clicked.connect(self.add_images)
+        btn_clr = QPushButton(tr("btn_clear", "Clear"))
+        btn_clr.clicked.connect(self.clear_list)
+        btn_row.addWidget(btn_add)
+        btn_row.addWidget(btn_clr)
+        list_box_layout.addLayout(btn_row)
+
+        left_layout.addWidget(list_box)
+
+        # Divider
+        line = QFrame()
+        line.setFrameShape(QFrame.HLine)
+        line.setFrameShadow(QFrame.Sunken)
+        line.setStyleSheet("border: none; background-color: #b3bcd1; min-height: 1px; max-height: 1px; margin: 8px 0;")
+        left_layout.addWidget(line)
+
+        # Settings
+        l_fps = QLabel("Frame Rate (FPS):")
+        l_fps.setStyleSheet("font-weight: bold; border: none; background: transparent;")
+        left_layout.addWidget(l_fps)
+        
+        fps_layout = QHBoxLayout()
+        self.slider_fps = QSlider(Qt.Horizontal)
+        self.slider_fps.setRange(1, 60)
+        self.slider_fps.setValue(10)
+        self.lbl_fps_val = QLabel("10")
+        self.lbl_fps_val.setStyleSheet("font-weight: bold; min-width: 20px;")
+        self.slider_fps.valueChanged.connect(lambda v: self.lbl_fps_val.setText(str(v)))
+        fps_layout.addWidget(self.slider_fps)
+        fps_layout.addWidget(self.lbl_fps_val)
+        left_layout.addLayout(fps_layout)
+
+        left_layout.addSpacing(4)
+
+        l_fmt = QLabel("Output Format:")
+        l_fmt.setStyleSheet("font-weight: bold; border: none; background: transparent;")
+        left_layout.addWidget(l_fmt)
+        
+        self.combo_format = QComboBox()
+        self.combo_format.addItems(["GIF", "MP4"])
+        self.combo_format.currentTextChanged.connect(self.on_format_changed)
+        left_layout.addWidget(self.combo_format)
+
+        left_layout.addSpacing(4)
+
+        l_bg = QLabel("Background Color:")
+        l_bg.setStyleSheet("font-weight: bold; border: none; background: transparent;")
+        left_layout.addWidget(l_bg)
+        
+        self.combo_bg = QComboBox()
+        self.combo_bg.addItems(["Transparent", "White", "Black"])
+        left_layout.addWidget(self.combo_bg)
+
+        left_layout.addSpacing(4)
+
+        l_out = QLabel(tr("lbl_out", "Output Folder:"))
+        l_out.setStyleSheet("font-weight: bold; border: none; background: transparent;")
+        left_layout.addWidget(l_out)
+        
+        self.lbl_out_dir = QLabel("(auto)")
+        self.lbl_out_dir.setWordWrap(True)
+        self.lbl_out_dir.setStyleSheet("color: #666; margin-bottom: 5px; border: none; background: transparent;")
+        left_layout.addWidget(self.lbl_out_dir)
+        
+        btn_out_lay = QHBoxLayout()
+        btn_change = QPushButton(tr("btn_change", "Change Folder"))
+        btn_change.clicked.connect(self.change_output_folder)
+        btn_open = QPushButton(tr("btn_open_out", "Open Folder"))
+        btn_open.clicked.connect(self.open_output_folder)
+        btn_out_lay.addWidget(btn_change)
+        btn_out_lay.addWidget(btn_open)
+        left_layout.addLayout(btn_out_lay)
+
+        left_layout.addStretch()
+
+        self.btn_run = QPushButton("Generate Sequence")
+        self.btn_run.setFixedHeight(40)
+        self.btn_run.clicked.connect(self.start_process)
+        left_layout.addWidget(self.btn_run)
+
+        # === RIGHT PANEL (Preview & Log) ===
+        right_layout = QVBoxLayout()
+        main_layout.addLayout(right_layout, 2)
+
+        l_preview = QLabel("Preview / Progress:")
+        l_preview.setStyleSheet("font-weight: bold; border: none; background: transparent;")
+        right_layout.addWidget(l_preview)
+
+        self.preview_widget = ZoomableImageWidget()
+        right_layout.addWidget(self.preview_widget, stretch=3)
+
+        self.log_text = QPlainTextEdit()
+        self.log_text.setReadOnly(True)
+        self.log_text.setPlaceholderText("Process logs will appear here.")
+        self.log_text.setFixedHeight(120)
+        right_layout.addWidget(self.log_text)
+
+        self.progress_bar = QProgressBar()
+        self.progress_bar.setValue(0)
+        self.progress_bar.setTextVisible(False)
+        self.progress_bar.setFixedHeight(6)
+        self.progress_bar.setStyleSheet("QProgressBar { border: 1px solid #dbe2f2; border-radius: 3px; background: white; height: 10px; } QProgressBar::chunk { background-color: #5a6b8c; }")
+        right_layout.addWidget(self.progress_bar)
+
+    # --- UI EVENT HANDLERS ---
+    def add_images(self):
+        files, _ = QFileDialog.getOpenFileNames(self, tr("btn_add", "Add Images"), "", "Images (*.jpg *.jpeg *.png)")
+        if files:
+            for f in files:
+                p = Path(f)
+                if p not in self.image_paths:
+                    self.image_paths.append(p)
+                    self.list_w.addItem(QListWidgetItem(p.name))
+            if not self.output_dir and self.image_paths:
+                self.output_dir = self.image_paths[0].parent
+                self.lbl_out_dir.setText(str(self.output_dir))
+
+    def add_dropped_files(self, files):
+        for p in files:
+            if p.suffix.lower() in ('.png', '.jpg', '.jpeg'):
+                if p not in self.image_paths:
+                    self.image_paths.append(p)
+                    self.list_w.addItem(QListWidgetItem(p.name))
+        if not self.output_dir and self.image_paths:
+            self.output_dir = self.image_paths[0].parent
+            self.lbl_out_dir.setText(str(self.output_dir))
+
+    def clear_list(self):
+        self.image_paths.clear()
+        self.list_w.clear()
+        self.preview_widget.set_images(None, None)
+        self.log_text.clear()
+        self.progress_bar.setValue(0)
+
+    def change_output_folder(self):
+        d = QFileDialog.getExistingDirectory(self, "Select Folder")
+        if d:
+            self.output_dir = Path(d)
+            self.lbl_out_dir.setText(str(self.output_dir))
+
+    def open_output_folder(self):
+        if self.output_dir and self.output_dir.exists():
+            os.startfile(str(self.output_dir))
+        else:
+            QMessageBox.information(self, "Info", "Output folder does not exist or has not been set yet.")
+
+    def start_process(self):
+        if not self.image_paths:
+            return QMessageBox.warning(self, "Error", "Please load some images first.")
+        
+        if not self.output_dir:
+            return QMessageBox.warning(self, "Error", "Please select an output folder.")
+
+        fmt = self.combo_format.currentText().lower()
+        fps = self.slider_fps.value()
+        
+        # Build output filename using timestamp
+        import time
+        out_name = f"sequence_{int(time.time())}_{fps}fps.{fmt}"
+        
+        out_path = self.output_dir / out_name
+
+        self.btn_run.setEnabled(False)
+        self.log_text.clear()
+        self.log_text.appendPlainText("Initializing Sequencer...")
+        self.progress_bar.setValue(0)
+        
+        bg_color = self.combo_bg.currentText()
+        if self.meter:
+            self.meter.set_message("Sequencing...")
+
+        self.worker = SequenceWorker(self.image_paths, out_path, fmt, fps, bg_color)
+        self.worker.progress_log.connect(self.log_text.appendPlainText)
+        self.worker.progress_val.connect(self.progress_bar.setValue)
+        self.worker.finished.connect(self.on_finished)
+        self.worker.error.connect(self.on_error)
+        self.worker.start()
+
+    def on_finished(self, out_path):
+        self.btn_run.setEnabled(True)
+        self.progress_bar.setValue(100)
+        if self.meter:
+            self.meter.set_message(None)
+            
+        QMessageBox.information(self, tr("msg_done", "Done"), f"Sequence generated successfully!\nFile: {out_path}")
+        
+        # Preview if GIF
+        if out_path.lower().endswith(".gif"):
+            self.preview_widget.set_images(None, out_path)
+        else:
+            # Clear preview for MP4
+            self.preview_widget.set_images(None, None)
+
+    def on_format_changed(self, fmt):
+        current = self.combo_bg.currentText()
+        self.combo_bg.clear()
+        if fmt.upper() == "MP4":
+            self.combo_bg.addItems(["Black", "White"])
+            if current in ["Black", "White"]:
+                self.combo_bg.setCurrentText(current)
+            else:
+                self.combo_bg.setCurrentText("Black")
+        else:
+            self.combo_bg.addItems(["Transparent", "White", "Black"])
+            if current in ["Transparent", "White", "Black"]:
+                self.combo_bg.setCurrentText(current)
+            else:
+                self.combo_bg.setCurrentText("Transparent")
+
+    def on_error(self, err_msg):
+        self.btn_run.setEnabled(True)
+        self.progress_bar.setValue(0)
+        if self.meter:
+            self.meter.set_message(None)
+        QMessageBox.critical(self, "Error", f"Failed to generate sequence:\n{err_msg}")
+
+# --- ENTRY POINT ---
+def create_tab(parent=None):
+    return ImageSequencerPlugin(parent)
