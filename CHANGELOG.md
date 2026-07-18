@@ -31,6 +31,9 @@ All notable changes and updates made during this development cycle for the relea
 * **Patch Downloader Import Error**: Fixed a crash in the update checker by correcting the `url2pathname` import location from `urllib.parse` to `urllib.request`.
 * **Sequencer APPDATA Fallback**: Added a fallback for the `APPDATA` environment variable in `ImageSequencer.kit` to prevent crashes when executing in environments where `APPDATA` is not set.
 * **Sequencer Indexed Image Transparency**: Ensured sequence frames are explicitly converted to `RGBA` before applying background fills, fixing transparency-mask/paste bugs on `P`-mode indexed images.
+* **Update Download URL 404**: Fixed the release download URL in `latest_version.json` and `README.md` from `/download/3.3/` to `/download/v3.3.0/` to match the actual GitHub release tag.
+* **Missing `realesrgan-ncnn-vulkan.exe` Error**: Added robust fallback execution paths in `core_config.py`, `upscaler_tab.py`, `ImageSequencer.kit`, and `VideoUpscaler.kit`. If `realesrgan-ncnn-vulkan.exe`, `ffmpeg.exe`, or `ffprobe.exe` are missing from `%APPDATA%` (e.g. blocked by antivirus), the app now runs them directly from the installer's internal folder (`_internal`).
+* **PyInstaller `collect_metadata` Import**: Fixed `ImportError` in `LABOKit.spec` by replacing deprecated `collect_metadata` with `copy_metadata` for PyInstaller 6.x compatibility.
 
 ### Changed
 * **Model Naming (UI)**:
