@@ -1,6 +1,20 @@
-# Changelog - LABOKit v3.3.0
+# Changelog - LABOKit v3.3.1
 
-All notable changes and updates made during this development cycle for the release of **LABOKit v3.3.0** are documented below in chronological order.
+All notable changes and updates made during this development cycle for the release of **LABOKit v3.3.1** are documented below.
+
+---
+
+## [3.3.1] - 2026-07-18
+
+### Added
+* **Multi-Language Expansion**: Added full translations for 12 new languages (Chinese Simplified/Traditional, Korean, Spanish, Portuguese, French, German, Thai, Vietnamese, Russian, Arabic, Malay).
+* **Empty State Guidance**: Added user-friendly placeholder hint ("Drop files here") to `FileDropListWidget` when list contains no files.
+
+### Fixed
+* **Numba/Rembg Crash**: Implemented automatic dynamic `numba` mock fallback in `core_config.py` to resolve `cannot import name 'njit' from 'numba'` error in compiled environments.
+
+### Optimized
+* **Batch Import Speed**: Implemented companion `set`-based membership checks for image deduplication in `BgRemoverTab` and `UpscalerTab`, reducing file addition search complexity from O(N) to O(1) and preventing UI lockups on large batch drops.
 
 ---
 

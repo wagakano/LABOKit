@@ -1,9 +1,9 @@
-# LABOKit ⌀ 3.3
+# LABOKit ⌀ 3.3.1
 
 <img width="1796" height="523" alt="Image" src="https://github.com/user-attachments/assets/2f0b033f-3cfb-4d59-b124-379dcef14b39" />
 
 <p align="left">
-  <a href="https://github.com/wagakano/LABOKit/releases/latest"><img src="https://img.shields.io/badge/VERSION-v3.3.0-d93f3f?style=flat-square" alt="Version" /></a>
+  <a href="https://github.com/wagakano/LABOKit/releases/latest"><img src="https://img.shields.io/badge/VERSION-v3.3.1-d93f3f?style=flat-square" alt="Version" /></a>
   <a href="https://github.com/wagakano/LABOKit/blob/main/LICENSE"><img src="https://img.shields.io/badge/LICENSE-MIT-dfb317?style=flat-square" alt="License" /></a>
   <a href="https://github.com/wagakano/LABOKit/stargazers"><img src="https://img.shields.io/github/stars/wagakano/LABOKit?style=flat-square&label=STARS&color=dfb317" alt="Stars" /></a>
   <a href="https://github.com/wagakano/LABOKit/releases"><img src="https://img.shields.io/github/downloads/wagakano/LABOKit/total?style=flat-square&label=DOWNLOADS&color=007ec6" alt="Downloads" /></a>
@@ -21,7 +21,14 @@
 * **World Line Meter:** Visual decoration displaying divergence numbers.
 * **Plugin System:** Extend functionality using `.kit` files.
 * **Offline Mode:** All processing is done locally on your machine.
-* **Multilanguage:** Supports English, Japanese (日本語), and Indonesian (Bahasa Indonesia).
+* **Multilanguage:** Supports 15 languages including English, 日本語, Bahasa Indonesia, 简体/繁體中文, 한국어, Español, Français, Deutsch, etc.
+
+## What's New in 3.3.1
+
+*   **Rembg / Numba Startup Fix**: Resolved a critical startup crash (`cannot import name 'njit' from 'numba'`) when initializing the Background Remover in packaged executable environments.
+*   **O(1) Performance Optimization**: Re-architected image lists deduplication checks to run in O(1) time using companion hash sets, eliminating UI freezes when dragging and dropping thousands of files.
+*   **Drag & Drop Empty State**: Added empty-state visual placeholder hints ("Drop files here") to file list controls.
+*   **12 New Languages Added**: Expanded translation support to 15 languages, adding Chinese Simplified, Chinese Traditional, Korean, Spanish, Portuguese, French, German, Thai, Vietnamese, Russian, Arabic, and Malay.
 
 ## What's New in 3.3
 
@@ -82,8 +89,8 @@
 ## 📥 Download
 
 **(Windows)**
-1.  **[Download](https://github.com/wagakano/LABOKit/releases/download/v3.3.0/LABOKit_v3.3_Setup.exe)**
-2.  Run the installer `LABOKit_v3.3_Setup.exe` and enjoy! (☆▽☆)
+1.  **[Download](https://github.com/wagakano/LABOKit/releases/download/v3.3.1/LABOKit_v3.3.1_Setup.exe)**
+2.  Run the installer `LABOKit_v3.3.1_Setup.exe` and enjoy! (☆▽☆)
 
 **(Linux)**
 * **[Source Code](https://github.com/wagakano/LABOKit/tree/main_linux)**

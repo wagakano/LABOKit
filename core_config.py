@@ -82,7 +82,7 @@ def resource_path(relative_path):
     return os.path.join(base_path, relative_path)
 
 # --- APP INFO ---
-APP_VERSION = "3.3.0"
+APP_VERSION = "3.3.1"
 APP_UPDATE_URL = "https://raw.githubusercontent.com/wagakano/LABOKit/main_windows/latest_version.json"
 PLUGIN_MANIFEST_URL = "https://raw.githubusercontent.com/wagakano/LABOKit/main_windows/plugins_manifest.json"
 

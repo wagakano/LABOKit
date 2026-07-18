@@ -1,5 +1,5 @@
 {
-  "version": "3.3.0",
-  "url": "https://github.com/wagakano/LABOKit/releases/download/v3.3.0/LABOKit_v3.3_Setup.exe",
-  "changelog": "3.3 - Added Image Sequencer Plugin (GIF & MP4). Fixed QR Code Generator loading. Added extra options for BG Remover. Multi-Language updates."
+  "version": "3.3.1",
+  "url": "https://github.com/wagakano/LABOKit/releases/download/v3.3.1/LABOKit_v3.3.1_Setup.exe",
+  "changelog": "3.3.1 - Fixed numba/njit import error on background removal. Performance optimization (O(1) membership check) for file additions. Added empty state drag & drop hint. Expanded language options to 15 languages."
 }
