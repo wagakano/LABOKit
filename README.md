@@ -22,9 +22,6 @@
 * **Plugin System:** Extend functionality using `.kit` files.
 * **Offline Mode:** All processing is done locally on your machine.
 * **Multilanguage:** Supports English, Japanese (日本語), and Indonesian (Bahasa Indonesia).
-  
-<img width="1200" height="800" alt="Image" src="https://github.com/user-attachments/assets/6738e1d1-5892-4af8-93f0-0e00ed375786" />
-<img width="1200" height="800" alt="Image" src="https://github.com/user-attachments/assets/86b91723-42a6-4814-8c98-056d0c93bed8" />
 
 ## What's New in 3.3
 
@@ -84,7 +81,7 @@
 ## 📥 Download
 
 **(Windows)**
-1.  **[Download](https://github.com/wagakano/LABOKit/releases/download/3.3/LABOKit_v3.3_Setup.exe)**
+1.  **[Download](https://github.com/wagakano/LABOKit/releases/download/v3.3.0/LABOKit_v3.3_Setup.exe)**
 2.  Run the installer `LABOKit_v3.3_Setup.exe` and enjoy! (☆▽☆)
 
 **(Linux)**
