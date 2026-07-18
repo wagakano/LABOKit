@@ -13,6 +13,8 @@ dist/
 realesrgan_ncnn/
 potrace/
 models/
+AGENTS.md
+SKILLS.md
 
 # Private plugins
 LABOKit Plugins/
