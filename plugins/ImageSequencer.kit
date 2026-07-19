@@ -231,6 +231,7 @@ class ImageSequencerPlugin(QWidget):
         super().__init__(parent)
         self.meter = None
         self.image_paths = []
+        self.image_paths_set = set() # O(1) membership check
         self.output_dir = None
         self.worker = None
         
@@ -378,8 +379,9 @@ class ImageSequencerPlugin(QWidget):
         if files:
             for f in files:
                 p = Path(f)
-                if p not in self.image_paths:
+                if p not in self.image_paths_set:
                     self.image_paths.append(p)
+                    self.image_paths_set.add(p)
                     self.list_w.addItem(QListWidgetItem(p.name))
             if not self.output_dir and self.image_paths:
                 self.output_dir = self.image_paths[0].parent
@@ -388,8 +390,9 @@ class ImageSequencerPlugin(QWidget):
     def add_dropped_files(self, files):
         for p in files:
             if p.suffix.lower() in ('.png', '.jpg', '.jpeg'):
-                if p not in self.image_paths:
+                if p not in self.image_paths_set:
                     self.image_paths.append(p)
+                    self.image_paths_set.add(p)
                     self.list_w.addItem(QListWidgetItem(p.name))
         if not self.output_dir and self.image_paths:
             self.output_dir = self.image_paths[0].parent
@@ -397,6 +400,7 @@ class ImageSequencerPlugin(QWidget):
 
     def clear_list(self):
         self.image_paths.clear()
+        self.image_paths_set.clear()
         self.list_w.clear()
         self.preview_widget.set_images(None, None)
         self.log_text.clear()
