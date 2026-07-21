@@ -4,3 +4,6 @@
 ## 2024-07-20 - Pre-compiled Regex in Plugin Updates
 **Learning:** The `PluginUpdater` checks local `.kit` files by searching for a version string via regex. Using an inline `re.search` causes significant overhead because Python checks the regex cache on every invocation.
 **Action:** Always pre-compile static regex expressions using `re.compile()` at the module level. Replacing the inline search with `PLUGIN_VERSION_RE.search(content)` improved the execution path performance by ~57%, minimizing disk read and parsing lag.
+## 2025-02-12 - O(N) Disk I/O Bottleneck in UI Workflows
+**Learning:** When updating output dictionaries in callback methods (like `on_worker_finished`), iterating over the entire list of loaded files (`self.image_paths`) and checking disk state (`.exists()`) causes O(N) blockages on the main thread, causing severe UI freezes when hundreds or thousands of files are loaded.
+**Action:** Always iterate only over the subset of items actually processed by the worker (e.g., `self.worker.paths`). This reduces the operation to O(K) where K is the number of files processed, significantly minimizing disk I/O impact on the UI thread.

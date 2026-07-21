@@ -289,8 +289,10 @@ class BgRemoverTab(QWidget):
         self.dlg.close()
         if self.meter: self.meter.set_message(None)
         
-        # Update output map
-        for p in self.image_paths:
+        # ⚡ Bolt Optimization: Update output map using O(K) subset instead of O(N) full list
+        # By iterating over `self.worker.paths` (only files just processed) rather than `self.image_paths` (all loaded files),
+        # we eliminate thousands of redundant `exists()` disk I/O checks when processing a partial selection from a large list.
+        for p in self.worker.paths:
             opath = out_dir / f"{p.stem}_nobg.png"
             if opath.exists():
                 self.output_map[p] = opath

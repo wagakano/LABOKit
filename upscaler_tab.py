@@ -365,8 +365,10 @@ class UpscalerTab(QWidget):
         # Use the directory the worker actually wrote to
         actual_out_dir = self.worker.out_dir
         
-        # Update output map
-        for p in self.image_paths:
+        # ⚡ Bolt Optimization: Update output map using O(K) subset instead of O(N) full list
+        # Iterating only over `self.worker.paths` (files just processed) rather than `self.image_paths` (all loaded files)
+        # prevents redundant and blocking disk I/O `exists()` checks on the main UI thread.
+        for p in self.worker.paths:
              opath = actual_out_dir / f"{p.stem}_up4x.png"
              if opath.exists():
                  self.output_map[p] = opath
