@@ -224,11 +224,15 @@ class CustomTitleBar(QWidget):
         self.btn_min = QPushButton("−") 
         self.btn_min.setFixedSize(btn_size, btn_size)
         self.btn_min.setStyleSheet(btn_style)
+        self.btn_min.setAccessibleName("Minimize Window")
+        self.btn_min.setToolTip("Minimize Window")
         self.btn_min.clicked.connect(self.minimize_window)
 
         self.btn_close = QPushButton("×") 
         self.btn_close.setFixedSize(btn_size, btn_size)
         self.btn_close.setStyleSheet(btn_style)
+        self.btn_close.setAccessibleName("Close Window")
+        self.btn_close.setToolTip("Close Window")
         self.btn_close.clicked.connect(self.close_window)
 
         layout.addWidget(self.title_lbl)

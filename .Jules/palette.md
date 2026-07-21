@@ -4,3 +4,6 @@
 ## 2026-05-27 - Disabled Buttons in Custom PySide6 Stylesheets
 **Learning:** Applying a custom `setStyleSheet()` in PySide6 completely overrides default OS-level styles, meaning missing pseudo-classes like `:disabled` cause inactive buttons to look perfectly active. Additionally, blindly applying cursors via an `EventFilter` (`QEvent.Enter`) or a monkeypatch ignores the `isEnabled()` state, resulting in a clickable hand cursor on a disabled element.
 **Action:** Always ensure that custom button stylesheets explicitly define a `:disabled` state with muted styles. When filtering cursor events globally, explicitly check `obj.isEnabled()` and listen for `QEvent.EnabledChange` to set the correct `Qt.ForbiddenCursor` or `Qt.ArrowCursor`.
+## 2026-05-27 - Accessible Icon-only Buttons in PySide6
+**Learning:** Custom UI controls like 'Minimize' or 'Close' buttons that only use symbols (e.g., "−", "×") or icons are opaque to screen readers and can be confusing to users without context.
+**Action:** Always explicitly implement `setAccessibleName` (for screen reader accessibility) and `setToolTip` (for visual context on hover) for icon-only or non-textual UI buttons.
