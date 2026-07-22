@@ -400,7 +400,7 @@ class LABOKitMainWindow(QMainWindow):
         self.setCentralWidget(self.central_container)
         
         self.outer_layout = QVBoxLayout(self.central_container)
-        self.outer_layout.setContentsMargins(0, 0, 0, 0)
+        self.outer_layout.setContentsMargins(1, 1, 1, 1)
         
         self.main_frame = QFrame()
         self.main_frame.setObjectName("MainFrame")
