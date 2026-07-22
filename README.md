@@ -56,10 +56,10 @@ LABOKit features can be extended using `.kit` plugins. You can download `.kit` f
 
 | Plugin Name | Type | Description | Download |
 | :--- | :---: | :--- | :---: |
-| **Video Upscaler** | Free | Upscale video files frame-by-frame using Real-ESRGAN and FFmpeg. | [Download `VideoUpscaler.kit`](https://github.com/wagakano/LABOKit-assets/releases/download/update2/VideoUpscaler.kit) |
-| **ONNX Loader** | Free | Load custom `.onnx` upscaler models directly into LABOKit. | [Download `ONNXLoader.kit`](https://github.com/wagakano/LABOKit-assets/releases/download/update2/ONNXLoader.kit) |
-| **QR Code Generator** | Free | Batch generate single or multi-line QR codes into PNG images. | [Download `QRCodeGenerator.kit`](https://github.com/wagakano/LABOKit-assets/releases/download/update2/QRCodeGenerator.kit) |
-| **Watermark Remover** | Free | Remove watermarks with brush masking powered by LaMa ONNX. | [Download `WatermarkRemover.kit`](https://github.com/wagakano/LABOKit-assets/releases/download/update2/WatermarkRemover.kit) |
+| **Video Upscaler** | Free | Upscale video files frame-by-frame using Real-ESRGAN and FFmpeg. | [`VideoUpscaler.kit`](https://github.com/wagakano/LABOKit-assets/releases/download/update2/VideoUpscaler.kit) |
+| **ONNX Loader** | Free | Load custom `.onnx` upscaler models directly into LABOKit. | [`ONNXLoader.kit`](https://github.com/wagakano/LABOKit-assets/releases/download/update2/ONNXLoader.kit) |
+| **QR Code Generator** | Free | Batch generate single or multi-line QR codes into PNG images. | [`QRCodeGenerator.kit`](https://github.com/wagakano/LABOKit-assets/releases/download/update2/QRCodeGenerator.kit) |
+| **Watermark Remover** | Free | Remove watermarks with brush masking powered by LaMa ONNX. | [`WatermarkRemover.kit`](https://github.com/wagakano/LABOKit-assets/releases/download/update2/WatermarkRemover.kit) |
 | **Quick Vector** | Advanced | Convert raster images (PNG, JPG, BMP) into SVG vector files. | Supporters Only |
 | **Dithering FX** | Advanced | Retro pixel dithering, custom color palettes, and GIF animations. | Supporters Only |
 | **Image Converter** | Advanced | Batch convert WebP, JPG, PNG, ICO, and BMP formats with transparency handling. | Supporters Only |
@@ -68,17 +68,12 @@ LABOKit features can be extended using `.kit` plugins. You can download `.kit` f
 
 ## 💖 Support & Rewards
 
-If you enjoy using LABOKit and want to support development, consider donating. Supporters get access to Advanced Plugins (`Quick Vector`, `Dithering FX`, `Image Converter`).
+If you enjoy using LABOKit and want to support ongoing development, consider donating to unlock Advanced Plugins (`Quick Vector`, `Dithering FX`, `Image Converter`):
 
-> [!TIP]
-> ### ☕ Ko-fi
-> Support LABOKit development and unlock Advanced Plugins on Ko-fi:  
-> 👉 **[Support on Ko-fi](https://ko-fi.com/s/a367e473fe)**
-
-> [!IMPORTANT]
-> ### 🎁 Trakteer
-> Support via Trakteer (Indonesian Supporters):  
-> 👉 **[Support on Trakteer](https://trakteer.id/kano-bbif7/reward/labokit-advanced-plugins-m84J6)**
+<p align="left">
+  <a href="https://ko-fi.com/s/a367e473fe"><img src="https://img.shields.io/badge/KO--FI-DONATE-ff5e5b?style=flat-square&logo=ko-fi&logoColor=white" alt="Ko-fi" /></a>
+  <a href="https://trakteer.id/kano-bbif7/reward/labokit-advanced-plugins-m84J6"><img src="https://img.shields.io/badge/TRAKTEER-DONATE-c22525?style=flat-square" alt="Trakteer" /></a>
+</p>
 
 ---
 
