@@ -22,7 +22,7 @@ LABOKit is a modular desktop tool for offline batch image processing. Built with
 - **PyInstaller Windowed EBADF Crashfix**: Resolved a crash on startup in `--noconsole` environments by introducing a global safe stream redirection.
 - **Processing Freezes Throttled**: Decelerated the Divergence Meter status spinner refresh rate to prevent event queue starvation, resolving app lockups during batch runs.
 - **Model Restorations**: Restored the `"Performance"` (`u2netp`) and `"Human Portrait"` (`silueta`) background remover models as pre-packaged offline weights.
-- **UI Harmonization**: Standardized list box components, scrollbars, dialog backgrounds, and buttons universally across all core tabs and plugins.
+- **UI Harmonization & Cleaner Looks**: Standardized list box components, scrollbars, dialog backgrounds, and buttons universally across all core tabs and plugins.
 - **Dithering FX Animation Hint**: Added clear warning guidance in the Animation page to preview custom patterns and noise animations via the "Preview GIF" button.
 
 ---
