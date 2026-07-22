@@ -7,3 +7,6 @@
 ## 2026-05-27 - Accessible Icon-only Buttons in PySide6
 **Learning:** Custom UI controls like 'Minimize' or 'Close' buttons that only use symbols (e.g., "−", "×") or icons are opaque to screen readers and can be confusing to users without context.
 **Action:** Always explicitly implement `setAccessibleName` (for screen reader accessibility) and `setToolTip` (for visual context on hover) for icon-only or non-textual UI buttons.
+## 2024-05-14 - Interactive Widget Accessibility and Discoverability
+**Learning:** PySide6 applications often suffer from "hidden functionality" where interactive behaviors (like right-click context menus in list widgets, keyboard shortcuts for sliders, or dragging behaviors in custom split views) are not obvious to the user or screen readers.
+**Action:** Always proactively implement `setToolTip()` to explain hidden interactions (e.g., "Right-click to remove", "Drag to compare") and `setAccessibleName()` on non-textual controls (like sliders or icon-only toggle buttons) to ensure screen reader compatibility and improve overall UX discoverability.
