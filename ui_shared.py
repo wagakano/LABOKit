@@ -496,7 +496,7 @@ class DivergenceMeter(QFrame):
         self._update_status_box()
         # Speed up animation when processing, slow down when idle
         if text:
-            self.timer.setInterval(15)
+            self.timer.setInterval(60)
         else:
             self.timer.setInterval(120)
 

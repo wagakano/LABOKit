@@ -18,6 +18,10 @@ All notable changes and updates made during this development cycle for the relea
 * **Tab Scroller Arrows Removed**: Disabled right-side tab navigation scroll arrows on `QTabBar` (`setUsesScrollButtons(False)` and zeroed scroller dimensions in QSS).
 * **VideoUpscaler & WatermarkRemover Cleanup**: Removed "No video loaded." placeholder label, moved VideoUpscaler progress/logs to left panel, and removed double canvas border in WatermarkRemover.
 * **Plugin Download Directory Auto-Creation Bugfix**: Added automatic `out_dir.mkdir(parents=True, exist_ok=True)` in `BgRemovalWorker` and `UpscaleWorker` to prevent `[Errno 2] No such file or directory` errors when saving to missing target output folders.
+* **PyInstaller Windowed EBADF Crash**: Implemented global `SafeStream` stdout/stderr proxy redirection in `core_config.py` to prevent `bad file descriptor` errors in compiled `--noconsole` environments when executing third-party modules (rembg, onnxruntime, basicsr).
+* **Processing Freezes**: Throttled Divergence Meter active timer interval to `60ms` in `ui_shared.py` to prevent event queue flooding, resolving application lockups and responsiveness issues.
+* **Rounded Window Border Clipping**: Set `1px` content margins on the central outer layout in `main.py` to prevent the frameless window mask from clipping the rounded corners of `#MainFrame`.
+* **Model Download Prompts**: Removed non-bundled background remover models (`Performance` and `Human Portrait`) from combo box options in `bg_remover_tab.py` to ensure the application works fully offline without download prompts.
 
 ### Changed
 * **Documentation Clean-Up**: Removed release changelogs from `README.md` (moved exclusively to GitHub Releases descriptions), removed all emojis, and rewrote documentation with clear, natural language without AI buzzwords.

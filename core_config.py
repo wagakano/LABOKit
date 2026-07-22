@@ -1,5 +1,35 @@
 import sys
 import os
+
+class SafeStream:
+    def __init__(self, original_stream=None):
+        self.original_stream = original_stream
+
+    def write(self, data):
+        if self.original_stream:
+            try:
+                self.original_stream.write(data)
+                return
+            except Exception:
+                pass
+
+    def flush(self):
+        if self.original_stream:
+            try:
+                self.original_stream.flush()
+            except Exception:
+                pass
+
+if sys.stdout is None or not hasattr(sys.stdout, 'write'):
+    sys.stdout = SafeStream(None)
+else:
+    sys.stdout = SafeStream(sys.stdout)
+
+if sys.stderr is None or not hasattr(sys.stderr, 'write'):
+    sys.stderr = SafeStream(None)
+else:
+    sys.stderr = SafeStream(sys.stderr)
+
 import shutil
 from pathlib import Path
 from packaging import version
