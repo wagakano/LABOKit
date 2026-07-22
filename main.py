@@ -894,60 +894,60 @@ def main():
 def get_app_stylesheet(theme="light"):
     if theme == "dark":
         return f"""
-            QMessageBox {{ font-family: "Segoe UI", sans-serif; background-color: #1e1e2e; color: #cdd6f4; }}
-            QMainWindow {{ background-color: #181825; }}
+            QMessageBox {{ font-family: "Segoe UI", sans-serif; background-color: #16161a; color: #e1e1e6; }}
+            QMainWindow {{ background-color: #121216; }}
             #MainFrame {{
-                background-color: #181825;
+                background-color: #121216;
                 border: none;
             }}
             QTabWidget::pane {{ border: none; top: -1px; }}
-            QTabBar::tab {{ background-color: #252538; border: 1px solid #313244; padding: 4px 12px; border-top-left-radius: 4px; border-top-right-radius: 4px; color: #cdd6f4; font-weight: bold; }}
-            QTabBar::tab:selected {{ background-color: #1e1e2e; border-bottom: 1px solid #1e1e2e; color: #ffffff; }}
+            QTabBar::tab {{ background-color: #1c1c22; border: 1px solid #2e2e38; padding: 4px 12px; border-top-left-radius: 4px; border-top-right-radius: 4px; color: #e1e1e6; font-weight: bold; }}
+            QTabBar::tab:selected {{ background-color: #16161a; border-bottom: 1px solid #16161a; color: #ffffff; }}
             QTabBar::scroller {{ width: 0px; height: 0px; }}
             QTabBar QToolButton {{ width: 0px; height: 0px; border: none; background: transparent; }}
             QPushButton {{
-                background-color: qlineargradient(x1:0, y1:0, x2:0, y2:1, stop:0 #313244, stop:1 #1e1e2e);
-                border: 1px solid #45475a;
+                background-color: qlineargradient(x1:0, y1:0, x2:0, y2:1, stop:0 #282832, stop:1 #1c1c22);
+                border: 1px solid #383846;
                 border-radius: 5px;
                 padding: 4px 12px;
                 font-weight: bold;
-                color: #cdd6f4;
+                color: #e1e1e6;
             }}
-            QPushButton:hover {{ background-color: qlineargradient(x1:0, y1:0, x2:0, y2:1, stop:0 #45475a, stop:1 #313244); color: #ffffff; }}
-            QPushButton:pressed {{ background-color: #181825; }}
-            QPushButton:disabled {{ background-color: #181825; color: #585b70; border: 1px solid #313244; }}
-            QListWidget {{ background-color: #1e1e2e; border: 1px solid #313244; border-radius: 4px; outline: 0; padding: 4px; color: #cdd6f4; }}
-            QListWidget::item:selected {{ background-color: #45475a; color: #ffffff; border-radius: 3px; }}
-            QListWidget::item:hover {{ background-color: #313244; border-radius: 3px; }}
-            QComboBox {{ background-color: #1e1e2e; border: 1px solid #313244; border-radius: 4px; padding: 3px 20px 3px 8px; color: #cdd6f4; }}
+            QPushButton:hover {{ background-color: qlineargradient(x1:0, y1:0, x2:0, y2:1, stop:0 #383846, stop:1 #282832); color: #ffffff; }}
+            QPushButton:pressed {{ background-color: #121216; }}
+            QPushButton:disabled {{ background-color: #16161a; color: #555566; border: 1px solid #2a2a34; }}
+            QListWidget, QListWidget::viewport {{ background-color: #16161a; border: 1px solid #2e2e38; border-radius: 4px; outline: 0; padding: 4px; color: #e1e1e6; }}
+            QListWidget::item:selected {{ background-color: #323242; color: #ffffff; border-radius: 3px; }}
+            QListWidget::item:hover {{ background-color: #242430; border-radius: 3px; }}
+            QComboBox {{ background-color: #16161a; border: 1px solid #2e2e38; border-radius: 4px; padding: 3px 20px 3px 8px; color: #e1e1e6; }}
             QComboBox::drop-down {{ subcontrol-origin: padding; subcontrol-position: top right; width: 20px; border: none; background: transparent; }}
             QComboBox::down-arrow {{ image: url({ARROW_DARK_PATH.as_posix()}); }}
-            QComboBox QAbstractItemView {{ background-color: #1e1e2e; border: 1px solid #313244; selection-background-color: #45475a; color: #cdd6f4; selection-color: #ffffff; }}
-            QScrollBar:vertical {{ background: #181825; width: 12px; margin: 0px 0px 0px 0px; border-radius: 6px; }}
-            QScrollBar::handle:vertical {{ background: #45475a; min-height: 20px; border-radius: 6px; }}
+            QComboBox QAbstractItemView {{ background-color: #16161a; border: 1px solid #2e2e38; selection-background-color: #323242; color: #e1e1e6; selection-color: #ffffff; }}
+            QScrollBar:vertical {{ background: #121216; width: 12px; margin: 0px 0px 0px 0px; border-radius: 6px; }}
+            QScrollBar::handle:vertical {{ background: #383846; min-height: 20px; border-radius: 6px; }}
             QScrollBar::add-line:vertical, QScrollBar::sub-line:vertical {{ height: 0px; }}
-            QLabel#SectionHeader {{ background-color: #252538; border-radius: 4px; padding: 4px; font-weight: bold; color: #cdd6f4; }}
-            QLabel {{ padding: 2px; color: #cdd6f4; }}
-            QMenuBar {{ background-color: #181825; color: #cdd6f4; border-bottom: 1px solid #313244; }}
-            QMenuBar::item {{ background: transparent; padding: 3px 8px; color: #cdd6f4; }}
-            QMenuBar::item:selected {{ background-color: #313244; color: #ffffff; }}
-            QMenu {{ background-color: #1e1e2e; border: 1px solid #313244; }}
-            QMenu::item {{ padding: 4px 20px; color: #cdd6f4; }}
-            QMenu::item:selected {{ background-color: #313244; color: #ffffff; }}
-            QFrame {{ background-color: #1e1e2e; border: 1px solid #313244; border-radius: 0px; }}
+            QLabel#SectionHeader {{ background-color: #22222a; border-radius: 4px; padding: 4px; font-weight: bold; color: #e1e1e6; }}
+            QLabel {{ padding: 2px; color: #e1e1e6; }}
+            QMenuBar {{ background-color: #121216; color: #e1e1e6; border-bottom: 1px solid #2e2e38; }}
+            QMenuBar::item {{ background: transparent; padding: 3px 8px; color: #e1e1e6; }}
+            QMenuBar::item:selected {{ background-color: #282832; color: #ffffff; }}
+            QMenu {{ background-color: #16161a; border: 1px solid #2e2e38; }}
+            QMenu::item {{ padding: 4px 20px; color: #e1e1e6; }}
+            QMenu::item:selected {{ background-color: #282832; color: #ffffff; }}
+            QFrame {{ background-color: #16161a; border: 1px solid #2e2e38; border-radius: 0px; }}
             #PixelBar {{
-                background-color: #181825;
+                background-color: #121216;
             }}
-            #PixelBar QLabel {{ color: #a6adc8; }}
+            #PixelBar QLabel {{ color: #9090a0; }}
             #PixelBar QLabel#NumberBox, #PixelBar QLabel#StatusBox {{
-                background-color: #252538;
-                border: 1px solid #313244;
+                background-color: #1c1c22;
+                border: 1px solid #2e2e38;
                 border-radius: 4px;
                 padding: 2px 6px;
-                color: #cdd6f4;
+                color: #e1e1e6;
             }}
-            QProgressDialog, QDialog, QMessageBox {{ background-color: #1e1e2e; color: #cdd6f4; }}
-            QPlainTextEdit {{ background-color: #1e1e2e; color: #cdd6f4; border: 1px solid #313244; border-radius: 4px; }}
+            QProgressDialog, QDialog, QMessageBox {{ background-color: #16161a; color: #e1e1e6; }}
+            QPlainTextEdit {{ background-color: #16161a; color: #e1e1e6; border: 1px solid #2e2e38; border-radius: 4px; }}
             QLineEdit {{ background-color: #1e1e2e; color: #cdd6f4; border: 1px solid #313244; border-radius: 4px; padding: 4px; }}
             QSlider::groove:horizontal {{ border: 1px solid #45475a; height: 6px; background: #313244; margin: 2px 0; border-radius: 3px; }}
             QSlider::handle:horizontal {{ background: #89b4fa; border: 1px solid #89b4fa; width: 14px; margin: -4px 0; border-radius: 7px; }}

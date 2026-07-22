@@ -255,13 +255,15 @@ class UpscalerTab(QWidget):
 
     def set_theme(self, theme_name):
         if theme_name == "dark":
-            self.lbl_header.setStyleSheet("font-weight: bold; background-color: #252538; border: 1px solid #313244; border-radius: 3px; padding: 4px 6px; color: #cdd6f4;")
-            self.list_box.setStyleSheet("QFrame { border: 1px solid #313244; border-radius: 4px; background-color: #1e1e2e; }")
-            self.list_w.setStyleSheet("QListWidget { background-color: #181825; border: 1px solid #313244; color: #cdd6f4; outline: 0; } QListWidget::item:selected { background-color: #313244; color: #ffffff; }")
+            self.lbl_header.setStyleSheet("font-weight: bold; background-color: #22222a; border: 1px solid #2e2e38; border-radius: 3px; padding: 4px 6px; color: #e1e1e6;")
+            self.list_box.setStyleSheet("QFrame { border: 1px solid #2e2e38; border-radius: 4px; background-color: #16161a; }")
+            if hasattr(self, 'list_w') and hasattr(self.list_w, 'set_theme'):
+                self.list_w.set_theme("dark")
         else:
             self.lbl_header.setStyleSheet("font-weight: bold; background-color: #e2e7f2; border: 1px solid #cbd2e1; border-radius: 3px; padding: 4px 6px; color: #333d51;")
             self.list_box.setStyleSheet("QFrame { border: 1px solid #b3bcd1; border-radius: 4px; background-color: #f5f7fb; }")
-            self.list_w.setStyleSheet("QListWidget { background-color: #ffffff; border: 1px solid #b3bcd1; color: #1c2333; outline: 0; } QListWidget::item:selected { background-color: #cce0ff; color: #1c2333; }")
+            if hasattr(self, 'list_w') and hasattr(self.list_w, 'set_theme'):
+                self.list_w.set_theme("light")
 
     def add_images(self):
         files, _ = QFileDialog.getOpenFileNames(self, "Select Images", "", core_config.IMAGE_FILTER)

@@ -23,19 +23,30 @@ class FileDropListWidget(QListWidget):
         super().__init__(parent)
         self.setAcceptDrops(True)
         self.current_theme = "light"
+        self.update_style()
 
     def set_theme(self, theme_name):
         self.current_theme = theme_name
+        self.update_style()
         if self.viewport():
             self.viewport().update()
+
+    def update_style(self, dragging=False):
+        if self.current_theme == "dark":
+            if dragging:
+                self.setStyleSheet("QListWidget, QListWidget::viewport { background-color: #22222c; border: 2px dashed #89b4fa; color: #e1e1e6; outline: 0; }")
+            else:
+                self.setStyleSheet("QListWidget, QListWidget::viewport { background-color: #16161a; border: 1px solid #2e2e38; color: #e1e1e6; outline: 0; } QListWidget::item:selected { background-color: #323242; color: #ffffff; }")
+        else:
+            if dragging:
+                self.setStyleSheet("QListWidget, QListWidget::viewport { background-color: #e0e5f0; border: 2px dashed #4b556b; color: #1c2333; outline: 0; }")
+            else:
+                self.setStyleSheet("QListWidget, QListWidget::viewport { background-color: #ffffff; border: 1px solid #b3bcd1; color: #1c2333; outline: 0; } QListWidget::item:selected { background-color: #cce0ff; color: #1c2333; }")
 
     def dragEnterEvent(self, event):
         if event.mimeData().hasUrls():
             event.acceptProposedAction()
-            if self.current_theme == "dark":
-                self.setStyleSheet("background-color: #242424; border: 2px dashed #ffffff;")
-            else:
-                self.setStyleSheet("background-color: #e0e5f0; border: 2px dashed #4b556b;")
+            self.update_style(dragging=True)
         else:
             event.ignore()
 
@@ -46,11 +57,11 @@ class FileDropListWidget(QListWidget):
             event.ignore()
 
     def dragLeaveEvent(self, event):
-        self.setStyleSheet("")
+        self.update_style(dragging=False)
         super().dragLeaveEvent(event)
 
     def dropEvent(self, event):
-        self.setStyleSheet("")
+        self.update_style(dragging=False)
         if event.mimeData().hasUrls():
             files = []
             for u in event.mimeData().urls():
