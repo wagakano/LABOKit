@@ -182,6 +182,7 @@ class CustomTitleBar(QWidget):
         self.parent_win = parent
         self.pressing = False
         self.start_pos = None
+        self.setAttribute(Qt.WA_StyledBackground, True)
 
         layout = QHBoxLayout(self)
         layout.setContentsMargins(10, 0, 10, 0)
@@ -402,6 +403,7 @@ class LABOKitMainWindow(QMainWindow):
         self.setWindowFlags(Qt.FramelessWindowHint)
         
         self.central_container = QWidget()
+        self.central_container.setStyleSheet("background: transparent;")
         self.setCentralWidget(self.central_container)
         
         self.outer_layout = QVBoxLayout(self.central_container)
@@ -409,13 +411,6 @@ class LABOKitMainWindow(QMainWindow):
         
         self.main_frame = QFrame()
         self.main_frame.setObjectName("MainFrame")
-        self.main_frame.setStyleSheet("""
-            #MainFrame {
-                background-color: #e9edf5;
-                border-radius: 10px; 
-                border: 1px solid #999; 
-            }
-        """)
         
         self.outer_layout.addWidget(self.main_frame)
         
@@ -882,7 +877,8 @@ def get_app_stylesheet(theme="light"):
             QMainWindow {{ background-color: #121216; }}
             #MainFrame {{
                 background-color: #121216;
-                border: none;
+                border-radius: 10px;
+                border: 1px solid #2e2e38;
             }}
             QTabWidget::pane {{ border: none; top: -1px; }}
             QTabBar::tab {{ background-color: #1c1c22; border: 1px solid #2e2e38; padding: 4px 12px; border-top-left-radius: 4px; border-top-right-radius: 4px; color: #e1e1e6; font-weight: bold; }}
@@ -942,7 +938,8 @@ def get_app_stylesheet(theme="light"):
             QMainWindow {{ background-color: #e9edf5; }}
             #MainFrame {{
                 background-color: #e9edf5;
-                border: none;
+                border-radius: 10px;
+                border: 1px solid #cbd2e1;
             }}
             QTabWidget::pane {{ border: none; top: -1px; }}
             QTabBar::tab {{ background-color: #dde4f5; border: 1px solid #b3bcd1; padding: 4px 12px; border-top-left-radius: 4px; border-top-right-radius: 4px; color: #1c2333; font-weight: bold; }}
