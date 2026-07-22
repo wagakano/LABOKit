@@ -257,15 +257,28 @@ class CustomTitleBar(QWidget):
         layout.addWidget(self.btn_max, 0, Qt.AlignVCenter)
         layout.addWidget(self.btn_close, 0, Qt.AlignVCenter)
 
-        self.setStyleSheet("""
-            CustomTitleBar {
-                background: qlineargradient(x1:0, y1:0, x2:0, y2:1,
-                                            stop:0 #f0f0f0, 
-                                            stop:0.5 #dcdcdc,
-                                            stop:1 #b0b0b0);
-                border: none;
-            }
-        """)
+        self.set_theme("light")
+
+    def set_theme(self, theme_name):
+        if theme_name == "dark":
+            self.title_lbl.setStyleSheet("font-weight: bold; color: #e1e1e6; border: none; background: transparent;")
+            self.setStyleSheet("""
+                CustomTitleBar {
+                    background-color: #121216;
+                    border-bottom: 1px solid #2e2e38;
+                }
+            """)
+        else:
+            self.title_lbl.setStyleSheet("font-weight: bold; color: #333; border: none; background: transparent;")
+            self.setStyleSheet("""
+                CustomTitleBar {
+                    background: qlineargradient(x1:0, y1:0, x2:0, y2:1,
+                                                stop:0 #f0f0f0, 
+                                                stop:0.5 #dcdcdc,
+                                                stop:1 #b0b0b0);
+                    border: none;
+                }
+            """)
 
     def mousePressEvent(self, event):
         if event.button() == Qt.LeftButton:
@@ -447,6 +460,9 @@ class LABOKitMainWindow(QMainWindow):
         if app:
             app.setStyleSheet(get_app_stylesheet(theme_name))
         
+        if hasattr(self, 'custom_title_bar') and hasattr(self.custom_title_bar, 'set_theme'):
+            self.custom_title_bar.set_theme(theme_name)
+
         if hasattr(self, 'meter'):
             self.meter.set_theme(theme_name)
             
@@ -667,39 +683,7 @@ del "%~f0"
     def open_url(self, url): QDesktopServices.openUrl(QUrl(url))
     def _setup_menu(self):
         mb = QMenuBar()
-        mb.setStyleSheet("""
-            QMenuBar { 
-                background: transparent; 
-                border: none;
-            }
-            QMenuBar::item { 
-                background: transparent; 
-                color: #333; 
-                padding: 4px 8px;
-                border-radius: 4px;
-            }
-            QMenuBar::item:selected { 
-                background-color: rgba(0, 0, 0, 0.1);
-                color: #000; 
-            }
-            
-            QMenu {
-                background-color: #f7f9fc; 
-                border: 1px solid #b3bcd1;
-                border-radius: 4px;
-                padding: 4px;
-            }
-            QMenu::item {
-                padding: 4px 24px 4px 10px; 
-                color: #1c2333;
-                border-radius: 3px;
-                background: transparent;
-            }
-            QMenu::item:selected {
-                background-color: #cfe2ff;
-                color: #101522;
-            }
-        """)
+        mb.setStyleSheet("QMenuBar { background: transparent; border: none; }")
         
         self.custom_title_bar.menu_layout.addWidget(mb)
 

@@ -169,6 +169,8 @@ class ZoomableImageWidget(QScrollArea):
         super().__init__(parent)
         self.setFrameShape(QFrame.NoFrame)
         self.setStyleSheet("border: none; background: transparent;")
+        if self.viewport():
+            self.viewport().setStyleSheet("background: transparent;")
         self.setWidgetResizable(True)
         self.setAlignment(Qt.AlignCenter)
         
