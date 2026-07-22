@@ -451,6 +451,74 @@ class LABOKitMainWindow(QMainWindow):
         if hasattr(self, 'custom_title_bar') and hasattr(self.custom_title_bar, 'set_theme'):
             self.custom_title_bar.set_theme(theme_name)
 
+        if hasattr(self, 'menu_bar') and self.menu_bar:
+            if theme_name == "dark":
+                self.menu_bar.setStyleSheet("""
+                    QMenuBar { 
+                        background: transparent; 
+                        border: none;
+                    }
+                    QMenuBar::item { 
+                        background: transparent; 
+                        color: #e1e1e6; 
+                        padding: 4px 8px;
+                        border-radius: 4px;
+                    }
+                    QMenuBar::item:selected { 
+                        background-color: #282832;
+                        color: #ffffff; 
+                    }
+                    QMenu {
+                        background-color: #16161a; 
+                        border: 1px solid #2e2e38;
+                        border-radius: 4px;
+                        padding: 4px;
+                    }
+                    QMenu::item {
+                        padding: 4px 24px 4px 10px; 
+                        color: #e1e1e6;
+                        border-radius: 3px;
+                        background: transparent;
+                    }
+                    QMenu::item:selected {
+                        background-color: #282832;
+                        color: #ffffff;
+                    }
+                """)
+            else:
+                self.menu_bar.setStyleSheet("""
+                    QMenuBar { 
+                        background: transparent; 
+                        border: none;
+                    }
+                    QMenuBar::item { 
+                        background: transparent; 
+                        color: #333; 
+                        padding: 4px 8px;
+                        border-radius: 4px;
+                    }
+                    QMenuBar::item:selected { 
+                        background-color: rgba(0, 0, 0, 0.1);
+                        color: #000; 
+                    }
+                    QMenu {
+                        background-color: #f7f9fc; 
+                        border: 1px solid #b3bcd1;
+                        border-radius: 4px;
+                        padding: 4px;
+                    }
+                    QMenu::item {
+                        padding: 4px 24px 4px 10px; 
+                        color: #1c2333;
+                        border-radius: 3px;
+                        background: transparent;
+                    }
+                    QMenu::item:selected {
+                        background-color: #cfe2ff;
+                        color: #101522;
+                    }
+                """)
+
         if hasattr(self, 'meter'):
             self.meter.set_theme(theme_name)
             
@@ -673,12 +741,12 @@ del "%~f0"
 
     def open_url(self, url): QDesktopServices.openUrl(QUrl(url))
     def _setup_menu(self):
-        mb = QMenuBar()
-        mb.setStyleSheet("QMenuBar { background: transparent; border: none; }")
+        self.menu_bar = QMenuBar()
+        self.menu_bar.setStyleSheet("QMenuBar { background: transparent; border: none; }")
         
-        self.custom_title_bar.menu_layout.addWidget(mb)
+        self.custom_title_bar.menu_layout.addWidget(self.menu_bar)
 
-        conf = mb.addMenu(tr("menu_config"))
+        conf = self.menu_bar.addMenu(tr("menu_config"))
         conf.addAction("Load Plugin (.kit)...", self.load_plugin_file)
         conf.addAction("Open Plugins Folder", lambda: QDesktopServices.openUrl(QUrl.fromLocalFile(str(PLUGIN_DIR))))
         
@@ -706,14 +774,14 @@ del "%~f0"
         lang_menu.addAction("Arabic", lambda: self.switch_language("ar"))
         lang_menu.addAction("Malay", lambda: self.switch_language("ms"))
 
-        help = mb.addMenu(tr("menu_help"))
+        help = self.menu_bar.addMenu(tr("menu_help"))
         help.addAction("BG Remover Help", self.bg_tab.show_help)
         help.addAction("Upscaler Help", self.up_tab.show_help)
         help.addSeparator()
         help.addAction("Licenses / NOTICE", self.show_notice)
         self.menu_plugins = help.addMenu(tr("menu_plugins"))
 
-        supp = mb.addMenu(tr("menu_support"))
+        supp = self.menu_bar.addMenu(tr("menu_support"))
         supp.addAction("Get Plugins (Trakteer ID)", lambda: self.open_url("https://trakteer.id/kano-bbif7/reward/labokit-advanced-plugins-m84J6"))
         supp.addAction("Get Plugins (Ko-fi)", lambda: self.open_url("https://ko-fi.com/s/a367e473fe"))
 
