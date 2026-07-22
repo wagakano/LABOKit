@@ -17,7 +17,7 @@ from core_config import *
 from translations import tr, set_language, CURRENT_LANG
 
 # --- IMPORTS ---
-from PySide6.QtCore import Qt, QSize, QTimer, QUrl, QRectF, QThread, Signal, QObject, QDateTime, QEvent
+from PySide6.QtCore import Qt, QSize, QTimer, QUrl, QRectF, QThread, Signal, QObject, QDateTime, QEvent, QPoint
 from PySide6.QtGui import QAction, QPixmap, QFont, QIcon, QDesktopServices, QPainterPath, QRegion, QColor, QPalette
 from PySide6.QtWidgets import (
     QApplication, QMainWindow, QWidget, QVBoxLayout, QHBoxLayout,
