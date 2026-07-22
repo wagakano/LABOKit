@@ -60,9 +60,9 @@ LABOKit features can be extended using `.kit` plugins. You can download `.kit` f
 | **ONNX Loader** | Free | Load custom `.onnx` upscaler models directly into LABOKit. | [Download `ONNXLoader.kit`](https://github.com/wagakano/LABOKit-assets/releases/download/update2/ONNXLoader.kit) |
 | **QR Code Generator** | Free | Batch generate single or multi-line QR codes into PNG images. | [Download `QRCodeGenerator.kit`](https://github.com/wagakano/LABOKit-assets/releases/download/update2/QRCodeGenerator.kit) |
 | **Watermark Remover** | Free | Remove watermarks with brush masking powered by LaMa ONNX. | [Download `WatermarkRemover.kit`](https://github.com/wagakano/LABOKit-assets/releases/download/update2/WatermarkRemover.kit) |
-| **Quick Vector** | Advanced | Convert raster images (PNG, JPG, BMP) into SVG vector files. | [Download `QuickVector.kit`](https://github.com/wagakano/LABOKit-assets/releases/download/update2/QuickVector.kit) |
-| **Dithering FX** | Advanced | Retro pixel dithering, custom color palettes, and GIF animations. | [Download `DitheringFX.kit`](https://github.com/wagakano/LABOKit-assets/releases/download/update2/DitheringFX.kit) |
-| **Image Converter** | Advanced | Batch convert WebP, JPG, PNG, ICO, and BMP formats with transparency handling. | [Download `IMGConverter.kit`](https://github.com/wagakano/LABOKit-assets/releases/download/update2/IMGConverter.kit) |
+| **Quick Vector** | Advanced | Convert raster images (PNG, JPG, BMP) into SVG vector files. | Supporters Only |
+| **Dithering FX** | Advanced | Retro pixel dithering, custom color palettes, and GIF animations. | Supporters Only |
+| **Image Converter** | Advanced | Batch convert WebP, JPG, PNG, ICO, and BMP formats with transparency handling. | Supporters Only |
 
 ---
 
