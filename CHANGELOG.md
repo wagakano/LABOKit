@@ -1,6 +1,24 @@
-# Changelog - LABOKit v3.3.1
+# Changelog - LABOKit v3.3.2
 
-All notable changes and updates made during this development cycle for the release of **LABOKit v3.3.1** are documented below.
+All notable changes and updates made during this development cycle for the release of **LABOKit v3.3.2** are documented below.
+
+---
+
+## [3.3.2] - 2026-07-19
+
+### Added
+* **Theme System**: Implemented dynamic Light Mode and Dark Mode theme engine with persistent state storage in `%APPDATA%/LABOKit/settings.json` and menu selection under `Config -> Theme`.
+* **Window Resizability & Native Border Dragging**: Made main window resizable (`resize(1200, 800)`, `setMinimumSize(900, 600)`) with double-click titlebar toggle, Maximize/Restore button control, and `WM_NCHITTEST` native Windows border hit-testing for frameless window resizing (Issue #22).
+* **macOS Traffic Light Window Controls**: Redesigned title bar window control buttons to clean, borderless macOS traffic light color-coded circles (Red, Yellow, Green) without text symbols.
+* **Universal Dithering FX Button Style**: Adopted the Dithering FX button design (rounded 5px, vertical linear gradient `#ffffff` -> `#d8dfee`, `#9ca7c2` border) as the universal button standard across all tabs and components, including WatermarkRemover's "Remove Watermark" button.
+* **Consistent Setting Container Width**: Standardized the left Setting Container to 1:3 ratio across all tabs — `QRCodeGenerator.kit`, `ImageSequencer.kit`, and `VideoUpscaler.kit` updated to match BG Remover, Upscaler, and Dithering FX.
+* **ImageSequencer Logs Relocated**: Moved process logs (`QPlainTextEdit`) and progress bar from the right preview panel to the left Setting Container, below the "Generate Sequence" button.
+* **Seamless Workspace Layout**: Removed `border-radius` from all `QFrame` containers, `#MainFrame`, and `QTabWidget::pane` for a connected layout from tabs to workspace to status bar. Restored proper `1px solid #b3bcd1` borders on `QFrame` list box containers and Divergence Status Meter (`#PixelBar`).
+* **Tab Scroller Arrows Removed**: Disabled right-side tab navigation scroll arrows on `QTabBar` (`setUsesScrollButtons(False)` and zeroed scroller dimensions in QSS).
+* **VideoUpscaler Cleanup**: Removed "No video loaded." placeholder label.
+
+### Changed
+* **Documentation Clean-Up**: Removed release changelogs from `README.md` (moved exclusively to GitHub Releases descriptions), removed all emojis, and rewrote documentation with clear, natural language without AI buzzwords.
 
 ---
 

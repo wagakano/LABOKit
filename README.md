@@ -1,185 +1,66 @@
-# LABOKit ⌀ 3.3.1
+# LABOKit
 
 <img width="1796" height="523" alt="Image" src="https://github.com/user-attachments/assets/2f0b033f-3cfb-4d59-b124-379dcef14b39" />
 
 <p align="left">
-  <a href="https://github.com/wagakano/LABOKit/releases/latest"><img src="https://img.shields.io/badge/VERSION-v3.3.1-d93f3f?style=flat-square" alt="Version" /></a>
+  <a href="https://github.com/wagakano/LABOKit/releases/latest"><img src="https://img.shields.io/badge/VERSION-v3.3.2-d93f3f?style=flat-square" alt="Version" /></a>
   <a href="https://github.com/wagakano/LABOKit/blob/main/LICENSE"><img src="https://img.shields.io/badge/LICENSE-MIT-dfb317?style=flat-square" alt="License" /></a>
   <a href="https://github.com/wagakano/LABOKit/stargazers"><img src="https://img.shields.io/github/stars/wagakano/LABOKit?style=flat-square&label=STARS&color=dfb317" alt="Stars" /></a>
   <a href="https://github.com/wagakano/LABOKit/releases"><img src="https://img.shields.io/github/downloads/wagakano/LABOKit/total?style=flat-square&label=DOWNLOADS&color=007ec6" alt="Downloads" /></a>
 </p>
 
-**LABOKit** is a modular desktop tool for offline image processing Built with Python (PySide6), it aims to provide a fast, simple, and user-friendly batch-processing workflow with a retro "Steins;Gate" divergence meter aesthetic.
+LABOKit is a modular desktop tool for offline batch image processing. Built with Python and PySide6, it gives you a clean interface for background removal, upscaling, image sequencing, dithering, and custom image operations.
 
-> *"El Psy Kongroo."*
+"El Psy Kongroo."
 
 ## Features
-* **User-Friendly & Fast:** Designed for simplicity and speed. Just load your images and click.
-* **Batch Background Removal:** Powered by `rembg`.
-* **Batch Upscaling (Hybrid):** Supports both GPU (Vulkan) and CPU (PyTorch) processing.
-* **ImageLAB:** Built-in editor for creative effects, ASCII art, and glitches.
-* **World Line Meter:** Visual decoration displaying divergence numbers.
-* **Plugin System:** Extend functionality using `.kit` files.
-* **Offline Mode:** All processing is done locally on your machine.
-* **Multilanguage:** Supports 15 languages including English, 日本語, Bahasa Indonesia, 简体/繁體中文, 한국어, Español, Français, Deutsch, etc.
 
-## What's New in 3.3.1
+- **Batch Background Removal:** Powered by `rembg`.
+- **Batch Upscaling:** Supports both GPU (Vulkan) and CPU (PyTorch) processing.
+- **ImageLAB:** Built-in editor for creative effects, ASCII art, and pixel adjustments.
+- **Image Sequencer:** Convert sequence frames into animated GIFs or MP4 videos.
+- **Plugin System:** Extend functionality using `.kit` plugin modules.
+- **Offline Processing:** Runs entirely on your local machine without sending data externally.
+- **Multilanguage Support:** Supports English, Japanese, Indonesian, Chinese, Korean, Spanish, French, German, and more.
 
-*   **Rembg / Numba Startup Fix**: Resolved a critical startup crash (`cannot import name 'njit' from 'numba'`) when initializing the Background Remover in packaged executable environments.
-*   **O(1) Performance Optimization**: Re-architected image lists deduplication checks to run in O(1) time using companion hash sets, eliminating UI freezes when dragging and dropping thousands of files.
-*   **Drag & Drop Empty State**: Added empty-state visual placeholder hints ("Drop files here") to file list controls.
-*   **12 New Languages Added**: Expanded translation support to 15 languages, adding Chinese Simplified, Chinese Traditional, Korean, Spanish, Portuguese, French, German, Thai, Vietnamese, Russian, Arabic, and Malay.
+## Download
 
-## What's New in 3.3
+### Windows
+1. Download the latest installer: **[LABOKit_v3.3.2_Setup.exe](https://github.com/wagakano/LABOKit/releases/download/v3.3.2/LABOKit_v3.3.2_Setup.exe)**
+2. Run `LABOKit_v3.3.2_Setup.exe` to install.
 
-**New Built-in Plugin: Image Sequencer**
-*   **Create Animations Easily**: Convert sequence frames (PNG, JPG, BMP, etc.) into high-quality animated GIFs or MP4 videos.
-*   **Natural Sorting**: Automatically orders frames using natural alphanumeric sorting.
-*   **Customization**: Adjust output frame rate (1-60 FPS) and background fill colors (Transparent, White, Black).
-
-**Core Background Remover Models**
-*   **Performance (`u2netp`)**: Super-fast, lightweight background removal.
-*   **Human Portrait (`silueta`)**: Rapid, specialized human silhouette extraction.
-
-**System Re-architecture & Stability (Checkup Mode)**
-*   **Modular Layout**: Core tabs and workers are split out of `main.py` into separate modules (`bg_remover_tab.py`, `upscaler_tab.py`, `core_config.py`) to reduce file complexity.
-*   **Robust Update Checker**: Patched urllib utilities to fix `url2pathname` import issues.
-*   **Pymatting/Rembg Initializations**: Implemented dynamic metadata overrides at startup to bypass PyInstaller frozen package crashes.
-*   **Antivirus & Path Robustness**: Implemented fallback execution paths for `realesrgan-ncnn-vulkan.exe`, `ffmpeg.exe`, and `ffprobe.exe` to run directly from the installer's internal folder (`_internal`) if copying to the user's AppData directory fails or is blocked by antivirus programs.
-
-## What's New in 3.2
-
-**Major UI/UX Improvements (v3.2)**
-* **Split-View Slider:** Completely redesigned the before/after image comparison slider.
-* **Unified Output Layout:** Standardized the "Output Folder" UI across all plugins. The path display, "Change Folder", and "Open Folder" buttons have been moved into a clean, intuitive block directly beneath the loaded images list on the left sidebar.
-* **Modernized Lists & Buttons:** Upgraded the FileDropListWidget with rounded corners, subtle drop-zone borders, and a sleek layout for the "Add Images" and "Clear List" action buttons.
-
-**Core System & Engine**
-* **Translation Engine Overhaul:** Fully implemented a robust i18n system (translations.py) and passed it into the plugin context for cross-language support.
-* **Canvas Renderer Re-written:** Re-architected the ZoomableImageWidget backend. Removed QScrollArea wrappers in favor of a direct SplitImageLabel painter. This entirely fixes the blank preview rendering bug (collapsed layouts).
-* **Official Windows Installer:** LABOKit now ships as an official Windows installer (`.exe`) with a streamlined setup process, rather than a standalone portable zip.
-
-**Plugin Updates**
-* **Dithering FX (v3.4):** 
-  * Completely Live Previews: All sliders (Brightness, Dither Scale, Bloom, etc.) now instantly trigger background rendering while being dragged.
-  * Live Animations: Rendering Animated GIFs is now fully live in the background—no more modal progress bars blocking the UI while tweaking settings.
-  * Massive Algorithmic Optimization: Refactored the core Python pixel loops. Implemented 256-color lookup tables for Error Diffusion (Atkinson, Stucki, etc.) and fast C-level array multiplication for Pattern Mapping (Bayer, Halftone, etc.), yielding over a 10x performance speedup.
-  * Disabled the Split View slider to optimize the interface. Add Animation to static image.
-* **QR Code Generator (v1.5):** 
-  * Batch Generator Mode: Overhauled the UI layout to include a dedicated Multi-Line Text Input box specifically for the "Paste List" batch generator mode.
-* **Quick Vector (v1.7):** 
-  * Removed the redundant "Preview Zoom" slider to unify controls with the new global core zooming engine.
-* **ImageLAB (v2.3):** 
-  * Updated UI/UX.
-
-## What's New in 3.1
-* **Library Fixes & Performance Update:** Resolves Upscaler issues and general bugs. Build format changed from single-file portable to directory for faster startup speeds.
-* **Improved BG Remover:** Improved BG Remover to remove anime background more accurate.
-* **ImageLAB ASCII:** adding ASCII art generation with 8 ASCII Types (character sets) and color modes.
-* **Performance Improvement:** All processing (Upscaling, BG Removal, Dithering) now runs on background threads, preventing "Not Responding" freezes.
-* **Drag n Drop:** Import your images instantly by dragging them into the app.
-* **Zoom Feature:** Now you can do zoom-in and out via CTRL + Scroll.
-* **Multilanguage Support:** Added Interface language options for Japanese (日本語) and Indonesian (Bahasa Indonesia).
-* **DitheringFX v3.3:**
-    * **True Error Diffusion:** Implemented accurate Atkinson, Stucki, Burkes, and Sierra algorithms (with total 11 Algorithms).
-    * **GIF Support:** Full support for importing, processing, and previewing animated GIFs.
-    * **Bloom Effect:** Add retro glow to your dithered images.
-    * **Enhanced Controls:** New sliders for Softness, Noise, and Error Bleed.
-
-## 📥 Download
-
-**(Windows)**
-1.  **[Download](https://github.com/wagakano/LABOKit/releases/download/v3.3.1/LABOKit_v3.3.1_Setup.exe)**
-2.  Run the installer `LABOKit_v3.3.1_Setup.exe` and enjoy! (☆▽☆)
-
-**(Linux)**
-* **[Source Code](https://github.com/wagakano/LABOKit/tree/main_linux)**
-
-**LABOKit Electron Ver - Alternative UI**
-Contributed by: **Chizzui**
-* **[Download v1.3](https://github.com/Chizuui/labokit-electron)**
+### Linux
+Source instructions and Linux build steps are located in the [main_linux branch](https://github.com/wagakano/LABOKit/tree/main_linux).
 
 ## Plugins
+
 LABOKit capabilities can be extended using `.kit` plugins.
 
-### How to Install Plugins (.kit)
-1.  Open **LABOKit**.
-2.  Go to menu **Config** > **Load Plugin (.kit)...**
-3.  Select the plugin file. It will be installed permanently.
-*(To uninstall, simply delete the file from the plugins folder via **Config > Open Plugins Folder**).*
+### Installing Plugins (.kit)
+1. Open **LABOKit**.
+2. Go to **Config** > **Load Plugin (.kit)...**
+3. Select the plugin file to install.
+To remove a plugin, delete its `.kit` file via **Config** > **Open Plugins Folder**.
 
-## Available Plugin
-### 1. Video Upscaler
-**File:** **[VideoUpscaler.kit](https://github.com/wagakano/LABOKit-assets/releases/download/update2/VideoUpscaler.kit)**
-**Status:** Released
+### Free Plugins
+- **Video Upscaler:** Upscale video files using Real-ESRGAN and FFmpeg.
+- **ONNX Loader:** Load custom `.onnx` upscaler models directly into LABOKit.
+- **QR Code Generator:** Batch generate QR codes from multi-line text input.
+- **Watermark Remover:** Interactive brush masking and inpainting using LaMa ONNX.
 
-Upscale video files significantly using the power of **Real-ESRGAN** and **FFmpeg**. This plugin automates the complex process of frame-by-frame AI enhancement.
+### Advanced Plugins
+Additional plugins are available for project supporters:
+- **Quick Vector:** Convert raster images (PNG, JPG, BMP) into SVG vector files.
+- **Dithering FX:** Apply retro pixel dithering, custom color palettes, and GIF animations.
+- **Image Converter:** Batch convert WebP, JPG, PNG, ICO, and BMP formats with transparency handling.
 
-**Workflow:**
-1.  **Extract:** Breaks down the video into individual frames.
-2.  **Upscale:** Processes frames in batch using modules (Scale 2x - 4x).
-3.  **Merge:** Recombines frames into a video file while preserving the original audio.
+## Support & Rewards
 
-> **⚠️ Note:** This process is resource-intensive (GPU/CPU) and may take a long time depending on the video length and upscaling factor.
+Donate to support ongoing development:
+- [Ko-fi](https://ko-fi.com/s/a367e473fe)
+- [Trakteer](https://trakteer.id/kano-bbif7/reward/labokit-advanced-plugins-m84J6)
 
-### 2. ONNX Loader
-**File:** **[ONNXLoader.kit](https://github.com/wagakano/LABOKit-assets/releases/download/update2/ONNXLoader.kit)**
-**Status:** Released
-
-A bridge for advanced users. Allows you to load external `.onnx` Upscaler models into LABOKit's interface, making it easy to test and use custom models found online.
-
-### 3. QR-Code Generator
-**File:** **[QRCodeGenerator.kit](https://github.com/wagakano/LABOKit-assets/releases/download/update2/QRCodeGenerator.kit)**
-**Status:** Released
-
-A batch-able QR-Code generator.
-
-### 4. Watermark Remover
-**File:** **[WatermarkRemover.kit](https://github.com/wagakano/LABOKit-assets/releases/download/update2/WatermarkRemover.kit)**
-**Status:** Released
-
-Remove watermarks, text, or objects from your images using state-of-the-art Inpainting (LaMa).
-* **Features:** Built-in interactive brush masking UI, auto-model downloading, and seamless background blending.
-
-## Advanced Plugins
-Also you can get the **Advanced Plugin Bundle** by supporting the development (Donation/Pay What You Want).
-
-### 1. Quick Vector
-Turn your raster images (JPG/PNG/BMP) into scalable vector graphics (SVG) instantly. (Batch-able!)
-* **Best for:** Logos, icons, signatures, and black & white line art.
-* **Features:** Threshold slider, smoothness control, real-time binary preview, Zoom inspection, and batch processing.
-
-### 2. Dithering FX
-Give your images a stunning retro aesthetic. Apply old-school shading and color palettes inspired by vintage hardware. (Batch-able!)
-* **True Error Diffusion:** Implemented accurate Atkinson, Stucki, Burkes, and Sierra algorithms (with total 11 Algorithms).
-* **GIF Support:** Full support for importing, processing, and previewing animated GIFs.
-* **Bloom Effect:** Add retro glow to your dithered images.
-* **Enhanced Controls:** New sliders for Softness, Noise, and Error Bleed.
-* **Animation Support:** Animate your static image with dither effect!
-* 🍌 If you're from r/steinsgate, you can get this Plugin for free! Just DM me your email (u/Lazy-Time-1807) and I'll send the .kit to you.
-
-### 3. Image Converter
-Batch convert WebP/JPG/PNG/ICO/BMP with quality control and transparency handling. (Batch-able!)
-* **Formats:** JPG, PNG, WEBP, BMP, ICO.
-* **Features:** Auto-flatten transparency, quality sliders for compression, and detailed file info inspector.
-
-## 💖 Support & Rewards
-**Donate & Get the Plugins**
-
-[![Ko-fi](https://img.shields.io/badge/Ko--fi-F16063?style=for-the-badge&logo=ko-fi&logoColor=white)](https://ko-fi.com/s/a367e473fe)
-[![Trakteer](https://img.shields.io/badge/Trakteer-C32aa3?style=for-the-badge&logo=trakteer&logoColor=white)](https://trakteer.id/kano-bbif7/reward/labokit-advanced-plugins-m84J6)
-
-LABOKit is free and open-source. By purchasing this bundle (Pay What You Want), you directly support the maintenance of the app and the creation of future tools. Thank you! ( ´∀｀ )b
-
-*By supporting, you get the `LABOKit_Advanced_Plugins.zip` containing all 3 plugins above.*
-
-
-## How to Use
-> A detailed user guide explaining all terms and features is available directly inside the app. Just go to the **Help** menu in the top bar!
-
----
-
-## 🏗️ Project Structure
+## Project Structure
 
 ```
 LABOKit/
@@ -188,58 +69,25 @@ LABOKit/
 ├── bg_remover_tab.py       # Background Remover tab & worker thread
 ├── upscaler_tab.py         # Upscaler tab & worker thread (Vulkan + PyTorch)
 ├── ui_shared.py            # Reusable UI components (FileDropListWidget, ZoomableImageWidget, etc.)
-├── translations.py         # i18n dictionary & helper (en, ja, id)
+├── translations.py         # Translation dictionary & helper functions
 ├── latest_version.json     # Version metadata for in-app update checker
 ├── plugins_manifest.json   # Plugin registry with versions & download URLs
 ├── LABOKit_Installer.iss   # Inno Setup installer script
 ├── splash.png              # Splash screen image
 ├── labokit.ico             # Application icon
 │
-├── plugins/                # .kit plugin files (Python modules)
-│   ├── ImageLAB.kit        # Built-in: Creative effects, ASCII art, glitches
-│   ├── ImageSequencer.kit  # Built-in: GIF & MP4 sequence compiler
+├── plugins/                # .kit plugin files
+│   ├── ImageLAB.kit        # Creative effects, ASCII art, glitches
+│   ├── ImageSequencer.kit  # GIF & MP4 sequence compiler
 │   └── ...                 # Additional downloadable plugins
 │
-├── models/                 # AI model weights (U2Net, etc.)
-├── ffmpeg/                 # Bundled ffmpeg.exe for video processing
-├── realesrgan_ncnn/        # Real-ESRGAN Vulkan CLI executable & models
-└── scratch/                # Developer utility scripts (make_patch.py, tests)
+├── models/                 # AI model weights
+├── ffmpeg/                 # Bundled ffmpeg executable
+├── realesrgan_ncnn/        # Real-ESRGAN Vulkan executable & models
+└── scratch/                # Utility scripts
 ```
 
-### Runtime Paths (Windows)
-
-On startup, LABOKit copies bundled assets into the user's local AppData directory for persistent access:
-
-| Asset | Location |
-|---|---|
-| AI Models (U2Net) | `%APPDATA%/LABOKit/models/` |
-| Real-ESRGAN CLI | `%APPDATA%/LABOKit/realesrgan/` |
-| FFmpeg | `%APPDATA%/LABOKit/ffmpeg/` |
-| Plugins | `%APPDATA%/LABOKit/plugins/` |
-
-> **Note:** If antivirus software blocks copying `.exe` files to AppData, LABOKit will automatically fall back to running them directly from the installation directory.
-
----
-
-## 🔧 Prerequisites
-
-* **Python 3.12** (recommended)
-* **Git**
-* A GPU with **Vulkan** support (optional, for Real-ESRGAN Vulkan mode)
-
-### Required External Assets (not in repo — `.gitignore`'d)
-
-These directories must be placed in the project root before running from source:
-
-| Directory | Contents | Source |
-|---|---|---|
-| `models/` | U2Net model weights (`.onnx`) | Auto-downloaded by `rembg` on first use |
-| `ffmpeg/` | `ffmpeg.exe` | [ffmpeg.org](https://ffmpeg.org/download.html) |
-| `realesrgan_ncnn/` | `realesrgan-ncnn-vulkan.exe` + model files | [Real-ESRGAN releases](https://github.com/xinntao/Real-ESRGAN-ncnn-vulkan/releases) |
-
----
-
-## 🚀 Running from Source
+## Running from Source
 
 1. **Clone the repository:**
    ```bash
@@ -251,8 +99,7 @@ These directories must be placed in the project root before running from source:
 2. **Create and activate a virtual environment:**
    ```bash
    python -m venv .venv
-   .venv\Scripts\activate        # Windows
-   # source .venv/bin/activate   # Linux/macOS
+   .venv\Scripts\activate
    ```
 
 3. **Install dependencies:**
@@ -264,48 +111,25 @@ These directories must be placed in the project root before running from source:
    ```bash
    python main.py
    ```
-   Or use the provided batch file:
-   ```bash
-   LABOKit.bat
-   ```
 
----
+## Building
 
-## 📦 Building
-
-### Standalone Executable (PyInstaller)
-
+### Standalone Executable
 ```bash
 .venv\Scripts\pyinstaller LABOKit.spec
 ```
 
-Output: `dist/LABOKit/LABOKit.exe`
-
-### Windows Installer (Inno Setup)
-
-Requires [Inno Setup 6](https://jrsoftware.org/isinfo.php) installed.
-
+### Windows Installer
+Requires Inno Setup 6:
 ```bash
 "C:\Program Files (x86)\Inno Setup 6\ISCC.exe" LABOKit_Installer.iss
 ```
 
-Output: `dist/LABOKit_v3.3_Setup.exe`
+## Plugin Development
 
-### Update Patch (for in-app silent updater)
+Plugins are Python modules saved with a `.kit` extension. They are loaded dynamically at startup from `%APPDATA%/LABOKit/plugins/`.
 
-```bash
-python scratch/make_patch.py
-```
-
-Output: `dist/LABOKit_v3.3_Patch.zip`
-
----
-
-## 🧩 Plugin Development
-
-Plugins are standard Python files renamed with the `.kit` extension. They are loaded dynamically at startup from `%APPDATA%/LABOKit/plugins/`.
-
-### Minimal Plugin Template
+### Plugin Template
 
 ```python
 # LABOKit Plugin: My Plugin
@@ -326,45 +150,7 @@ def create_tab(ctx=None):
     return tab
 ```
 
-### Plugin Context (`ctx`)
-
-The `create_tab(ctx)` function receives a context dictionary with:
-
-| Key | Type | Description |
-|---|---|---|
-| `tr` | `function` | Translation helper — `tr("key")` |
-| `app_data` | `Path` | `%APPDATA%/LABOKit` |
-| `plugin_dir` | `Path` | Plugin installation directory |
-
-### Installing Plugins
-
-* **Via the app:** `Config` > `Load Plugin (.kit)...`
-* **Manually:** Copy the `.kit` file into `%APPDATA%/LABOKit/plugins/`
-
----
-
-## 🤝 Contributing
-
-Contributions are welcome! Here's how to get started:
-
-1. **Fork** the repository
-2. **Create a feature branch:** `git checkout -b feature/my-feature`
-3. **Commit your changes:** `git commit -m "Add my feature"`
-4. **Push to the branch:** `git push origin feature/my-feature`
-5. **Open a Pull Request**
-
-### Guidelines
-* All heavy processing must run in a **QThread** worker to avoid freezing the GUI.
-* Use `tr("key")` for all user-facing strings (see `translations.py`).
-* Preserve existing comments and docstrings.
-* Update `CHANGELOG.md` with every change.
-
----
-
-## 📄 License & Credits
+## License & Credits
 
 This project is licensed under the [MIT License](LICENSE).
-
-See [LABOKit_NOTICE.txt](LABOKit_NOTICE.txt) for detailed license information regarding third-party components (rembg, Real-ESRGAN, Qt/PySide6, Pillow, FFmpeg, etc.).
-
-**LABOKit** is a fan-inspired tool and is not affiliated with the creators of Steins;Gate.
+See [LABOKit_NOTICE.txt](LABOKit_NOTICE.txt) for license details regarding bundled third-party libraries.

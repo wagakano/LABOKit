@@ -16,11 +16,12 @@ class UpscalerWorker(QThread):
     finished = Signal(int)
     error = Signal(str)
 
-    def __init__(self, paths, out_dir, model_name, is_python_mode, parent=None):
+    def __init__(self, paths, out_dir, model_name, scale, is_python_mode, parent=None):
         super().__init__(parent)
         self.paths = paths
         self.out_dir = out_dir
         self.model_name = model_name
+        self.scale = scale
         self.is_python_mode = is_python_mode
         self.is_running = True
 
@@ -35,40 +36,52 @@ class UpscalerWorker(QThread):
                     return
 
             cnt = 0
+            err_list = []
             for i, p in enumerate(self.paths):
                 if not self.is_running: break
                 
                 self.progress.emit(i, f"Processing {p.name}...")
                 
                 try:
-                    opath = self.out_dir / f"{p.stem}_up4x.png"
+                    opath = self.out_dir / f"{p.stem}_up{self.scale}x.png"
                     success = False
 
+                    abs_p = p.resolve()
+                    abs_opath = opath.resolve()
                     if self.is_python_mode:
-                        success = self.run_python_inference(p, opath, upsampler)
+                        success = self.run_python_inference(abs_p, abs_opath, upsampler)
                     else:
                         cmd = [
                             str(core_config.REALESRGAN_EXE), 
-                            "-i", str(p), 
-                            "-o", str(opath), 
+                            "-i", str(abs_p), 
+                            "-o", str(abs_opath), 
                             "-n", self.model_name, 
-                            "-s", "4"
+                            "-s", str(self.scale)
                         ]
                         flags = subprocess.CREATE_NO_WINDOW if sys.platform=="win32" else 0
-                        subprocess.run(cmd, capture_output=True, creationflags=flags, cwd=str(core_config.REALESRGAN_RUN_DIR))
-                        success = opath.exists()
+                        proc = subprocess.run(cmd, capture_output=True, text=True, creationflags=flags, cwd=str(core_config.REALESRGAN_RUN_DIR))
+                        if proc.returncode != 0 and proc.stderr:
+                            print(f"Vulkan Stderr ({p.name}): {proc.stderr}")
+                        success = abs_opath.exists()
 
                     if success:
                         cnt += 1
+                    else:
+                        err_list.append(f"{p.name}: Output file was not generated.")
                         
                 except Exception as e:
-                    print(f"Upscale Error: {e}")
+                    msg = f"{p.name}: {e}"
+                    print(f"Upscale Error: {msg}")
+                    err_list.append(msg)
             
-            self.finished.emit(cnt)
+            if cnt == 0 and err_list:
+                self.error.emit("\n".join(err_list))
+            else:
+                self.finished.emit(cnt)
             
         except Exception as e:
             self.error.emit(str(e))
-            
+
     def init_upsampler(self, model_name):
         if model_name in core_config.GLOBAL_UPSAMPLER_CACHE:
             return core_config.GLOBAL_UPSAMPLER_CACHE[model_name]
@@ -90,7 +103,7 @@ class UpscalerWorker(QThread):
             model = SRVGGNetCompact(num_in_ch=3, num_out_ch=3, num_feat=64, num_conv=32, upscale=4, act_type='prelu')
             
             upsampler = RealESRGANer(
-                scale=4,
+                scale=self.scale,
                 model_path=str(model_path),
                 model=model,
                 tile=400,       
@@ -115,7 +128,7 @@ class UpscalerWorker(QThread):
 
         try:
             img = cv2.imread(str(img_path), cv2.IMREAD_UNCHANGED)
-            output, _ = upsampler.enhance(img, outscale=4)
+            output, _ = upsampler.enhance(img, outscale=self.scale)
             cv2.imwrite(str(out_path), output)
             return True
 
@@ -141,14 +154,19 @@ class UpscalerTab(QWidget):
 
     def _setup_ui(self):
         outer = QVBoxLayout(self)
-        outer.setContentsMargins(8,8,8,8); outer.setSpacing(6)
-        main = QHBoxLayout(); outer.addLayout(main)
+        outer.setContentsMargins(8, 8, 8, 8)
+        outer.setSpacing(6)
+        main = QHBoxLayout()
+        outer.addLayout(main)
         
         # Left Panel (Controls)
-        left = QVBoxLayout(); main.addLayout(left, 1)
+        left = QVBoxLayout()
+        main.addLayout(left, 1)
         
         # Loaded Images Box
         list_box = QFrame()
+        list_box.setObjectName("list_box")
+        list_box.setStyleSheet("QFrame { border: 1px solid #b3bcd1; border-radius: 4px; background-color: #f5f7fb; }")
         list_box_layout = QVBoxLayout(list_box)
         list_box_layout.setContentsMargins(6, 6, 6, 6)
         list_box_layout.setSpacing(5)
@@ -158,9 +176,9 @@ class UpscalerTab(QWidget):
         self.list_w.customContextMenuRequested.connect(self.show_list_context_menu)
         self.list_w.files_dropped.connect(self.add_dropped_files)
         self.list_w.currentItemChanged.connect(self.on_item)
-        lbl = QLabel(tr("lbl_loaded_up"))
-        lbl.setStyleSheet("font-weight: bold; background-color: #e2e7f2; border: 1px solid #cbd2e1; border-radius: 3px; padding: 4px 6px; color: #333d51;")
-        list_box_layout.addWidget(lbl)
+        self.lbl_header = QLabel(tr("lbl_loaded_up"))
+        self.lbl_header.setStyleSheet("font-weight: bold; background-color: #e2e7f2; border: 1px solid #cbd2e1; border-radius: 3px; padding: 4px 6px; color: #333d51;")
+        list_box_layout.addWidget(self.lbl_header)
         list_box_layout.addWidget(self.list_w)
         
         # Buttons (Add/Clear)
@@ -288,8 +306,15 @@ class UpscalerTab(QWidget):
         out = self.output_map.get(path)
         self.preview_widget.set_images(path, out)
 
-    def resizeEvent(self, e):
-        super().resizeEvent(e)
+    def set_theme(self, theme_name):
+        if hasattr(self, 'list_w') and hasattr(self.list_w, 'set_theme'):
+            self.list_w.set_theme(theme_name)
+        if theme_name == "dark":
+            if hasattr(self, 'lbl_header'):
+                self.lbl_header.setStyleSheet("font-weight: bold; background-color: #242424; border: 1px solid #3d3d3d; border-radius: 3px; padding: 4px 6px; color: #ffffff;")
+        else:
+            if hasattr(self, 'lbl_header'):
+                self.lbl_header.setStyleSheet("font-weight: bold; background-color: #e2e7f2; border: 1px solid #cbd2e1; border-radius: 3px; padding: 4px 6px; color: #333d51;")
 
     def ensure_out(self, sample):
         if not self.output_dir:
@@ -332,6 +357,11 @@ class UpscalerTab(QWidget):
         }
         model_name = name_map.get(display_name, "realesrgan-x4plus")
         
+        try:
+            scale_val = int(self.combo_s.currentText().replace("x", ""))
+        except ValueError:
+            scale_val = 4
+
         is_python_mode = model_name.endswith(".pth")
 
         if not is_python_mode and not core_config.REALESRGAN_EXE.exists():
@@ -344,7 +374,7 @@ class UpscalerTab(QWidget):
         self.dlg.show()
         self.dlg.setValue(0)
         
-        self.worker = UpscalerWorker(paths, out, model_name, is_python_mode, self)
+        self.worker = UpscalerWorker(paths, out, model_name, scale_val, is_python_mode, self)
         self.worker.progress.connect(self.on_worker_progress)
         self.worker.finished.connect(self.on_worker_finished)
         self.worker.error.connect(self.on_worker_error)
@@ -364,12 +394,15 @@ class UpscalerTab(QWidget):
         
         # Use the directory the worker actually wrote to
         actual_out_dir = self.worker.out_dir
+        scale = getattr(self.worker, 'scale', 4)
         
         # Update output map
         for p in self.image_paths:
-             opath = actual_out_dir / f"{p.stem}_up4x.png"
-             if opath.exists():
-                 self.output_map[p] = opath
+            opath = actual_out_dir / f"{p.stem}_up{scale}x.png"
+            if not opath.exists():
+                opath = actual_out_dir / f"{p.stem}_up4x.png"
+            if opath.exists():
+                self.output_map[p] = opath
 
         QMessageBox.information(self, tr("msg_done"), f"Upscaled {cnt} images.\nFolder: {actual_out_dir}")
         if self.list_w.currentItem(): self.on_item(self.list_w.currentItem(), None)

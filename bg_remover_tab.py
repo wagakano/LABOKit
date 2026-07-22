@@ -27,6 +27,8 @@ class BgRemovalWorker(QThread):
             import rembg
             from rembg import new_session
             
+            self.progress.emit(0, f"Loading model ({self.model_name})...")
+            
             # Create session (with cache lookup)
             if self.model_name in core_config.GLOBAL_REMBG_SESSION_CACHE:
                 session = core_config.GLOBAL_REMBG_SESSION_CACHE[self.model_name]
@@ -35,10 +37,11 @@ class BgRemovalWorker(QThread):
                 core_config.GLOBAL_REMBG_SESSION_CACHE[self.model_name] = session
             
             cnt = 0
+            err_list = []
             for i, p in enumerate(self.paths):
                 if not self.is_running: break
                 
-                self.progress.emit(i, f"Processing {p.name}...")
+                self.progress.emit(i, f"Processing {p.name} ({i+1}/{len(self.paths)})...")
                 
                 try:
                     res = rembg.remove(p.read_bytes(), session=session, **self.preset)
@@ -46,9 +49,14 @@ class BgRemovalWorker(QThread):
                     opath.write_bytes(res)
                     cnt += 1
                 except Exception as e:
-                    print(f"Error processing {p.name}: {e}")
+                    msg = f"{p.name}: {e}"
+                    print(f"Error processing {msg}")
+                    err_list.append(msg)
             
-            self.finished.emit(cnt)
+            if cnt == 0 and err_list:
+                self.error.emit("\n".join(err_list))
+            else:
+                self.finished.emit(cnt)
             
         except Exception as e:
             self.error.emit(str(e))
@@ -71,14 +79,19 @@ class BgRemoverTab(QWidget):
 
     def _setup_ui(self):
         outer = QVBoxLayout(self)
-        outer.setContentsMargins(8,8,8,8); outer.setSpacing(6)
-        main = QHBoxLayout(); outer.addLayout(main)
+        outer.setContentsMargins(8, 8, 8, 8)
+        outer.setSpacing(6)
+        main = QHBoxLayout()
+        outer.addLayout(main)
         
         # Left Panel (Controls)
-        left = QVBoxLayout(); main.addLayout(left, 1)
+        left = QVBoxLayout()
+        main.addLayout(left, 1)
         
         # Loaded Images Box
         list_box = QFrame()
+        list_box.setObjectName("list_box")
+        list_box.setStyleSheet("QFrame { border: 1px solid #b3bcd1; border-radius: 4px; background-color: #f5f7fb; }")
         list_box_layout = QVBoxLayout(list_box)
         list_box_layout.setContentsMargins(6, 6, 6, 6)
         list_box_layout.setSpacing(5)
@@ -88,9 +101,9 @@ class BgRemoverTab(QWidget):
         self.list_w.customContextMenuRequested.connect(self.show_list_context_menu)
         self.list_w.files_dropped.connect(self.add_dropped_files)
         self.list_w.currentRowChanged.connect(self.on_file_selected)
-        lbl = QLabel(tr("lbl_loaded_bg"))
-        lbl.setStyleSheet("font-weight: bold; background-color: #e2e7f2; border: 1px solid #cbd2e1; border-radius: 3px; padding: 4px 6px; color: #333d51;")
-        list_box_layout.addWidget(lbl)
+        self.lbl_header = QLabel(tr("lbl_loaded_bg"))
+        self.lbl_header.setStyleSheet("font-weight: bold; background-color: #e2e7f2; border: 1px solid #cbd2e1; border-radius: 3px; padding: 4px 6px; color: #333d51;")
+        list_box_layout.addWidget(self.lbl_header)
         list_box_layout.addWidget(self.list_w)
         
         # Buttons (Add/Clear)
@@ -215,8 +228,15 @@ class BgRemoverTab(QWidget):
         out = self.output_map.get(path)
         self.preview_widget.set_images(path, out)
 
-    def resizeEvent(self, e):
-        super().resizeEvent(e)
+    def set_theme(self, theme_name):
+        if hasattr(self, 'list_w') and hasattr(self.list_w, 'set_theme'):
+            self.list_w.set_theme(theme_name)
+        if theme_name == "dark":
+            if hasattr(self, 'lbl_header'):
+                self.lbl_header.setStyleSheet("font-weight: bold; background-color: #242424; border: 1px solid #3d3d3d; border-radius: 3px; padding: 4px 6px; color: #ffffff;")
+        else:
+            if hasattr(self, 'lbl_header'):
+                self.lbl_header.setStyleSheet("font-weight: bold; background-color: #e2e7f2; border: 1px solid #cbd2e1; border-radius: 3px; padding: 4px 6px; color: #333d51;")
 
     def on_preset(self, n): self.current_preset_name = n
 

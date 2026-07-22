@@ -82,7 +82,7 @@ def resource_path(relative_path):
     return os.path.join(base_path, relative_path)
 
 # --- APP INFO ---
-APP_VERSION = "3.3.1"
+APP_VERSION = "3.3.2"
 APP_UPDATE_URL = "https://raw.githubusercontent.com/wagakano/LABOKit/main_windows/latest_version.json"
 PLUGIN_MANIFEST_URL = "https://raw.githubusercontent.com/wagakano/LABOKit/main_windows/plugins_manifest.json"
 
@@ -97,6 +97,29 @@ if not _app_data:
 APP_DATA = Path(_app_data) / "LABOKit"
 APP_DATA.mkdir(parents=True, exist_ok=True)
 
+# 3. Settings Persistence
+SETTINGS_FILE = APP_DATA / "settings.json"
+
+def load_settings():
+    import json
+    default_settings = {"theme": "light"}
+    if SETTINGS_FILE.exists():
+        try:
+            with open(SETTINGS_FILE, "r", encoding="utf-8") as f:
+                data = json.load(f)
+                default_settings.update(data)
+        except Exception as e:
+            print(f"Error loading settings: {e}")
+    return default_settings
+
+def save_settings(settings):
+    import json
+    try:
+        with open(SETTINGS_FILE, "w", encoding="utf-8") as f:
+            json.dump(settings, f, indent=2)
+    except Exception as e:
+        print(f"Error saving settings: {e}")
+
 MODEL_DIR = APP_DATA / "models"
 REALESRGAN_DIR = APP_DATA / "realesrgan"
 PLUGIN_DIR = APP_DATA / "plugins"
@@ -104,6 +127,51 @@ FFMPEG_DIR = APP_DATA / "ffmpeg"
 
 # Setup Environment Variables
 os.environ["U2NET_HOME"] = str(MODEL_DIR)
+
+def cleanup_temp_model_files():
+    if MODEL_DIR.exists():
+        for f in MODEL_DIR.glob("tmp*"):
+            try:
+                if f.is_file(): f.unlink()
+                elif f.is_dir(): shutil.rmtree(f, ignore_errors=True)
+            except Exception:
+                pass
+
+cleanup_temp_model_files()
+
+ARROW_LIGHT_PATH = APP_DATA / "arrow_light.png"
+ARROW_DARK_PATH = APP_DATA / "arrow_dark.png"
+
+def ensure_arrow_icons():
+    try:
+        from PySide6.QtGui import QImage, QPainter, QColor, QPolygon
+        from PySide6.QtCore import Qt, QPoint
+
+        if not ARROW_LIGHT_PATH.exists():
+            img_light = QImage(9, 6, QImage.Format_ARGB32)
+            img_light.fill(QColor(0,0,0,0))
+            p = QPainter(img_light)
+            p.setRenderHint(QPainter.Antialiasing)
+            p.setBrush(QColor(0, 0, 0))
+            p.setPen(Qt.NoPen)
+            p.drawPolygon(QPolygon([QPoint(0, 1), QPoint(8, 1), QPoint(4, 5)]))
+            p.end()
+            img_light.save(str(ARROW_LIGHT_PATH))
+
+        if not ARROW_DARK_PATH.exists():
+            img_dark = QImage(9, 6, QImage.Format_ARGB32)
+            img_dark.fill(QColor(0,0,0,0))
+            p = QPainter(img_dark)
+            p.setRenderHint(QPainter.Antialiasing)
+            p.setBrush(QColor(255, 255, 255))
+            p.setPen(Qt.NoPen)
+            p.drawPolygon(QPolygon([QPoint(0, 1), QPoint(8, 1), QPoint(4, 5)]))
+            p.end()
+            img_dark.save(str(ARROW_DARK_PATH))
+    except Exception as e:
+        print(f"Failed to generate arrow icons: {e}")
+
+ensure_arrow_icons()
 
 # Fallback: check if the executable exists in AppData, if not use the bundled version directly
 _realesrgan_exe_appdata = REALESRGAN_DIR / "realesrgan-ncnn-vulkan.exe"

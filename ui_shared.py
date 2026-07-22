@@ -22,17 +22,26 @@ class FileDropListWidget(QListWidget):
     def __init__(self, parent=None):
         super().__init__(parent)
         self.setAcceptDrops(True)
+        self.current_theme = "light"
+
+    def set_theme(self, theme_name):
+        self.current_theme = theme_name
+        if self.viewport():
+            self.viewport().update()
 
     def dragEnterEvent(self, event):
         if event.mimeData().hasUrls():
-            self.setStyleSheet("background-color: #e0e5f0; border: 2px dashed #4b556b;")
-            event.accept()
+            event.acceptProposedAction()
+            if self.current_theme == "dark":
+                self.setStyleSheet("background-color: #242424; border: 2px dashed #ffffff;")
+            else:
+                self.setStyleSheet("background-color: #e0e5f0; border: 2px dashed #4b556b;")
         else:
             event.ignore()
 
     def dragMoveEvent(self, event):
         if event.mimeData().hasUrls():
-            event.accept()
+            event.acceptProposedAction()
         else:
             event.ignore()
 
@@ -57,7 +66,8 @@ class FileDropListWidget(QListWidget):
         super().paintEvent(event)
         if self.count() == 0:
             painter = QPainter(self.viewport())
-            painter.setPen(QColor(153, 153, 153))
+            pen_col = QColor(166, 173, 200) if getattr(self, "current_theme", "light") == "dark" else QColor(120, 120, 120)
+            painter.setPen(pen_col)
             font = painter.font()
             font.setItalic(True)
             painter.setFont(font)
@@ -427,17 +437,8 @@ class DivergenceMeter(QFrame):
     def __init__(self, parent=None):
         super().__init__(parent)
         self.setObjectName("PixelBar")
-        self.setStyleSheet("""
-            #PixelBar { background-color: #dde4f5; border-radius: 6px; border: 1px solid #b3bcd1; }
-            QLabel { color: #4b556b; font-family: 'Consolas'; font-size: 9pt; background: transparent; }
-            QLabel#StatusBox { 
-                background-color: #cbd5e1; 
-                border: 1px solid #94a3b8; 
-                border-radius: 4px;
-                color: #334155;
-                padding-left: 8px;
-            }
-        """)
+        self.current_theme = "light"
+        self._apply_style()
         
         self._layout = QHBoxLayout(self)
         self._layout.setContentsMargins(10,3,10,4)
@@ -457,6 +458,7 @@ class DivergenceMeter(QFrame):
         font = QFont("Consolas", 9)
         for _ in range(8):
             l = QLabel("0.000000α")
+            l.setObjectName("NumberBox")
             l.setFont(font)
             self.labels.append(l)
             self._layout.addWidget(l)
@@ -515,6 +517,46 @@ class DivergenceMeter(QFrame):
         # polling psutil at 30ms while the worker is busy
         if not self.override_message and self._running_index % 30 == 0:
             self._update_status_box()
+
+    def set_theme(self, theme_name):
+        self.current_theme = theme_name
+        self._apply_style()
+
+    def _apply_style(self):
+        if self.current_theme == "dark":
+            self.setStyleSheet("""
+                #PixelBar { 
+                    background-color: #181818; 
+                    border: none;
+                    border-radius: 0px;
+                }
+                QLabel { color: #a0a0a0; font-family: 'Consolas'; font-size: 9pt; background: transparent; }
+                QLabel#NumberBox, QLabel#StatusBox { 
+                    background-color: #242424; 
+                    border: 1px solid #3d3d3d; 
+                    border-radius: 4px;
+                    color: #ffffff;
+                    padding-left: 6px;
+                    padding-right: 6px;
+                }
+            """)
+        else:
+            self.setStyleSheet("""
+                #PixelBar { 
+                    background-color: #dde4f5; 
+                    border: none;
+                    border-radius: 0px;
+                }
+                QLabel { color: #4b556b; font-family: 'Consolas'; font-size: 9pt; background: transparent; }
+                QLabel#NumberBox, QLabel#StatusBox { 
+                    background-color: #cbd5e1; 
+                    border: 1px solid #94a3b8; 
+                    border-radius: 4px;
+                    color: #334155;
+                    padding-left: 6px;
+                    padding-right: 6px;
+                }
+            """)
 
 
 def create_plus_icon():

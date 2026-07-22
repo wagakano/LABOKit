@@ -20,4 +20,7 @@ SKILLS.md
 LABOKit Plugins/
 plugins/
 *.kit
+labokit_vector/
+scratch/
+crash_log.txt
 

@@ -237,6 +237,16 @@ class ImageSequencerPlugin(QWidget):
         
         self.init_ui()
 
+    def set_theme(self, theme_name):
+        if hasattr(self, 'list_w') and hasattr(self.list_w, 'set_theme'):
+            self.list_w.set_theme(theme_name)
+        if theme_name == "dark":
+            if hasattr(self, 'lbl_loaded'):
+                self.lbl_loaded.setStyleSheet("font-weight: bold; background-color: #242424; border: 1px solid #3d3d3d; border-radius: 3px; padding: 4px 6px; color: #ffffff;")
+        else:
+            if hasattr(self, 'lbl_loaded'):
+                self.lbl_loaded.setStyleSheet("font-weight: bold; background-color: #e2e7f2; border: 1px solid #cbd2e1; border-radius: 3px; padding: 4px 6px; color: #333d51;")
+
     def set_meter(self, meter):
         self.meter = meter
 
@@ -254,13 +264,15 @@ class ImageSequencerPlugin(QWidget):
 
         # Loaded list
         list_box = QFrame()
+        list_box.setObjectName("list_box")
+        list_box.setStyleSheet("QFrame { border: 1px solid #b3bcd1; border-radius: 4px; background-color: #f5f7fb; }")
         list_box_layout = QVBoxLayout(list_box)
         list_box_layout.setContentsMargins(6, 6, 6, 6)
         list_box_layout.setSpacing(5)
 
-        lbl_loaded = QLabel(tr("lbl_loaded_seq", "LOADED IMAGES:"))
-        lbl_loaded.setStyleSheet("font-weight: bold; background-color: #e2e7f2; border: 1px solid #cbd2e1; border-radius: 3px; padding: 4px 6px; color: #333d51;")
-        list_box_layout.addWidget(lbl_loaded)
+        self.lbl_loaded = QLabel(tr("lbl_loaded_seq", "LOADED IMAGES:"))
+        self.lbl_loaded.setStyleSheet("font-weight: bold; background-color: #e2e7f2; border: 1px solid #cbd2e1; border-radius: 3px; padding: 4px 6px; color: #333d51;")
+        list_box_layout.addWidget(self.lbl_loaded)
 
         self.list_w = FileDropListWidget()
         self.list_w.files_dropped.connect(self.add_dropped_files)
@@ -349,29 +361,25 @@ class ImageSequencerPlugin(QWidget):
         self.btn_run.clicked.connect(self.start_process)
         left_layout.addWidget(self.btn_run)
 
-        # === RIGHT PANEL (Preview & Log) ===
-        right_layout = QVBoxLayout()
-        main_layout.addLayout(right_layout, 2)
-
-        l_preview = QLabel("Preview / Progress:")
-        l_preview.setStyleSheet("font-weight: bold; border: none; background: transparent;")
-        right_layout.addWidget(l_preview)
-
-        self.preview_widget = ZoomableImageWidget()
-        right_layout.addWidget(self.preview_widget, stretch=3)
-
+        # Add log and progress to left panel (after btn_run)
         self.log_text = QPlainTextEdit()
         self.log_text.setReadOnly(True)
-        self.log_text.setPlaceholderText("Process logs will appear here.")
-        self.log_text.setFixedHeight(120)
-        right_layout.addWidget(self.log_text)
+        self.log_text.setFixedHeight(100)
+        left_layout.addWidget(self.log_text)
 
         self.progress_bar = QProgressBar()
         self.progress_bar.setValue(0)
         self.progress_bar.setTextVisible(False)
         self.progress_bar.setFixedHeight(6)
         self.progress_bar.setStyleSheet("QProgressBar { border: 1px solid #dbe2f2; border-radius: 3px; background: white; height: 10px; } QProgressBar::chunk { background-color: #5a6b8c; }")
-        right_layout.addWidget(self.progress_bar)
+        left_layout.addWidget(self.progress_bar)
+
+        # === RIGHT PANEL (Preview) ===
+        right_layout = QVBoxLayout()
+        main_layout.addLayout(right_layout, 3)
+
+        self.preview_widget = ZoomableImageWidget()
+        right_layout.addWidget(self.preview_widget)
 
     # --- UI EVENT HANDLERS ---
     def add_images(self):
