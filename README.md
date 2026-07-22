@@ -1,6 +1,6 @@
 <div align="center">
 
-# LABOKit 3.3.2 - Stable
+# LABOKit 3.3.2
 
 <img width="1796" height="523" alt="LABOKit Banner" src="https://github.com/user-attachments/assets/2f0b033f-3cfb-4d59-b124-379dcef14b39" />
 
