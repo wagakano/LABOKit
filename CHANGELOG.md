@@ -22,6 +22,10 @@ All notable changes and updates made during this development cycle for the relea
 * **Processing Freezes**: Throttled Divergence Meter active timer interval to `60ms` in `ui_shared.py` to prevent event queue flooding, resolving application lockups and responsiveness issues.
 * **Rounded Window Border Clipping**: Set `1px` content margins on the central outer layout in `main.py` to prevent the frameless window mask from clipping the rounded corners of `#MainFrame`.
 * **Model Download Prompts**: Removed non-bundled background remover models (`Performance` and `Human Portrait`) from combo box options in `bg_remover_tab.py` to ensure the application works fully offline without download prompts.
+* **Model Restorations**: Restored "Performance" and "Human Portrait" background removal models to the combo box options and pre-packaged their `.onnx` weights into the local build assets to ensure full offline support.
+* **Animation Warning Hint**: Added an italicized instruction label in Dithering FX's Animation panel to remind users to preview animations using the "Preview GIF" button.
+* **ImageLAB & QRCodeGenerator Bugfixes**: Decoupled the text changed signal connections during widget initialization to resolve runtime AttributeError issues, restoring full functionality to both tabs.
+* **Loaded Images Dark Theme universalization**: Explicitly targeted `FileDropListWidget` and its viewports in both local widget styles and parent frame scoped sheets to eliminate all remaining light background and border leaks in Dark Mode.
 
 ### Changed
 * **Documentation Clean-Up**: Removed release changelogs from `README.md` (moved exclusively to GitHub Releases descriptions), removed all emojis, and rewrote documentation with clear, natural language without AI buzzwords.

@@ -157,8 +157,8 @@ def deploy_assets():
                 print(f"Failed to deploy built-in {item.name}: {e}")
 
     # 4b. Local Plugins for Development/Testing
-    # If there is a local 'LABOKit Plugins/3.0' directory, copy the plugins to PLUGIN_DIR
-    local_dev_plugins = Path(__file__).resolve().parent / "LABOKit Plugins" / "3.0"
+    # If there is a local 'plugins' directory, copy the plugins to PLUGIN_DIR
+    local_dev_plugins = Path(__file__).resolve().parent / "plugins"
     if local_dev_plugins.exists():
         PLUGIN_DIR.mkdir(exist_ok=True)
         for item in local_dev_plugins.glob("*.kit"):

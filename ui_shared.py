@@ -34,14 +34,28 @@ class FileDropListWidget(QListWidget):
     def update_style(self, dragging=False):
         if self.current_theme == "dark":
             if dragging:
-                self.setStyleSheet("QListWidget, QListWidget::viewport { background-color: #22222c; border: 2px dashed #89b4fa; color: #e1e1e6; outline: 0; }")
+                self.setStyleSheet("""
+                    FileDropListWidget, QListWidget { background-color: #22222c; border: 2px dashed #89b4fa; color: #e1e1e6; outline: 0; }
+                    FileDropListWidget::viewport, QListWidget::viewport { background-color: #22222c; color: #e1e1e6; }
+                """)
             else:
-                self.setStyleSheet("QListWidget, QListWidget::viewport { background-color: #16161a; border: 1px solid #2e2e38; color: #e1e1e6; outline: 0; } QListWidget::item:selected { background-color: #323242; color: #ffffff; }")
+                self.setStyleSheet("""
+                    FileDropListWidget, QListWidget { background-color: #16161a; border: 1px solid #2e2e38; color: #e1e1e6; outline: 0; }
+                    FileDropListWidget::viewport, QListWidget::viewport { background-color: #16161a; color: #e1e1e6; }
+                    FileDropListWidget::item:selected, QListWidget::item:selected { background-color: #323242; color: #ffffff; }
+                """)
         else:
             if dragging:
-                self.setStyleSheet("QListWidget, QListWidget::viewport { background-color: #e0e5f0; border: 2px dashed #4b556b; color: #1c2333; outline: 0; }")
+                self.setStyleSheet("""
+                    FileDropListWidget, QListWidget { background-color: #e0e5f0; border: 2px dashed #4b556b; color: #1c2333; outline: 0; }
+                    FileDropListWidget::viewport, QListWidget::viewport { background-color: #e0e5f0; color: #1c2333; }
+                """)
             else:
-                self.setStyleSheet("QListWidget, QListWidget::viewport { background-color: #ffffff; border: 1px solid #b3bcd1; color: #1c2333; outline: 0; } QListWidget::item:selected { background-color: #cce0ff; color: #1c2333; }")
+                self.setStyleSheet("""
+                    FileDropListWidget, QListWidget { background-color: #ffffff; border: 1px solid #b3bcd1; color: #1c2333; outline: 0; }
+                    FileDropListWidget::viewport, QListWidget::viewport { background-color: #ffffff; color: #1c2333; }
+                    FileDropListWidget::item:selected, QListWidget::item:selected { background-color: #cce0ff; color: #1c2333; }
+                """)
 
     def dragEnterEvent(self, event):
         if event.mimeData().hasUrls():
