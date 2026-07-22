@@ -177,7 +177,8 @@ class UpscalerTab(QWidget):
         # Loaded Images Box
         self.list_box = QFrame()
         self.list_box.setObjectName("list_box")
-        self.list_box.setStyleSheet("QFrame { border: 1px solid #b3bcd1; border-radius: 4px; background-color: #f5f7fb; }")
+        self.list_box.setAttribute(Qt.WA_StyledBackground, True)
+        self.list_box.setStyleSheet("#list_box { border: 1px solid #b3bcd1; border-radius: 4px; background-color: #f5f7fb; }")
         list_box_layout = QVBoxLayout(self.list_box)
         list_box_layout.setContentsMargins(6, 6, 6, 6)
         list_box_layout.setSpacing(5)
@@ -256,12 +257,12 @@ class UpscalerTab(QWidget):
     def set_theme(self, theme_name):
         if theme_name == "dark":
             self.lbl_header.setStyleSheet("font-weight: bold; background-color: #22222a; border: 1px solid #2e2e38; border-radius: 3px; padding: 4px 6px; color: #e1e1e6;")
-            self.list_box.setStyleSheet("QFrame { border: 1px solid #2e2e38; border-radius: 4px; background-color: #16161a; }")
+            self.list_box.setStyleSheet("#list_box { border: 1px solid #2e2e38; border-radius: 4px; background-color: #16161a; }")
             if hasattr(self, 'list_w') and hasattr(self.list_w, 'set_theme'):
                 self.list_w.set_theme("dark")
         else:
             self.lbl_header.setStyleSheet("font-weight: bold; background-color: #e2e7f2; border: 1px solid #cbd2e1; border-radius: 3px; padding: 4px 6px; color: #333d51;")
-            self.list_box.setStyleSheet("QFrame { border: 1px solid #b3bcd1; border-radius: 4px; background-color: #f5f7fb; }")
+            self.list_box.setStyleSheet("#list_box { border: 1px solid #b3bcd1; border-radius: 4px; background-color: #f5f7fb; }")
             if hasattr(self, 'list_w') and hasattr(self.list_w, 'set_theme'):
                 self.list_w.set_theme("light")
 
@@ -328,16 +329,6 @@ class UpscalerTab(QWidget):
         self.view_path = path
         out = self.output_map.get(path)
         self.preview_widget.set_images(path, out)
-
-    def set_theme(self, theme_name):
-        if hasattr(self, 'list_w') and hasattr(self.list_w, 'set_theme'):
-            self.list_w.set_theme(theme_name)
-        if theme_name == "dark":
-            if hasattr(self, 'lbl_header'):
-                self.lbl_header.setStyleSheet("font-weight: bold; background-color: #242424; border: 1px solid #3d3d3d; border-radius: 3px; padding: 4px 6px; color: #ffffff;")
-        else:
-            if hasattr(self, 'lbl_header'):
-                self.lbl_header.setStyleSheet("font-weight: bold; background-color: #e2e7f2; border: 1px solid #cbd2e1; border-radius: 3px; padding: 4px 6px; color: #333d51;")
 
     def ensure_out(self, sample):
         if not self.output_dir:
