@@ -93,10 +93,10 @@ class BgRemoverTab(QWidget):
         main.addLayout(left, 1)
         
         # Loaded Images Box
-        list_box = QFrame()
-        list_box.setObjectName("list_box")
-        list_box.setStyleSheet("QFrame { border: 1px solid #b3bcd1; border-radius: 4px; background-color: #f5f7fb; }")
-        list_box_layout = QVBoxLayout(list_box)
+        self.list_box = QFrame()
+        self.list_box.setObjectName("list_box")
+        self.list_box.setStyleSheet("QFrame { border: 1px solid #b3bcd1; border-radius: 4px; background-color: #f5f7fb; }")
+        list_box_layout = QVBoxLayout(self.list_box)
         list_box_layout.setContentsMargins(6, 6, 6, 6)
         list_box_layout.setSpacing(5)
         
@@ -117,7 +117,17 @@ class BgRemoverTab(QWidget):
         btns.addWidget(b_add); btns.addWidget(b_clr)
         list_box_layout.addLayout(btns)
         
-        left.addWidget(list_box)
+        left.addWidget(self.list_box)
+
+    def set_theme(self, theme_name):
+        if theme_name == "dark":
+            self.lbl_header.setStyleSheet("font-weight: bold; background-color: #252538; border: 1px solid #313244; border-radius: 3px; padding: 4px 6px; color: #cdd6f4;")
+            self.list_box.setStyleSheet("QFrame { border: 1px solid #313244; border-radius: 4px; background-color: #1e1e2e; }")
+            self.list_w.setStyleSheet("QListWidget { background-color: #181825; border: 1px solid #313244; color: #cdd6f4; outline: 0; } QListWidget::item:selected { background-color: #313244; color: #ffffff; }")
+        else:
+            self.lbl_header.setStyleSheet("font-weight: bold; background-color: #e2e7f2; border: 1px solid #cbd2e1; border-radius: 3px; padding: 4px 6px; color: #333d51;")
+            self.list_box.setStyleSheet("QFrame { border: 1px solid #b3bcd1; border-radius: 4px; background-color: #f5f7fb; }")
+            self.list_w.setStyleSheet("QListWidget { background-color: #ffffff; border: 1px solid #b3bcd1; color: #1c2333; outline: 0; } QListWidget::item:selected { background-color: #cce0ff; color: #1c2333; }")
 
         # Divider
         line = QFrame()

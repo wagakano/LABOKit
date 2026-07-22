@@ -487,7 +487,7 @@ class DivergenceMeter(QFrame):
         else:
             self.timer.setInterval(120)
 
-    SPINNER_CHARS = ["⏳", "⌛"]
+    SPINNER_CHARS = ["|", "/", "-", "\\"]
 
     def _update_status_box(self):
         if self.override_message:
