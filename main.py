@@ -271,15 +271,7 @@ class CustomTitleBar(QWidget):
             """)
         else:
             self.title_lbl.setStyleSheet("font-weight: bold; color: #333; border: none; background: transparent;")
-            self.setStyleSheet("""
-                CustomTitleBar {
-                    background: qlineargradient(x1:0, y1:0, x2:0, y2:1,
-                                                stop:0 #f0f0f0, 
-                                                stop:0.5 #dcdcdc,
-                                                stop:1 #b0b0b0);
-                    border: none;
-                }
-            """)
+            self.setStyleSheet("")
 
     def mousePressEvent(self, event):
         if event.button() == Qt.LeftButton:
@@ -403,7 +395,8 @@ class LABOKitMainWindow(QMainWindow):
         self.setWindowFlags(Qt.FramelessWindowHint)
         
         self.central_container = QWidget()
-        self.central_container.setStyleSheet("background: transparent;")
+        self.central_container.setObjectName("central_container")
+        self.central_container.setStyleSheet("#central_container { background: transparent; }")
         self.setCentralWidget(self.central_container)
         
         self.outer_layout = QVBoxLayout(self.central_container)
