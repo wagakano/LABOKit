@@ -15,6 +15,18 @@ LABOKit is a modular desktop tool for offline batch image processing. Built with
 
 ---
 
+## What's New in LABOKit 3.3.2
+
+- **Theme Engine**: Added dynamic Light Mode and Dark Mode theme engine with persistent state storage in settings.
+- **Window Resizability & Native Border Dragging**: Made main window resizable with double-click titlebar toggle, Maximize/Restore button control, and native Windows border hit-testing.
+- **PyInstaller Windowed EBADF Crashfix**: Resolved a crash on startup in `--noconsole` environments by introducing a global safe stream redirection.
+- **Processing Freezes Throttled**: Decelerated the Divergence Meter status spinner refresh rate to prevent event queue starvation, resolving app lockups during batch runs.
+- **Model Restorations**: Restored the `"Performance"` (`u2netp`) and `"Human Portrait"` (`silueta`) background remover models as pre-packaged offline weights.
+- **UI Harmonization**: Standardized list box components, scrollbars, dialog backgrounds, and buttons universally across all core tabs and plugins.
+- **Dithering FX Animation Hint**: Added clear warning guidance in the Animation page to preview custom patterns and noise animations via the "Preview GIF" button.
+
+---
+
 ## Features
 
 - **Batch Background Removal:** Powered by `rembg`.
