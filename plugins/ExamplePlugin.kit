@@ -1,0 +1,284 @@
+# ExamplePlugin.kit
+# LABOKit Example Developer Plugin
+# Shows how to build a custom plugin with async processing, translations, and theme support.
+
+import os
+from pathlib import Path
+from PySide6.QtCore import Qt, QThread, Signal
+from PySide6.QtWidgets import (
+    QWidget, QHBoxLayout, QVBoxLayout, QPushButton, QLabel,
+    QSlider, QFrame, QFileDialog, QMessageBox
+)
+from PIL import Image, ImageFilter
+
+# ----------------------------------------------------------------------
+# 1. Plugin Metadata & Hooks
+# ----------------------------------------------------------------------
+PLUGIN_NAME = "Example Plugin"
+PLUGIN_VERSION = "1.0"
+HELP_TEXT = "A developer guide plugin showing how to blur and vignette images using a background QThread."
+
+# The main entry point called by the dynamic plugin loader in main.py
+def create_tab(parent=None):
+    return ExamplePluginTab(parent)
+
+# The main window will inject its global translation helper here
+def tr(key):
+    # Fallback to local translation or identity if the loader hasn't injected it yet
+    global tr_func
+    if 'tr_func' in globals():
+        return tr_func(key)
+    return key
+
+# ----------------------------------------------------------------------
+# 2. Asynchronous Worker Thread
+# ----------------------------------------------------------------------
+class ProcessingWorker(QThread):
+    progress = Signal(int)
+    log_message = Signal(str)
+    finished = Signal(list)
+
+    def __init__(self, file_paths, blur_radius, vignette_strength):
+        super().__init__()
+        self.file_paths = file_paths
+        self.blur_radius = blur_radius
+        self.vignette_strength = vignette_strength
+
+    def run(self):
+        output_files = []
+        total_files = len(self.file_paths)
+        
+        self.log_message.emit(f"Starting processing of {total_files} file(s)...")
+        
+        for idx, path_str in enumerate(self.file_paths):
+            try:
+                img_path = Path(path_str)
+                self.log_message.emit(f"Processing: {img_path.name}")
+                
+                # Load image
+                img = Image.open(img_path).convert("RGBA")
+                
+                # Apply Blur if strength > 0
+                if self.blur_radius > 0:
+                    img = img.filter(ImageFilter.GaussianBlur(self.blur_radius))
+                
+                # Apply Vignette if strength > 0
+                if self.vignette_strength > 0:
+                    width, height = img.size
+                    # Create vignette mask
+                    mask = Image.new("L", (width, height), 255)
+                    # Draw a simple radial gradient mask
+                    import math
+                    cx, cy = width / 2, height / 2
+                    max_dist = math.sqrt(cx**2 + cy**2)
+                    
+                    pixels = mask.load()
+                    for y in range(height):
+                        for x in range(width):
+                            dist = math.sqrt((x - cx)**2 + (y - cy)**2)
+                            factor = dist / max_dist
+                            intensity = int(255 * (1.0 - factor * (self.vignette_strength / 100.0)))
+                            pixels[x, y] = max(0, min(255, intensity))
+                    
+                    # Blend the original with black using the mask
+                    black = Image.new("RGBA", img.size, (0, 0, 0, 255))
+                    img = Image.composite(img, black, mask)
+                
+                # Save processed image to the same folder as a new file
+                out_path = img_path.parent / f"processed_{img_path.name}"
+                img.save(out_path)
+                output_files.append(str(out_path))
+                
+                self.progress.emit(int(((idx + 1) / total_files) * 100))
+                
+            except Exception as e:
+                self.log_message.emit(f"Error processing {path_str}: {e}")
+        
+        self.log_message.emit("All processing finished successfully!")
+        self.finished.emit(output_files)
+
+# ----------------------------------------------------------------------
+# 3. Main Plugin User Interface
+# ----------------------------------------------------------------------
+class ExamplePluginTab(QWidget):
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        self.parent = parent
+        self.meter = None  # Will be set via set_meter(self, meter)
+        
+        # Import reusable widgets from ui_shared
+        from ui_shared import FileDropListWidget
+        self.file_list = FileDropListWidget()
+        
+        self._setup_ui()
+        
+        # Sync with main window theme if available
+        if parent and hasattr(parent, 'current_theme'):
+            self.set_theme(parent.current_theme)
+
+    def _setup_ui(self):
+        # We wrap the content in a styled container frame so it matches core layout styles
+        self.content_frame = QFrame(self)
+        self.content_frame.setObjectName("ExamplePluginContent")
+        
+        # Scoped stylesheet configuration for light and dark themes
+        self.content_frame.setStyleSheet("""
+            #ExamplePluginContent { background: transparent; border: none; }
+            #ExamplePluginContent QLabel { font-family: 'Segoe UI', Arial; }
+        """)
+        
+        # 1:3 horizontal layout split
+        main_layout = QHBoxLayout(self)
+        main_layout.setContentsMargins(10, 10, 10, 10)
+        main_layout.addWidget(self.content_frame)
+        
+        content_layout = QHBoxLayout(self.content_frame)
+        content_layout.setContentsMargins(0, 0, 0, 0)
+        content_layout.setSpacing(15)
+        
+        # Left Setting Container (1 portion)
+        left_panel = QFrame()
+        left_panel.setObjectName("left_panel")
+        left_layout = QVBoxLayout(left_panel)
+        left_layout.setContentsMargins(12, 12, 12, 12)
+        left_layout.setSpacing(15)
+        
+        # Control Sliders
+        lbl_blur = QLabel("Blur Radius:")
+        self.slider_blur = QSlider(Qt.Horizontal)
+        self.slider_blur.setRange(0, 20)
+        self.slider_blur.setValue(5)
+        
+        lbl_vignette = QLabel("Vignette Strength (%):")
+        self.slider_vignette = QSlider(Qt.Horizontal)
+        self.slider_vignette.setRange(0, 100)
+        self.slider_vignette.setValue(30)
+        
+        # Action Buttons
+        self.btn_process = QPushButton("Process Images")
+        self.btn_process.clicked.connect(self.start_processing)
+        
+        self.btn_clear = QPushButton("Clear List")
+        self.btn_clear.clicked.connect(self.file_list.clear)
+        
+        # Progress label & logs
+        self.lbl_status = QLabel("Ready")
+        self.lbl_status.setAlignment(Qt.AlignCenter)
+        self.lbl_status.setStyleSheet("font-weight: bold;")
+        
+        left_layout.addWidget(lbl_blur)
+        left_layout.addWidget(self.slider_blur)
+        left_layout.addWidget(lbl_vignette)
+        left_layout.addWidget(self.slider_vignette)
+        left_layout.addStretch()
+        left_layout.addWidget(self.lbl_status)
+        left_layout.addWidget(self.btn_process)
+        left_layout.addWidget(self.btn_clear)
+        
+        # Right Workspace Panel (3 portions)
+        right_panel = QFrame()
+        right_layout = QVBoxLayout(right_panel)
+        right_layout.setContentsMargins(0, 0, 0, 0)
+        right_layout.setSpacing(10)
+        
+        # Loaded images list box
+        self.list_box = QFrame()
+        self.list_box.setObjectName("list_box")
+        list_box_layout = QVBoxLayout(self.list_box)
+        list_box_layout.setContentsMargins(6, 6, 6, 6)
+        
+        self.lbl_list = QLabel("LOADED IMAGES:")
+        self.lbl_list.setObjectName("lbl_list")
+        self.lbl_list.setStyleSheet("font-weight: bold; padding: 4px 6px;")
+        
+        list_box_layout.addWidget(self.lbl_list)
+        list_box_layout.addWidget(self.file_list)
+        
+        right_layout.addWidget(self.list_box)
+        
+        # Add panels to split layout
+        content_layout.addWidget(left_panel, 1)
+        content_layout.addWidget(right_panel, 3)
+
+    def set_meter(self, meter):
+        # Allows interaction with the main window's Divergence/RAM meter
+        self.meter = meter
+
+    def start_processing(self):
+        # Fetch file paths dropped in the list widget
+        files = self.file_list.get_files()
+        if not files:
+            QMessageBox.warning(self, "No Files", "Please drop one or more images into the list box.")
+            return
+            
+        self.btn_process.setEnabled(False)
+        self.lbl_status.setText("Processing...")
+        
+        if self.meter:
+            self.meter.set_message("BLURRING...")
+            
+        # Launch async worker thread
+        self.worker = ProcessingWorker(
+            files,
+            self.slider_blur.value(),
+            self.slider_vignette.value()
+        )
+        self.worker.log_message.connect(lambda msg: print(f"[ExamplePlugin] {msg}"))
+        self.worker.progress.connect(lambda val: self.lbl_status.setText(f"Processing: {val}%"))
+        self.worker.finished.connect(self.processing_finished)
+        self.worker.start()
+
+    def processing_finished(self, output_files):
+        self.btn_process.setEnabled(True)
+        self.lbl_status.setText("Done!")
+        if self.meter:
+            self.meter.reset()
+        QMessageBox.information(
+            self,
+            "Success",
+            f"Successfully processed {len(output_files)} image(s)!\nSaved with 'processed_' prefix in their folders."
+        )
+
+    def set_theme(self, theme_name):
+        # Apply theme-specific stylesheets to match the rest of LABOKit
+        is_dark = theme_name == "dark"
+        
+        # Style the outer list_box container
+        if hasattr(self, 'list_box') and self.list_box:
+            self.list_box.setStyleSheet(
+                "QFrame#list_box { border: 1px solid #2e2e38; border-radius: 4px; background-color: #16161a; }"
+                if is_dark else
+                "QFrame#list_box { border: 1px solid #b3bcd1; border-radius: 4px; background-color: #f5f7fb; }"
+            )
+            
+        # Update the list widget's internal styles
+        if hasattr(self, 'file_list') and hasattr(self.file_list, 'set_theme'):
+            self.file_list.set_theme(theme_name)
+            
+        # Theme-specific colors and button styles
+        if is_dark:
+            self.setStyleSheet("""
+                QFrame#left_panel { background-color: #1a1a24; border: 1px solid #2e2e38; border-radius: 6px; }
+                QLabel { color: #ffffff; }
+                QPushButton {
+                    background-color: qlineargradient(x1:0, y1:0, x2:0, y2:1, stop:0 #2d2d38, stop:1 #20202a);
+                    color: #ffffff; border: 1px solid #3d3d4e; border-radius: 5px; padding: 6px 12px; font-weight: bold;
+                }
+                QPushButton:hover { background-color: #323242; }
+                QPushButton:pressed { background-color: #1c1c24; }
+                QPushButton:disabled { background-color: #161616; color: #555555; }
+            """)
+            self.lbl_list.setStyleSheet("font-weight: bold; background-color: #242424; border: 1px solid #3d3d3d; border-radius: 3px; padding: 4px 6px; color: #ffffff;")
+        else:
+            self.setStyleSheet("""
+                QFrame#left_panel { background-color: #ffffff; border: 1px solid #dcdfe6; border-radius: 6px; }
+                QLabel { color: #1c2333; }
+                QPushButton {
+                    background-color: qlineargradient(x1:0, y1:0, x2:0, y2:1, stop:0 #ffffff, stop:1 #d8dfee);
+                    color: #1c2333; border: 1px solid #9ca7c2; border-radius: 5px; padding: 6px 12px; font-weight: bold;
+                }
+                QPushButton:hover { background-color: qlineargradient(x1:0, y1:0, x2:0, y2:1, stop:0 #ffffff, stop:1 #e6ecf7); }
+                QPushButton:pressed { background-color: qlineargradient(x1:0, y1:0, x2:0, y2:1, stop:0 #cfd6e8, stop:1 #b0bdd7); }
+                QPushButton:disabled { background-color: #e0e0e0; color: #a0a0a0; }
+            """)
+            self.lbl_list.setStyleSheet("font-weight: bold; background-color: #e9edf5; border: 1px solid #b3bcd1; border-radius: 3px; padding: 4px 6px; color: #1c2333;")
