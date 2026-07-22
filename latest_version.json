@@ -1,5 +1,5 @@
 {
   "version": "3.3.2",
   "url": "https://github.com/wagakano/LABOKit/releases/download/v3.3.2/LABOKit_v3.3.2_Setup.exe",
-  "changelog": "3.3.2-Stable - Added Light and Dark Mode theme engine. Made main window resizable with native Windows border dragging and Maximize control (Issue #22). Fixed BG Remover hanging on network timeouts during model downloads (Issue #23). Harmonized UI typography, colors, and button styles across core tabs and plugins. Cleaned and humanized documentation."
+  "changelog": "3.3.2-Stable - Added Light and Dark Mode theme engine. Made main window resizable with native Windows border dragging and Maximize control (Issue #22). Fixed BG Remover hanging on network timeouts during model downloads (Issue #23). Harmonized UI typography, colors, and button styles across core tabs and plugins."
 }
