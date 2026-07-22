@@ -411,7 +411,8 @@ class UpscalerTab(QWidget):
         scale = getattr(self.worker, 'scale', 4)
         
         # Update output map
-        for p in self.image_paths:
+        # ⚡ Bolt Optimization: Iterate only over processed paths (O(K)) instead of all paths (O(N)) to reduce disk I/O latency on main thread.
+        for p in self.worker.paths:
             opath = actual_out_dir / f"{p.stem}_up{scale}x.png"
             if not opath.exists():
                 opath = actual_out_dir / f"{p.stem}_up4x.png"
