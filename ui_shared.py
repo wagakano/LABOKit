@@ -487,10 +487,13 @@ class DivergenceMeter(QFrame):
         else:
             self.timer.setInterval(120)
 
+    SPINNER_CHARS = ["⏳", "⌛"]
+
     def _update_status_box(self):
         if self.override_message:
-            self.status_label.setText(f"➤ {self.override_message}")
-            self.status_label.setStyleSheet("background-color: #a5f3fc; border: 1px solid #22d3ee; color: #0e7490;") 
+            spin_icon = self.SPINNER_CHARS[(self._running_index // 4) % len(self.SPINNER_CHARS)]
+            self.status_label.setText(f"{spin_icon} {self.override_message}")
+            self.status_label.setStyleSheet("background-color: #a5f3fc; border: 1px solid #22d3ee; color: #0e7490; border-radius: 4px; padding-left: 8px;") 
         else:
             # Idle / RAM (Process Only)
             try:
@@ -498,7 +501,7 @@ class DivergenceMeter(QFrame):
                 if self.process:
                     mem_bytes = self.process.memory_info().rss
                     ram_mb = mem_bytes / (1024 * 1024)
-                    self.status_label.setText(f"App Memory Usage: {ram_mb:.1f} MB")
+                    self.status_label.setText(f"RAM USAGE: {ram_mb:.1f} MB")
                 else:
                     self.status_label.setText("SYSTEM READY")
             except:
@@ -513,9 +516,10 @@ class DivergenceMeter(QFrame):
         val = random.choice(self.RUNNING_VALUES)
         self.labels[idx].setText(f"{val}  •")
         
-        # Only refresh RAM display when idle (no active message) to avoid
-        # polling psutil at 30ms while the worker is busy
-        if not self.override_message and self._running_index % 30 == 0:
+        if self.override_message:
+            spin_icon = self.SPINNER_CHARS[(self._running_index // 4) % len(self.SPINNER_CHARS)]
+            self.status_label.setText(f"{spin_icon} {self.override_message}")
+        elif self._running_index % 30 == 0:
             self._update_status_box()
 
     def set_theme(self, theme_name):

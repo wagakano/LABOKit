@@ -38,6 +38,7 @@ class BgRemovalWorker(QThread):
             
             cnt = 0
             err_list = []
+            self.out_dir.mkdir(parents=True, exist_ok=True)
             for i, p in enumerate(self.paths):
                 if not self.is_running: break
                 

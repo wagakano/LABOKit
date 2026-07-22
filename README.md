@@ -1,6 +1,6 @@
-# LABOKit
+# LABOKit 3.3.2
 
-<img width="1796" height="523" alt="Image" src="https://github.com/user-attachments/assets/2f0b033f-3cfb-4d59-b124-379dcef14b39" />
+<img width="1796" height="523" alt="LABOKit Banner" src="https://github.com/user-attachments/assets/2f0b033f-3cfb-4d59-b124-379dcef14b39" />
 
 <p align="left">
   <a href="https://github.com/wagakano/LABOKit/releases/latest"><img src="https://img.shields.io/badge/VERSION-v3.3.2-d93f3f?style=flat-square" alt="Version" /></a>
@@ -9,58 +9,80 @@
   <a href="https://github.com/wagakano/LABOKit/releases"><img src="https://img.shields.io/github/downloads/wagakano/LABOKit/total?style=flat-square&label=DOWNLOADS&color=007ec6" alt="Downloads" /></a>
 </p>
 
-LABOKit is a modular desktop tool for offline batch image processing. Built with Python and PySide6, it gives you a clean interface for background removal, upscaling, image sequencing, dithering, and custom image operations.
+LABOKit 3.3.2 is a modular desktop application for offline batch image processing. Built with Python and PySide6, it provides a clean, unified interface for background removal, upscaling, image sequencing, dithering, vectorization, and custom image manipulation.
 
-"El Psy Kongroo."
+> *"El Psy Kongroo."*
 
-## Features
+---
 
-- **Batch Background Removal:** Powered by `rembg`.
-- **Batch Upscaling:** Supports both GPU (Vulkan) and CPU (PyTorch) processing.
-- **ImageLAB:** Built-in editor for creative effects, ASCII art, and pixel adjustments.
-- **Image Sequencer:** Convert sequence frames into animated GIFs or MP4 videos.
-- **Plugin System:** Extend functionality using `.kit` plugin modules.
-- **Offline Processing:** Runs entirely on your local machine without sending data externally.
-- **Multilanguage Support:** Supports English, Japanese, Indonesian, Chinese, Korean, Spanish, French, German, and more.
+## 🚀 Features
 
-## Download
+- **⚡ Batch Background Removal:** Powered by `rembg` AI models.
+- **🖼️ Batch Upscaling:** Supports both GPU (Vulkan Real-ESRGAN) and CPU (PyTorch) processing.
+- **🎨 ImageLAB:** Creative photo editor with filters, ASCII art, dithering, glitches, and pixel adjustments.
+- **🎬 Image Sequencer:** Compile sequence frames into high-quality animated GIFs or MP4 videos.
+- **🧩 Plugin System:** Dynamically extend functionality using `.kit` plugin modules.
+- **🔒 Offline & Private:** Runs 100% locally on your machine — no data is sent externally.
+- **🌐 Multilanguage Support:** English, Japanese, Indonesian, Chinese, Korean, Spanish, French, German, and more.
+
+---
+
+## 📥 Download LABOKit 3.3.2
 
 ### Windows
 1. Download the latest installer: **[LABOKit_v3.3.2_Setup.exe](https://github.com/wagakano/LABOKit/releases/download/v3.3.2/LABOKit_v3.3.2_Setup.exe)**
 2. Run `LABOKit_v3.3.2_Setup.exe` to install.
 
 ### Linux
-Source instructions and Linux build steps are located in the [main_linux branch](https://github.com/wagakano/LABOKit/tree/main_linux).
+Source instructions and Linux build steps are available on the [main_linux branch](https://github.com/wagakano/LABOKit/tree/main_linux).
 
-## Plugins
+### ⚡ Alternative UI (Electron Version)
+Contributed by: **[Chizuu](https://github.com/Chizuui)**  
+- **[LABOKit Electron v1.3 Repository](https://github.com/Chizuui/labokit-electron)**
 
-LABOKit capabilities can be extended using `.kit` plugins.
+---
 
-### Installing Plugins (.kit)
+## 🧩 Plugins & Downloads
+
+LABOKit capabilities can be expanded with `.kit` plugins. Download `.kit` files directly below or let LABOKit auto-update them via **Config** > **Check for Plugin Updates**.
+
+### 🛠️ Installing Plugins (.kit)
 1. Open **LABOKit**.
 2. Go to **Config** > **Load Plugin (.kit)...**
-3. Select the plugin file to install.
-To remove a plugin, delete its `.kit` file via **Config** > **Open Plugins Folder**.
+3. Select the downloaded `.kit` file.
+4. *(To remove a plugin, delete its `.kit` file in **Config** > **Open Plugins Folder**)*.
 
-### Free Plugins
-- **Video Upscaler:** Upscale video files using Real-ESRGAN and FFmpeg.
-- **ONNX Loader:** Load custom `.onnx` upscaler models directly into LABOKit.
-- **QR Code Generator:** Batch generate QR codes from multi-line text input.
-- **Watermark Remover:** Interactive brush masking and inpainting using LaMa ONNX.
+### 📦 Available Plugins Download List
 
-### Advanced Plugins
-Additional plugins are available for project supporters:
-- **Quick Vector:** Convert raster images (PNG, JPG, BMP) into SVG vector files.
-- **Dithering FX:** Apply retro pixel dithering, custom color palettes, and GIF animations.
-- **Image Converter:** Batch convert WebP, JPG, PNG, ICO, and BMP formats with transparency handling.
+| Plugin Name | Type | Description | Direct Download |
+| :--- | :---: | :--- | :---: |
+| **Video Upscaler** | Free | Upscale video files frame-by-frame using Real-ESRGAN and FFmpeg. | [⬇️ Download `VideoUpscaler.kit`](https://github.com/wagakano/LABOKit-assets/releases/download/update2/VideoUpscaler.kit) |
+| **ONNX Loader** | Free | Load custom `.onnx` upscaling AI models directly into LABOKit. | [⬇️ Download `ONNXLoader.kit`](https://github.com/wagakano/LABOKit-assets/releases/download/update2/ONNXLoader.kit) |
+| **QR Code Generator** | Free | Batch generate single or multi-line list QR codes into high-res PNG images. | [⬇️ Download `QRCodeGenerator.kit`](https://github.com/wagakano/LABOKit-assets/releases/download/update2/QRCodeGenerator.kit) |
+| **Watermark Remover** | Free | Interactive brush masking and inpainting removal powered by LaMa ONNX. | [⬇️ Download `WatermarkRemover.kit`](https://github.com/wagakano/LABOKit-assets/releases/download/update2/WatermarkRemover.kit) |
+| **Quick Vector** | Advanced | Convert raster images (PNG, JPG, BMP) into resolution-independent SVG vector graphics. | [⬇️ Download `QuickVector.kit`](https://github.com/wagakano/LABOKit-assets/releases/download/update2/QuickVector.kit) |
+| **Dithering FX** | Advanced | Retro pixel dithering, error diffusion algorithms, custom color palettes, and GIF animations. | [⬇️ Download `DitheringFX.kit`](https://github.com/wagakano/LABOKit-assets/releases/download/update2/DitheringFX.kit) |
+| **Image Converter** | Advanced | Batch convert WebP, JPG, PNG, ICO, and BMP formats with transparency control. | [⬇️ Download `IMGConverter.kit`](https://github.com/wagakano/LABOKit-assets/releases/download/update2/IMGConverter.kit) |
 
-## Support & Rewards
+---
 
-Donate to support ongoing development:
-- [Ko-fi](https://ko-fi.com/s/a367e473fe)
-- [Trakteer](https://trakteer.id/kano-bbif7/reward/labokit-advanced-plugins-m84J6)
+## 💖 Support & Rewards
 
-## Project Structure
+If you enjoy using LABOKit and want to support ongoing development, please consider donating. Supporters get access to Advanced Plugins (`Quick Vector`, `Dithering FX`, `Image Converter`)!
+
+> [!TIP]
+> ### ☕ Ko-fi
+> Support LABOKit development and unlock Advanced Plugins on Ko-fi:  
+> 👉 **[Support on Ko-fi](https://ko-fi.com/s/a367e473fe)**
+
+> [!IMPORTANT]
+> ### 🎁 Trakteer
+> Support via Trakteer (Indonesian Supporters):  
+> 👉 **[Support on Trakteer](https://trakteer.id/kano-bbif7/reward/labokit-advanced-plugins-m84J6)**
+
+---
+
+## 📁 Project Structure
 
 ```
 LABOKit/
@@ -87,7 +109,9 @@ LABOKit/
 └── scratch/                # Utility scripts
 ```
 
-## Running from Source
+---
+
+## 💻 Running from Source
 
 1. **Clone the repository:**
    ```bash
@@ -112,7 +136,9 @@ LABOKit/
    python main.py
    ```
 
-## Building
+---
+
+## 🛠️ Building
 
 ### Standalone Executable
 ```bash
@@ -125,7 +151,9 @@ Requires Inno Setup 6:
 "C:\Program Files (x86)\Inno Setup 6\ISCC.exe" LABOKit_Installer.iss
 ```
 
-## Plugin Development
+---
+
+## 🧩 Plugin Development
 
 Plugins are Python modules saved with a `.kit` extension. They are loaded dynamically at startup from `%APPDATA%/LABOKit/plugins/`.
 
@@ -150,7 +178,9 @@ def create_tab(ctx=None):
     return tab
 ```
 
-## License & Credits
+---
+
+## 📜 License & Credits
 
 This project is licensed under the [MIT License](LICENSE).
 See [LABOKit_NOTICE.txt](LABOKit_NOTICE.txt) for license details regarding bundled third-party libraries.
