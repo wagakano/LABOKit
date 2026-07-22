@@ -188,14 +188,21 @@ class VideoUpscalerTab(QWidget):
         self._setup_ui()
 
     def set_theme(self, theme_name):
-        if hasattr(self, 'file_list') and hasattr(self.file_list, 'set_theme'):
-            self.file_list.set_theme(theme_name)
         if theme_name == "dark":
-            if hasattr(self, 'lbl_list'):
-                self.lbl_list.setStyleSheet("font-weight: bold; background-color: #242424; border: 1px solid #3d3d3d; border-radius: 3px; padding: 4px 6px; color: #ffffff;")
+            if hasattr(self, 'lbl_list') and getattr(self, 'lbl_list'):
+                getattr(self, 'lbl_list').setStyleSheet("font-weight: bold; background-color: #22222a; border: 1px solid #2e2e38; border-radius: 3px; padding: 4px 6px; color: #e1e1e6;")
+            if hasattr(self, 'list_box') and getattr(self, 'list_box'):
+                getattr(self, 'list_box').setStyleSheet("#list_box { border: 1px solid #2e2e38; border-radius: 4px; background-color: #16161a; }")
+            if hasattr(self, 'file_list') and hasattr(getattr(self, 'file_list'), 'set_theme'):
+                getattr(self, 'file_list').set_theme("dark")
         else:
-            if hasattr(self, 'lbl_list'):
-                self.lbl_list.setStyleSheet("font-weight: bold; background-color: #e2e7f2; border: 1px solid #cbd2e1; border-radius: 3px; padding: 4px 6px; color: #333d51;")
+            if hasattr(self, 'lbl_list') and getattr(self, 'lbl_list'):
+                getattr(self, 'lbl_list').setStyleSheet("font-weight: bold; background-color: #e2e7f2; border: 1px solid #cbd2e1; border-radius: 3px; padding: 4px 6px; color: #333d51;")
+            if hasattr(self, 'list_box') and getattr(self, 'list_box'):
+                getattr(self, 'list_box').setStyleSheet("#list_box { border: 1px solid #b3bcd1; border-radius: 4px; background-color: #f5f7fb; }")
+            if hasattr(self, 'file_list') and hasattr(getattr(self, 'file_list'), 'set_theme'):
+                getattr(self, 'file_list').set_theme("light")
+
 
     def set_meter(self, meter):
         self.meter = meter
@@ -209,10 +216,11 @@ class VideoUpscalerTab(QWidget):
         left_layout = QVBoxLayout(); main_layout.addLayout(left_layout, 1)
 
         # Loaded Video Box
-        list_box = QFrame()
-        list_box.setObjectName("list_box")
-        list_box.setStyleSheet("QFrame { border: 1px solid #b3bcd1; border-radius: 4px; background-color: #f5f7fb; }")
-        list_box_layout = QVBoxLayout(list_box)
+        self.list_box = QFrame()
+        self.list_box.setObjectName("list_box")
+        self.list_box.setAttribute(Qt.WA_StyledBackground, True)
+        self.list_box.setStyleSheet("#list_box { border: 1px solid #b3bcd1; border-radius: 4px; background-color: #f5f7fb; }")
+        list_box_layout = QVBoxLayout(self.list_box)
         list_box_layout.setContentsMargins(6, 6, 6, 6)
         list_box_layout.setSpacing(5)
 
@@ -229,7 +237,7 @@ class VideoUpscalerTab(QWidget):
         btn_row.addWidget(btn_add); btn_row.addWidget(btn_clear)
         list_box_layout.addLayout(btn_row)
 
-        left_layout.addWidget(list_box)
+        left_layout.addWidget(self.list_box)
 
         # Output
         l_out = QLabel(tr("lbl_out", "Output Folder:"))
@@ -296,7 +304,7 @@ class VideoUpscalerTab(QWidget):
             self.file_list.addItem(QListWidgetItem(self.input_file.name))
             self.output_label.setText(f"{self.input_file.parent}")
             if hasattr(self, 'lbl_info'):
-                # self.lbl_info.setText(f"File: {self.input_file.name} | Size: {os.path.getsize(f) / (1024*1024):.2f} MB")
+                pass
             self.log_text.appendPlainText("Video loaded. Ready.")
 
     def open_output_folder(self):
@@ -309,7 +317,7 @@ class VideoUpscalerTab(QWidget):
         self.file_list.clear()
         self.input_file = None
         if hasattr(self, 'lbl_info'):
-            # self.lbl_info.setText("No video loaded.")
+            pass
         self.log_text.clear()
         self.pbar.setValue(0)
 
