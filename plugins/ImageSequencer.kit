@@ -236,25 +236,29 @@ class ImageSequencerPlugin(QWidget):
         self.worker = None
         
         self.init_ui()
+
         if parent and hasattr(parent, 'current_theme'):
             self.set_theme(parent.current_theme)
 
     def set_theme(self, theme_name):
+        if hasattr(self, 'list_box') and self.list_box:
+            self.list_box.setStyleSheet("#list_box { border: 1px solid #2e2e38; border-radius: 4px; background-color: #16161a; }" if theme_name == "dark" else "#list_box { border: 1px solid #b3bcd1; border-radius: 4px; background-color: #f5f7fb; }")
+        if hasattr(self, 'file_list') and hasattr(self.file_list, 'set_theme'):
+            self.file_list.set_theme(theme_name)
+        if hasattr(self, 'list_w') and hasattr(self.list_w, 'set_theme'):
+            self.list_w.set_theme(theme_name)
+        if hasattr(self, 'progress_bar') and self.progress_bar:
+            self.progress_bar.setStyleSheet("QProgressBar { border: 1px solid #2e2e38; border-radius: 3px; background: #1e1e2e; height: 10px; color: #e1e1e6; } QProgressBar::chunk { background-color: #5a6b8c; }" if theme_name == "dark" else "QProgressBar { border: 1px solid #dbe2f2; border-radius: 3px; background: white; height: 10px; } QProgressBar::chunk { background-color: #5a6b8c; }")
+        if hasattr(self, 'pbar') and self.pbar:
+            self.pbar.setStyleSheet("QProgressBar { border: 1px solid #2e2e38; border-radius: 3px; background: #1e1e2e; height: 10px; color: #e1e1e6; } QProgressBar::chunk { background-color: #5a6b8c; }" if theme_name == "dark" else "QProgressBar { border: 1px solid #dbe2f2; border-radius: 3px; background: white; height: 10px; } QProgressBar::chunk { background-color: #5a6b8c; }")
+        if hasattr(self, 'list_w') and hasattr(self.list_w, 'set_theme'):
+            self.list_w.set_theme(theme_name)
         if theme_name == "dark":
-            if hasattr(self, 'lbl_loaded') and getattr(self, 'lbl_loaded'):
-                getattr(self, 'lbl_loaded').setStyleSheet("font-weight: bold; background-color: #22222a; border: 1px solid #2e2e38; border-radius: 3px; padding: 4px 6px; color: #e1e1e6;")
-            if hasattr(self, 'list_box') and getattr(self, 'list_box'):
-                getattr(self, 'list_box').setStyleSheet("#list_box { border: 1px solid #2e2e38; border-radius: 4px; background-color: #16161a; }")
-            if hasattr(self, 'list_w') and hasattr(getattr(self, 'list_w'), 'set_theme'):
-                getattr(self, 'list_w').set_theme("dark")
+            if hasattr(self, 'lbl_loaded'):
+                self.lbl_loaded.setStyleSheet("font-weight: bold; background-color: #242424; border: 1px solid #3d3d3d; border-radius: 3px; padding: 4px 6px; color: #ffffff;")
         else:
-            if hasattr(self, 'lbl_loaded') and getattr(self, 'lbl_loaded'):
-                getattr(self, 'lbl_loaded').setStyleSheet("font-weight: bold; background-color: #e2e7f2; border: 1px solid #cbd2e1; border-radius: 3px; padding: 4px 6px; color: #333d51;")
-            if hasattr(self, 'list_box') and getattr(self, 'list_box'):
-                getattr(self, 'list_box').setStyleSheet("#list_box { border: 1px solid #b3bcd1; border-radius: 4px; background-color: #f5f7fb; }")
-            if hasattr(self, 'list_w') and hasattr(getattr(self, 'list_w'), 'set_theme'):
-                getattr(self, 'list_w').set_theme("light")
-
+            if hasattr(self, 'lbl_loaded'):
+                self.lbl_loaded.setStyleSheet("font-weight: bold; background-color: #e2e7f2; border: 1px solid #cbd2e1; border-radius: 3px; padding: 4px 6px; color: #333d51;")
 
     def set_meter(self, meter):
         self.meter = meter
@@ -508,6 +512,8 @@ class ImageSequencerPlugin(QWidget):
 
 # --- ENTRY POINT ---
 def create_tab(parent=None):
-    if parent and hasattr(parent, 'current_theme') and hasattr(ImageSequencerPlugin(parent), 'set_theme'):
-        ImageSequencerPlugin(parent).set_theme(parent.current_theme)
+    tab = ImageSequencerPlugin(parent)
+    if parent and hasattr(parent, 'current_theme') and hasattr(tab, 'set_theme'):
+        tab.set_theme(parent.current_theme)
+    return tab
     return ImageSequencerPlugin(parent)
