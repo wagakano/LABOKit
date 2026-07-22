@@ -43,7 +43,7 @@ LABOKit is a modular desktop tool for offline batch image processing. Built with
 
 ---
 
-## Download LABOKit 3.3.2
+## Download LABOKit 3.3.2 (Coming)
 
 ### Windows
 1. Download the installer: **[LABOKit_v3.3.2_Setup.exe](https://github.com/wagakano/LABOKit/releases/download/v3.3.2/LABOKit_v3.3.2_Setup.exe)**
