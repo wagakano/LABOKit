@@ -45,9 +45,12 @@ class BgRemovalWorker(QThread):
                 self.progress.emit(i, f"Processing {p.name} ({i+1}/{len(self.paths)})...")
                 
                 try:
-                    res = rembg.remove(p.read_bytes(), session=session, **self.preset)
+                    with open(p, "rb") as f:
+                        img_bytes = f.read()
+                    res = rembg.remove(img_bytes, session=session, **self.preset)
                     opath = self.out_dir / f"{p.stem}_nobg.png"
-                    opath.write_bytes(res)
+                    with open(opath, "wb") as f:
+                        f.write(res)
                     cnt += 1
                 except Exception as e:
                     msg = f"{p.name}: {e}"

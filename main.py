@@ -436,6 +436,33 @@ class LABOKitMainWindow(QMainWindow):
         self.check_app_updates()
         self.check_plugin_updates()
 
+        settings = load_settings()
+        initial_theme = settings.get("theme", "light")
+        self.apply_theme(initial_theme)
+
+    def apply_theme(self, theme_name):
+        self.current_theme = theme_name
+        save_settings({"theme": theme_name})
+        app = QApplication.instance()
+        if app:
+            app.setStyleSheet(get_app_stylesheet(theme_name))
+        
+        if hasattr(self, 'meter'):
+            self.meter.set_theme(theme_name)
+            
+        if hasattr(self, 'bg_tab') and hasattr(self.bg_tab, 'set_theme'):
+            self.bg_tab.set_theme(theme_name)
+        if hasattr(self, 'up_tab') and hasattr(self.up_tab, 'set_theme'):
+            self.up_tab.set_theme(theme_name)
+            
+        for p in getattr(self, 'loaded_plugins', []):
+            tab = p.get('tab')
+            if tab and hasattr(tab, 'set_theme'):
+                try:
+                    tab.set_theme(theme_name)
+                except Exception as e:
+                    print(f"Error setting theme for {p.get('name')}: {e}")
+
     def nativeEvent(self, eventType, message):
         if sys.platform == "win32" and eventType == b"windows_generic_MSG":
             import ctypes
@@ -680,6 +707,11 @@ del "%~f0"
         conf.addAction("Load Plugin (.kit)...", self.load_plugin_file)
         conf.addAction("Open Plugins Folder", lambda: QDesktopServices.openUrl(QUrl.fromLocalFile(str(PLUGIN_DIR))))
         
+        # Theme Submenu
+        theme_menu = conf.addMenu("Theme")
+        theme_menu.addAction("☀️ Light Mode", lambda: self.apply_theme("light"))
+        theme_menu.addAction("🌙 Dark Mode", lambda: self.apply_theme("dark"))
+        
         # Language Submenu
         lang_menu = conf.addMenu("Language")
         lang_menu.addAction("English", lambda: self.switch_language("en"))
@@ -859,70 +891,164 @@ def main():
     cursor_filter = CursorFilter()
     app.installEventFilter(cursor_filter)
 
+def get_app_stylesheet(theme="light"):
+    if theme == "dark":
+        return f"""
+            QMessageBox {{ font-family: "Segoe UI", sans-serif; background-color: #1e1e2e; color: #cdd6f4; }}
+            QMainWindow {{ background-color: #181825; }}
+            #MainFrame {{
+                background-color: #181825;
+                border: none;
+            }}
+            QTabWidget::pane {{ border: none; top: -1px; }}
+            QTabBar::tab {{ background-color: #252538; border: 1px solid #313244; padding: 4px 12px; border-top-left-radius: 4px; border-top-right-radius: 4px; color: #cdd6f4; font-weight: bold; }}
+            QTabBar::tab:selected {{ background-color: #1e1e2e; border-bottom: 1px solid #1e1e2e; color: #ffffff; }}
+            QTabBar::scroller {{ width: 0px; height: 0px; }}
+            QTabBar QToolButton {{ width: 0px; height: 0px; border: none; background: transparent; }}
+            QPushButton {{
+                background-color: qlineargradient(x1:0, y1:0, x2:0, y2:1, stop:0 #313244, stop:1 #1e1e2e);
+                border: 1px solid #45475a;
+                border-radius: 5px;
+                padding: 4px 12px;
+                font-weight: bold;
+                color: #cdd6f4;
+            }}
+            QPushButton:hover {{ background-color: qlineargradient(x1:0, y1:0, x2:0, y2:1, stop:0 #45475a, stop:1 #313244); color: #ffffff; }}
+            QPushButton:pressed {{ background-color: #181825; }}
+            QPushButton:disabled {{ background-color: #181825; color: #585b70; border: 1px solid #313244; }}
+            QListWidget {{ background-color: #1e1e2e; border: 1px solid #313244; border-radius: 4px; outline: 0; padding: 4px; color: #cdd6f4; }}
+            QListWidget::item:selected {{ background-color: #45475a; color: #ffffff; border-radius: 3px; }}
+            QListWidget::item:hover {{ background-color: #313244; border-radius: 3px; }}
+            QComboBox {{ background-color: #1e1e2e; border: 1px solid #313244; border-radius: 4px; padding: 3px 20px 3px 8px; color: #cdd6f4; }}
+            QComboBox::drop-down {{ subcontrol-origin: padding; subcontrol-position: top right; width: 20px; border: none; background: transparent; }}
+            QComboBox::down-arrow {{ image: url({ARROW_DARK_PATH.as_posix()}); }}
+            QComboBox QAbstractItemView {{ background-color: #1e1e2e; border: 1px solid #313244; selection-background-color: #45475a; color: #cdd6f4; selection-color: #ffffff; }}
+            QScrollBar:vertical {{ background: #181825; width: 12px; margin: 0px 0px 0px 0px; border-radius: 6px; }}
+            QScrollBar::handle:vertical {{ background: #45475a; min-height: 20px; border-radius: 6px; }}
+            QScrollBar::add-line:vertical, QScrollBar::sub-line:vertical {{ height: 0px; }}
+            QLabel#SectionHeader {{ background-color: #252538; border-radius: 4px; padding: 4px; font-weight: bold; color: #cdd6f4; }}
+            QLabel {{ padding: 2px; color: #cdd6f4; }}
+            QMenuBar {{ background-color: #181825; color: #cdd6f4; border-bottom: 1px solid #313244; }}
+            QMenuBar::item {{ background: transparent; padding: 3px 8px; color: #cdd6f4; }}
+            QMenuBar::item:selected {{ background-color: #313244; color: #ffffff; }}
+            QMenu {{ background-color: #1e1e2e; border: 1px solid #313244; }}
+            QMenu::item {{ padding: 4px 20px; color: #cdd6f4; }}
+            QMenu::item:selected {{ background-color: #313244; color: #ffffff; }}
+            QFrame {{ background-color: #1e1e2e; border: 1px solid #313244; border-radius: 0px; }}
+            #PixelBar {{
+                background-color: #181825;
+            }}
+            #PixelBar QLabel {{ color: #a6adc8; }}
+            #PixelBar QLabel#NumberBox, #PixelBar QLabel#StatusBox {{
+                background-color: #252538;
+                border: 1px solid #313244;
+                border-radius: 4px;
+                padding: 2px 6px;
+                color: #cdd6f4;
+            }}
+            QProgressDialog, QDialog, QMessageBox {{ background-color: #1e1e2e; color: #cdd6f4; }}
+            QPlainTextEdit {{ background-color: #1e1e2e; color: #cdd6f4; border: 1px solid #313244; border-radius: 4px; }}
+            QLineEdit {{ background-color: #1e1e2e; color: #cdd6f4; border: 1px solid #313244; border-radius: 4px; padding: 4px; }}
+            QSlider::groove:horizontal {{ border: 1px solid #45475a; height: 6px; background: #313244; margin: 2px 0; border-radius: 3px; }}
+            QSlider::handle:horizontal {{ background: #89b4fa; border: 1px solid #89b4fa; width: 14px; margin: -4px 0; border-radius: 7px; }}
+        """
+    else:
+        return f"""
+            QMessageBox {{ font-family: "Segoe UI", sans-serif; }}
+            QMainWindow {{ background-color: #e9edf5; }}
+            #MainFrame {{
+                background-color: #e9edf5;
+                border: none;
+            }}
+            QTabWidget::pane {{ border: none; top: -1px; }}
+            QTabBar::tab {{ background-color: #dde4f5; border: 1px solid #b3bcd1; padding: 4px 12px; border-top-left-radius: 4px; border-top-right-radius: 4px; color: #1c2333; font-weight: bold; }}
+            QTabBar::tab:selected {{ background-color: #f5f7fb; border-bottom: 1px solid #f5f7fb; }}
+            QTabBar::scroller {{ width: 0px; height: 0px; }}
+            QTabBar QToolButton {{ width: 0px; height: 0px; border: none; background: transparent; }}
+            QPushButton {{
+                background-color: qlineargradient(x1:0, y1:0, x2:0, y2:1, stop:0 #ffffff, stop:1 #d8dfee);
+                border: 1px solid #9ca7c2;
+                border-radius: 5px;
+                padding: 4px 12px;
+                font-weight: bold;
+                color: #1c2333;
+            }}
+            QPushButton:hover {{ background-color: qlineargradient(x1:0, y1:0, x2:0, y2:1, stop:0 #ffffff, stop:1 #e6ecf7); }}
+            QPushButton:pressed {{ background-color: qlineargradient(x1:0, y1:0, x2:0, y2:1, stop:0 #cfd6e8, stop:1 #b0bdd7); }}
+            QPushButton:disabled {{ background-color: #e0e0e0; color: #a0a0a0; border: 1px solid #ccc; }}
+            QListWidget {{ background-color: #ffffff; border: 1px solid #b3bcd1; border-radius: 4px; outline: 0; padding: 4px; color: #1c2333; }}
+            QListWidget::item:selected {{ background-color: #cce0ff; color: #1c2333; border-radius: 3px; }}
+            QListWidget::item:hover {{ background-color: #e6f0ff; border-radius: 3px; }}
+            QComboBox {{ background-color: #f7f9fc; border: 1px solid #b3bcd1; border-radius: 4px; padding: 3px 20px 3px 8px; color: #1c2333; }}
+            QComboBox::drop-down {{ subcontrol-origin: padding; subcontrol-position: top right; width: 20px; border: none; background: transparent; }}
+            QComboBox::down-arrow {{ image: url({ARROW_LIGHT_PATH.as_posix()}); }}
+            QComboBox QAbstractItemView {{ background-color: #ffffff; border: 1px solid #b3bcd1; selection-background-color: #cfe2ff; color: #1c2333; selection-color: #101522; }}
+            QScrollBar:vertical {{ background: #e9edf5; width: 12px; margin: 0px 0px 0px 0px; border-radius: 6px; }}
+            QScrollBar::handle:vertical {{ background: #b3bcd1; min-height: 20px; border-radius: 6px; }}
+            QScrollBar::add-line:vertical, QScrollBar::sub-line:vertical {{ height: 0px; }}
+            QLabel#SectionHeader {{ background-color: #dce3f0; border-radius: 4px; padding: 4px; font-weight: bold; color: #333d51; }}
+            QLabel {{ padding: 2px; color: #1c2333; }}
+            QMenuBar {{ background-color: #dbe2f2; color: #1c2333; border-bottom: 1px solid #b3bcd1; }}
+            QMenuBar::item {{ background: transparent; padding: 3px 8px; color: #1c2333; }}
+            QMenuBar::item:selected {{ background-color: #cfe2ff; color: #101522; }}
+            QMenu {{ background-color: #f7f9fc; border: 1px solid #b3bcd1; }}
+            QMenu::item {{ padding: 4px 20px; color: #1c2333; }}
+            QFrame {{ background-color: #f5f7fb; border: 1px solid #b3bcd1; border-radius: 0px; }}
+            #PixelBar {{
+                background-color: #dde4f5;
+            }}
+            #PixelBar QLabel {{ color: #4b556b; }}
+            #PixelBar QLabel#NumberBox, #PixelBar QLabel#StatusBox {{
+                background-color: #e2e7f2;
+                border: 1px solid #cbd2e1;
+                border-radius: 4px;
+                padding: 2px 6px;
+                color: #333d51;
+            }}
+            QProgressDialog, QDialog, QMessageBox {{ background-color: #f5f7fb; }}
+            QPlainTextEdit {{ background-color: #f5f7fb; color: #1c2333; border: 1px solid #b3bcd1; border-radius: 4px; }}
+            QLineEdit {{ background-color: #ffffff; color: #1c2333; border: 1px solid #b3bcd1; border-radius: 4px; padding: 4px; }}
+            QSlider::groove:horizontal {{ border: 1px solid #999999; height: 6px; background: qlineargradient(x1:0, y1:0, x2:0, y2:1, stop:0 #B1B1B1, stop:1 #c4c4c4); margin: 2px 0; border-radius: 3px; }}
+            QSlider::handle:horizontal {{ background: #2c3e50; border: 1px solid #2c3e50; width: 14px; margin: -4px 0; border-radius: 7px; }}
+        """
+
+def main():
+    app = QApplication(sys.argv)
+    app.setApplicationName("LABOKit Advanced")
+    if ICON_PATH.exists(): app.setWindowIcon(QIcon(str(ICON_PATH)))
+    default_font = QFont("Consolas", 9)
+    app.setFont(default_font)
+
+    # Revert to Qt Splash Screen
+    splash_img_path = INTERNAL_DIR / "splash.png"
+    pix = QPixmap(str(splash_img_path)) if splash_img_path.exists() else QPixmap(400,100)
+    if not splash_img_path.exists(): pix.fill(Qt.white)
+    
+    splash = QSplashScreen(pix.scaledToWidth(400, Qt.SmoothTransformation), Qt.WindowStaysOnTopHint)
+    splash.show(); app.processEvents()
+
+    class CursorFilter(QObject):
+        def eventFilter(self, obj, event):
+            if isinstance(obj, QPushButton):
+                if event.type() in (QEvent.Enter, QEvent.EnabledChange):
+                    if obj.isEnabled():
+                        obj.setCursor(Qt.PointingHandCursor)
+                    else:
+                        obj.setCursor(Qt.ForbiddenCursor)
+            return super().eventFilter(obj, event)
+
+    cursor_filter = CursorFilter()
+    app.installEventFilter(cursor_filter)
+
     # Worker Setup
     worker = StartupWorker()
     
     def on_complete():
         # Warmup
         try:
-            # Style
-            app.setStyleSheet(f"""
-                QMessageBox {{ font-family: "Segoe UI", sans-serif; }}
-                QMainWindow {{ background-color: #e9edf5; }}
-                #MainFrame {{
-                    background-color: #e9edf5;
-                    border: none;
-                }}
-                QTabWidget::pane {{ border: none; top: -1px; }}
-                QTabBar::tab {{ background-color: #dde4f5; border: 1px solid #b3bcd1; padding: 4px 12px; border-top-left-radius: 4px; border-top-right-radius: 4px; color: #1c2333; font-weight: bold; }}
-                QTabBar::tab:selected {{ background-color: #f5f7fb; border-bottom: 1px solid #f5f7fb; }}
-                QTabBar::scroller {{ width: 0px; height: 0px; }}
-                QTabBar QToolButton {{ width: 0px; height: 0px; border: none; background: transparent; }}
-                QPushButton {{
-                    background-color: qlineargradient(x1:0, y1:0, x2:0, y2:1, stop:0 #ffffff, stop:1 #d8dfee);
-                    border: 1px solid #9ca7c2;
-                    border-radius: 5px;
-                    padding: 4px 12px;
-                    font-weight: bold;
-                    color: #1c2333;
-                }}
-                QPushButton:hover {{ background-color: qlineargradient(x1:0, y1:0, x2:0, y2:1, stop:0 #ffffff, stop:1 #e6ecf7); }}
-                QPushButton:pressed {{ background-color: qlineargradient(x1:0, y1:0, x2:0, y2:1, stop:0 #cfd6e8, stop:1 #b0bdd7); }}
-                QPushButton:disabled {{ background-color: #e0e0e0; color: #a0a0a0; border: 1px solid #ccc; }}
-                QListWidget {{ background-color: #ffffff; border: 1px solid #b3bcd1; border-radius: 4px; outline: 0; padding: 4px; color: #1c2333; }}
-                QListWidget::item:selected {{ background-color: #cce0ff; color: #1c2333; border-radius: 3px; }}
-                QListWidget::item:hover {{ background-color: #e6f0ff; border-radius: 3px; }}
-                QComboBox {{ background-color: #f7f9fc; border: 1px solid #b3bcd1; border-radius: 4px; padding: 3px 20px 3px 8px; color: #1c2333; }}
-                QComboBox::drop-down {{ subcontrol-origin: padding; subcontrol-position: top right; width: 20px; border: none; background: transparent; }}
-                QComboBox::down-arrow {{ image: url({ARROW_LIGHT_PATH.as_posix()}); }}
-                QComboBox QAbstractItemView {{ background-color: #ffffff; border: 1px solid #b3bcd1; selection-background-color: #cfe2ff; color: #1c2333; selection-color: #101522; }}
-                QScrollBar:vertical {{ background: #e9edf5; width: 12px; margin: 0px 0px 0px 0px; border-radius: 6px; }}
-                QScrollBar::handle:vertical {{ background: #b3bcd1; min-height: 20px; border-radius: 6px; }}
-                QScrollBar::add-line:vertical, QScrollBar::sub-line:vertical {{ height: 0px; }}
-                QLabel#SectionHeader {{ background-color: #dce3f0; border-radius: 4px; padding: 4px; font-weight: bold; color: #333d51; }}
-                QLabel {{ padding: 2px; color: #1c2333; }}
-                QMenuBar {{ background-color: #dbe2f2; color: #1c2333; border-bottom: 1px solid #b3bcd1; }}
-                QMenuBar::item {{ background: transparent; padding: 3px 8px; color: #1c2333; }}
-                QMenuBar::item:selected {{ background-color: #cfe2ff; color: #101522; }}
-                QMenu {{ background-color: #f7f9fc; border: 1px solid #b3bcd1; }}
-                QMenu::item {{ padding: 4px 20px; color: #1c2333; }}
-                QFrame {{ background-color: #f5f7fb; border: 1px solid #b3bcd1; border-radius: 0px; }}
-                #PixelBar {{
-                    background-color: #dde4f5;
-                }}
-                #PixelBar QLabel {{ color: #4b556b; }}
-                #PixelBar QLabel#NumberBox, #PixelBar QLabel#StatusBox {{
-                    background-color: #e2e7f2;
-                    border: 1px solid #cbd2e1;
-                    border-radius: 4px;
-                    padding: 2px 6px;
-                    color: #333d51;
-                }}
-                QProgressDialog, QDialog, QMessageBox {{ background-color: #f5f7fb; }}
-                QPlainTextEdit {{ background-color: #f5f7fb; color: #1c2333; border: 1px solid #b3bcd1; border-radius: 4px; }}
-                QSlider::groove:horizontal {{ border: 1px solid #999999; height: 6px; background: qlineargradient(x1:0, y1:0, x2:0, y2:1, stop:0 #B1B1B1, stop:1 #c4c4c4); margin: 2px 0; border-radius: 3px; }}
-                QSlider::handle:horizontal {{ background: #2c3e50; border: 1px solid #2c3e50; width: 14px; margin: -4px 0; border-radius: 7px; }}
-            """)
+            settings = load_settings()
+            current_theme = settings.get("theme", "light")
+            app.setStyleSheet(get_app_stylesheet(current_theme))
 
             # Attach to app to prevent GC
             app.main_window = LABOKitMainWindow()

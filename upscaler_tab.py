@@ -128,10 +128,20 @@ class UpscalerWorker(QThread):
         cv2 = ai["cv2"]
 
         try:
-            img = cv2.imread(str(img_path), cv2.IMREAD_UNCHANGED)
+            import numpy as np
+            with open(img_path, "rb") as f:
+                img_bytes = f.read()
+            img_array = np.frombuffer(img_bytes, dtype=np.uint8)
+            img = cv2.imdecode(img_array, cv2.IMREAD_UNCHANGED)
             output, _ = upsampler.enhance(img, outscale=self.scale)
-            cv2.imwrite(str(out_path), output)
-            return True
+            
+            is_success, buf = cv2.imencode(".png", output)
+            if is_success:
+                with open(out_path, "wb") as f:
+                    f.write(buf.tobytes())
+                return True
+            else:
+                return False
 
         except Exception as e:
             print(f"Error: {e}")
