@@ -236,6 +236,8 @@ class ImageSequencerPlugin(QWidget):
         self.worker = None
         
         self.init_ui()
+        if parent and hasattr(parent, 'current_theme'):
+            self.set_theme(parent.current_theme)
 
     def set_theme(self, theme_name):
         if theme_name == "dark":
@@ -506,4 +508,6 @@ class ImageSequencerPlugin(QWidget):
 
 # --- ENTRY POINT ---
 def create_tab(parent=None):
+    if parent and hasattr(parent, 'current_theme') and hasattr(ImageSequencerPlugin(parent), 'set_theme'):
+        ImageSequencerPlugin(parent).set_theme(parent.current_theme)
     return ImageSequencerPlugin(parent)

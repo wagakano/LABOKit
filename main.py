@@ -557,6 +557,8 @@ class LABOKitMainWindow(QMainWindow):
         for f in PLUGIN_DIR.glob("*.kit"):
             try:
                 mod_name = f"plugin_{f.stem}"
+                if mod_name in sys.modules:
+                    del sys.modules[mod_name]
                 loader = importlib.machinery.SourceFileLoader(mod_name, str(f))
                 spec = importlib.util.spec_from_file_location(mod_name, str(f), loader=loader)
                 mod = importlib.util.module_from_spec(spec)
@@ -566,9 +568,10 @@ class LABOKitMainWindow(QMainWindow):
                 if hasattr(mod, "create_tab"):
                     mod.tr = tr
                     tab = mod.create_tab(self)
-                    # Pass meter if supported
                     if hasattr(tab, "set_meter"):
                         tab.set_meter(self.meter)
+                    if hasattr(self, "current_theme") and hasattr(tab, "set_theme"):
+                        tab.set_theme(self.current_theme)
                     
                     name = getattr(mod, "PLUGIN_NAME", f.stem)
                     self.tabs.addTab(tab, name)
