@@ -27,6 +27,9 @@ All notable changes and updates made during this development cycle for the relea
 * **ImageLAB & QRCodeGenerator Bugfixes**: Decoupled the text changed signal connections during widget initialization to resolve runtime AttributeError issues, restoring full functionality to both tabs.
 * **Loaded Images Dark Theme universalization**: Explicitly targeted `FileDropListWidget` and its viewports in both local widget styles and parent frame scoped sheets to eliminate all remaining light background and border leaks in Dark Mode.
 
+### Fixed
+* **EXE Processing Freeze**: Bundled the `numba` package in the PyInstaller executable specifications (`LABOKit.spec` and `LABOKit_3.1.spec`). This ensures that `pymatting` (dependency of `rembg`) compiles computation loops at runtime to C speed, preventing application freezes/hangs during background removal.
+
 ### Changed
 * **Documentation Clean-Up**: Removed release changelogs from `README.md` (moved exclusively to GitHub Releases descriptions), removed all emojis, and rewrote documentation with clear, natural language without AI buzzwords.
 * **Cumulative Patch Build**: Created `LABOKit_v3.3.2_Patch.zip` and updated `scratch/make_patch.py` so users on version 3.3.1 can perform patch updates.

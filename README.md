@@ -168,6 +168,8 @@ Requires Inno Setup 6:
 
 Plugins are Python modules saved with a `.kit` extension. They are loaded dynamically at startup from `%APPDATA%/LABOKit/plugins/`.
 
+A complete reference implementation is available in [plugins/ExamplePlugin.kit](file:///c:/Users/shira/Projects/LABOKit/plugins/ExamplePlugin.kit), showcasing custom plugin creation with asynchronous worker threads (`QThread`), translation hooks, and theme integration.
+
 ### Plugin Template
 
 ```python
