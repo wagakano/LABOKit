@@ -9,66 +9,66 @@
   <a href="https://github.com/wagakano/LABOKit/releases"><img src="https://img.shields.io/github/downloads/wagakano/LABOKit/total?style=flat-square&label=DOWNLOADS&color=007ec6" alt="Downloads" /></a>
 </p>
 
-LABOKit 3.3.2 is a modular desktop application for offline batch image processing. Built with Python and PySide6, it provides a clean, unified interface for background removal, upscaling, image sequencing, dithering, vectorization, and custom image manipulation.
+LABOKit is a modular desktop tool for offline batch image processing. Built with Python and PySide6, it gives you a clean interface for background removal, upscaling, image sequencing, dithering, vectorization, and custom image editing.
 
 > *"El Psy Kongroo."*
 
 ---
 
-## 🚀 Features
+## Features
 
-- **⚡ Batch Background Removal:** Powered by `rembg` AI models.
-- **🖼️ Batch Upscaling:** Supports both GPU (Vulkan Real-ESRGAN) and CPU (PyTorch) processing.
-- **🎨 ImageLAB:** Creative photo editor with filters, ASCII art, dithering, glitches, and pixel adjustments.
-- **🎬 Image Sequencer:** Compile sequence frames into high-quality animated GIFs or MP4 videos.
-- **🧩 Plugin System:** Dynamically extend functionality using `.kit` plugin modules.
-- **🔒 Offline & Private:** Runs 100% locally on your machine — no data is sent externally.
-- **🌐 Multilanguage Support:** English, Japanese, Indonesian, Chinese, Korean, Spanish, French, German, and more.
+- **Batch Background Removal:** Powered by `rembg`.
+- **Batch Upscaling:** Supports GPU (Real-ESRGAN Vulkan) and CPU (PyTorch).
+- **ImageLAB:** Built-in editor for creative filters, ASCII art, pixel adjustments, and glitches.
+- **Image Sequencer:** Convert image frames into animated GIFs or MP4 videos.
+- **Plugin System:** Add new tools with `.kit` plugin modules.
+- **Offline & Private:** Runs entirely on your computer — no data leaves your machine.
+- **Multilanguage Support:** Supports English, Japanese, Indonesian, Chinese, Korean, Spanish, French, German, and more.
 
 ---
 
-## 📥 Download LABOKit 3.3.2
+## Download LABOKit 3.3.2
 
 ### Windows
-1. Download the latest installer: **[LABOKit_v3.3.2_Setup.exe](https://github.com/wagakano/LABOKit/releases/download/v3.3.2/LABOKit_v3.3.2_Setup.exe)**
+1. Download the installer: **[LABOKit_v3.3.2_Setup.exe](https://github.com/wagakano/LABOKit/releases/download/v3.3.2/LABOKit_v3.3.2_Setup.exe)**
 2. Run `LABOKit_v3.3.2_Setup.exe` to install.
 
 ### Linux
-Source instructions and Linux build steps are available on the [main_linux branch](https://github.com/wagakano/LABOKit/tree/main_linux).
+Source code and Linux build instructions are on the [main_linux branch](https://github.com/wagakano/LABOKit/tree/main_linux).
 
-### ⚡ Alternative UI (Electron Version)
-Contributed by: **[Chizuu](https://github.com/Chizuui)**  
+### Alternative UI (Electron Version)
+Contributed by **[Chizuu](https://github.com/Chizuui)**:
 - **[LABOKit Electron v1.3 Repository](https://github.com/Chizuui/labokit-electron)**
 
 ---
 
-## 🧩 Plugins & Downloads
+## Plugins & Downloads
 
-LABOKit capabilities can be expanded with `.kit` plugins. Download `.kit` files directly below or let LABOKit auto-update them via **Config** > **Check for Plugin Updates**.
+LABOKit features can be extended using `.kit` plugins. You can download `.kit` files directly below or update them in the app via **Config** > **Check for Plugin Updates**.
 
-### 🛠️ Installing Plugins (.kit)
+### Installing Plugins (.kit)
 1. Open **LABOKit**.
 2. Go to **Config** > **Load Plugin (.kit)...**
-3. Select the downloaded `.kit` file.
+3. Choose the `.kit` file to install.
 4. *(To remove a plugin, delete its `.kit` file in **Config** > **Open Plugins Folder**)*.
 
-### 📦 Available Plugins Download List
+### Available Plugins Download List
 
-| Plugin Name | Type | Description | Direct Download |
+| Plugin Name | Type | Description | Download |
 | :--- | :---: | :--- | :---: |
-| **Video Upscaler** | Free | Upscale video files frame-by-frame using Real-ESRGAN and FFmpeg. | [⬇️ Download `VideoUpscaler.kit`](https://github.com/wagakano/LABOKit-assets/releases/download/update2/VideoUpscaler.kit) |
-| **ONNX Loader** | Free | Load custom `.onnx` upscaling AI models directly into LABOKit. | [⬇️ Download `ONNXLoader.kit`](https://github.com/wagakano/LABOKit-assets/releases/download/update2/ONNXLoader.kit) |
-| **QR Code Generator** | Free | Batch generate single or multi-line list QR codes into high-res PNG images. | [⬇️ Download `QRCodeGenerator.kit`](https://github.com/wagakano/LABOKit-assets/releases/download/update2/QRCodeGenerator.kit) |
-| **Watermark Remover** | Free | Interactive brush masking and inpainting removal powered by LaMa ONNX. | [⬇️ Download `WatermarkRemover.kit`](https://github.com/wagakano/LABOKit-assets/releases/download/update2/WatermarkRemover.kit) |
-| **Quick Vector** | Advanced | Convert raster images (PNG, JPG, BMP) into resolution-independent SVG vector graphics. | [⬇️ Download `QuickVector.kit`](https://github.com/wagakano/LABOKit-assets/releases/download/update2/QuickVector.kit) |
-| **Dithering FX** | Advanced | Retro pixel dithering, error diffusion algorithms, custom color palettes, and GIF animations. | [⬇️ Download `DitheringFX.kit`](https://github.com/wagakano/LABOKit-assets/releases/download/update2/DitheringFX.kit) |
-| **Image Converter** | Advanced | Batch convert WebP, JPG, PNG, ICO, and BMP formats with transparency control. | [⬇️ Download `IMGConverter.kit`](https://github.com/wagakano/LABOKit-assets/releases/download/update2/IMGConverter.kit) |
+| **Video Upscaler** | Free | Upscale video files frame-by-frame using Real-ESRGAN and FFmpeg. | [Download `VideoUpscaler.kit`](https://github.com/wagakano/LABOKit-assets/releases/download/update2/VideoUpscaler.kit) |
+| **ONNX Loader** | Free | Load custom `.onnx` upscaler models directly into LABOKit. | [Download `ONNXLoader.kit`](https://github.com/wagakano/LABOKit-assets/releases/download/update2/ONNXLoader.kit) |
+| **QR Code Generator** | Free | Batch generate single or multi-line QR codes into PNG images. | [Download `QRCodeGenerator.kit`](https://github.com/wagakano/LABOKit-assets/releases/download/update2/QRCodeGenerator.kit) |
+| **Watermark Remover** | Free | Remove watermarks with brush masking powered by LaMa ONNX. | [Download `WatermarkRemover.kit`](https://github.com/wagakano/LABOKit-assets/releases/download/update2/WatermarkRemover.kit) |
+| **Quick Vector** | Advanced | Convert raster images (PNG, JPG, BMP) into SVG vector files. | [Download `QuickVector.kit`](https://github.com/wagakano/LABOKit-assets/releases/download/update2/QuickVector.kit) |
+| **Dithering FX** | Advanced | Retro pixel dithering, custom color palettes, and GIF animations. | [Download `DitheringFX.kit`](https://github.com/wagakano/LABOKit-assets/releases/download/update2/DitheringFX.kit) |
+| **Image Converter** | Advanced | Batch convert WebP, JPG, PNG, ICO, and BMP formats with transparency handling. | [Download `IMGConverter.kit`](https://github.com/wagakano/LABOKit-assets/releases/download/update2/IMGConverter.kit) |
 
 ---
 
 ## 💖 Support & Rewards
 
-If you enjoy using LABOKit and want to support ongoing development, please consider donating. Supporters get access to Advanced Plugins (`Quick Vector`, `Dithering FX`, `Image Converter`)!
+If you enjoy using LABOKit and want to support development, consider donating. Supporters get access to Advanced Plugins (`Quick Vector`, `Dithering FX`, `Image Converter`).
 
 > [!TIP]
 > ### ☕ Ko-fi
@@ -82,7 +82,7 @@ If you enjoy using LABOKit and want to support ongoing development, please consi
 
 ---
 
-## 📁 Project Structure
+## Project Structure
 
 ```
 LABOKit/
@@ -111,7 +111,7 @@ LABOKit/
 
 ---
 
-## 💻 Running from Source
+## Running from Source
 
 1. **Clone the repository:**
    ```bash
@@ -138,7 +138,7 @@ LABOKit/
 
 ---
 
-## 🛠️ Building
+## Building
 
 ### Standalone Executable
 ```bash
@@ -153,7 +153,7 @@ Requires Inno Setup 6:
 
 ---
 
-## 🧩 Plugin Development
+## Plugin Development
 
 Plugins are Python modules saved with a `.kit` extension. They are loaded dynamically at startup from `%APPDATA%/LABOKit/plugins/`.
 
@@ -180,7 +180,7 @@ def create_tab(ctx=None):
 
 ---
 
-## 📜 License & Credits
+## License & Credits
 
 This project is licensed under the [MIT License](LICENSE).
 See [LABOKit_NOTICE.txt](LABOKit_NOTICE.txt) for license details regarding bundled third-party libraries.
