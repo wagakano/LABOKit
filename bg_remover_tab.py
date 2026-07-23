@@ -327,7 +327,8 @@ class BgRemoverTab(QWidget):
         if self.meter: self.meter.set_message(None)
         
         # Update output map
-        for p in self.image_paths:
+        # ⚡ Bolt Optimization: Iterate only over processed paths (O(K)) instead of all paths (O(N)) to reduce disk I/O latency on main thread.
+        for p in self.worker.paths:
             opath = out_dir / f"{p.stem}_nobg.png"
             if opath.exists():
                 self.output_map[p] = opath
