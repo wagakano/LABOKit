@@ -22,6 +22,8 @@ class FileDropListWidget(QListWidget):
     def __init__(self, parent=None):
         super().__init__(parent)
         self.setAcceptDrops(True)
+        self.setAccessibleName("File Drop List")
+        self.setToolTip("Drag and drop files here, or right-click items for more options.")
         self.current_theme = "light"
         self.update_style()
 
@@ -104,6 +106,8 @@ class SplitImageLabel(QLabel):
         self.slider_ratio = 0.5
         self.is_dragging = False
         self.setMouseTracking(True)
+        self.setAccessibleName("Split Image Compare")
+        self.setToolTip("Drag left or right to compare original and result images.")
         
         self.orig_pixmap = None
         self.res_pixmap = None
@@ -213,6 +217,8 @@ class ZoomableImageWidget(QScrollArea):
         self.btn_toggle.setCheckable(True)
         self.btn_toggle.setChecked(True)
         self.btn_toggle.setCursor(Qt.PointingHandCursor)
+        self.btn_toggle.setAccessibleName("Toggle Split View")
+        self.btn_toggle.setToolTip("Toggle split view mode (compare before/after)")
         self.btn_toggle.clicked.connect(self.update_display)
         self.btn_toggle.hide()
         self.btn_toggle.setStyleSheet("""
@@ -225,6 +231,8 @@ class ZoomableImageWidget(QScrollArea):
         self.zoom_slider.setRange(10, 1000) # 0.1x to 10.0x
         self.zoom_slider.setValue(100)
         self.zoom_slider.setFixedWidth(150)
+        self.zoom_slider.setAccessibleName("Zoom Level")
+        self.zoom_slider.setToolTip("Zoom image (Ctrl + Mouse Wheel)")
         self.zoom_slider.valueChanged.connect(self._on_zoom_slider)
         self.zoom_slider.setStyleSheet("""
             QSlider { background: rgba(255, 255, 255, 0.7); border-radius: 4px; padding: 2px; }
