@@ -127,7 +127,9 @@ def sync_folder(src_dir, dst_dir):
         else:
             if not dst_item.exists():
                 try:
-                    shutil.copy2(item, dst_item)
+                    tmp_item = dst_dir / f"{item.name}.tmp_copy"
+                    shutil.copy2(item, tmp_item)
+                    tmp_item.replace(dst_item)
                     print(f"[Update] New asset deployed: {item.name}")
                 except Exception as e:
                     print(f"Failed to deploy {item.name}: {e}")

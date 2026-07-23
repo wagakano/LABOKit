@@ -272,3 +272,18 @@ def load_ai_engine():
     except ImportError as e:
         print(f"AI Engine Load Error: {e}")
         return None
+
+REMBG_MODULE = None
+
+def load_rembg_engine():
+    global REMBG_MODULE
+    if REMBG_MODULE:
+        return REMBG_MODULE
+
+    try:
+        import rembg
+        REMBG_MODULE = rembg
+        return REMBG_MODULE
+    except Exception as e:
+        print(f"Rembg Engine Load Error: {e}")
+        return None

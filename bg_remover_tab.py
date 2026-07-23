@@ -24,16 +24,26 @@ class BgRemovalWorker(QThread):
 
     def run(self):
         try:
-            import rembg
-            from rembg import new_session
-            
             self.progress.emit(0, f"Loading model ({self.model_name})...")
-            
+
+            target_model_file = core_config.MODEL_DIR / f"{self.model_name}.onnx"
+            internal_model_file = core_config.INTERNAL_DIR / "models" / f"{self.model_name}.onnx"
+            if not target_model_file.exists() and internal_model_file.exists():
+                core_config.MODEL_DIR.mkdir(parents=True, exist_ok=True)
+                tmp_file = core_config.MODEL_DIR / f"{self.model_name}.onnx.tmp_copy"
+                import shutil
+                shutil.copy2(internal_model_file, tmp_file)
+                tmp_file.replace(target_model_file)
+
+            rembg = core_config.load_rembg_engine()
+            if not rembg:
+                raise ImportError("Failed to load rembg engine.")
+
             # Create session (with cache lookup)
             if self.model_name in core_config.GLOBAL_REMBG_SESSION_CACHE:
                 session = core_config.GLOBAL_REMBG_SESSION_CACHE[self.model_name]
             else:
-                session = new_session(model_name=self.model_name)
+                session = rembg.new_session(model_name=self.model_name)
                 core_config.GLOBAL_REMBG_SESSION_CACHE[self.model_name] = session
             
             cnt = 0
