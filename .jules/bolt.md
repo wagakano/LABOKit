@@ -1,9 +1,11 @@
-## 2024-05-24 - O(1) Membership Check in File Lists
-**Learning:** PySide6 list widgets managing thousands of files (e.g., in `BgRemoverTab`, `UpscalerTab`) suffer from severe O(N) performance bottlenecks when validating new files against the existing list (`if p not in self.image_paths`). This causes UI freezing during large drag-and-drop events.
-**Action:** Always maintain a companion Python `set` (e.g., `self.image_paths_set`) alongside the list for file path deduplication. This changes the lookup to O(1), improving large batch additions (5000+ files) by ~98% without altering the ordered list behavior required for the UI. Ensure the set is synchronized during addition, removal (`discard`), and clearing.
-## 2024-07-20 - Pre-compiled Regex in Plugin Updates
-**Learning:** The `PluginUpdater` checks local `.kit` files by searching for a version string via regex. Using an inline `re.search` causes significant overhead because Python checks the regex cache on every invocation.
-**Action:** Always pre-compile static regex expressions using `re.compile()` at the module level. Replacing the inline search with `PLUGIN_VERSION_RE.search(content)` improved the execution path performance by ~57%, minimizing disk read and parsing lag.
-## 2024-08-01 - O(K) Disk I/O in State Updates
-**Learning:** When workers finish processing large batches of files, updating the output state by iterating over the entire list (`for p in self.image_paths`) and checking disk existence (`opath.exists()`) causes an O(N) main-thread block. If the worker only processed a subset of files (O(K)), this is highly inefficient and freezes the UI.
-**Action:** In callback methods like `on_worker_finished`, always iterate only over the subset of items actually processed by the worker (`for p in self.worker.paths`). This reduces main-thread disk I/O checks to O(K), preventing UI freezes during partial processing or when appending to large lists.
+## 2024-05-18 - Avoid Caching Local Plugin Versions
+
+**Learning:** Do not cache local plugin versions in memory (`self.plugin_versions`) to optimize background updater threads if the application supports hot-swapping or replacing files without a restart. While caching avoids disk reads (O(N) file opens and regex parsing), it introduces a stale cache problem where hot-updated plugins are incorrectly perceived as their original version, leading to repeated false-positive update prompts. The background thread's network latency vastly overshadows the local disk read overhead, making this a premature optimization.
+
+**Action:** In background update loops, rely on real-time disk reads (e.g., `get_local_version`) to check plugin versions rather than an in-memory cache populated at launch.
+
+## 2024-05-18 - File Filtering Disk I/O Optimization
+
+**Learning:** When using `Path.rglob("*")` to recursively find files in a directory, checking string-based properties (like `f.suffix.lower() in VALID_EXTENSIONS`) before performing disk operations (like `f.is_file()`) can yield significant performance improvements, avoiding unnecessary filesystem stats on subdirectories or non-matching files.
+
+**Action:** Order boolean condition checks in directory traversal from least expensive (string matching) to most expensive (OS stat calls).
