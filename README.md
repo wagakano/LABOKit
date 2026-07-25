@@ -19,6 +19,13 @@ LABOKit is a modular desktop tool for offline batch image processing. Built with
 
 ---
 
+> [!NOTE]  
+> LABOKit 3.3.2 is currently in its final testing phase to ensure we deliver the most reliable experience possible before launch.
+
+<div align="center">
+  <img src="assets/labokit_3.3.2_preview.png" alt="LABOKit 3.3.2 Interface Preview" width="100%" />
+</div>
+
 ## What's New in LABOKit 3.3.2 Stable (Coming Soon)
 
 - **Theme Engine**: Dynamic Light and Dark Mode theme engine with persistent state storage in settings.
