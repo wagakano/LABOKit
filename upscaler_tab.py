@@ -52,18 +52,35 @@ class UpscalerWorker(QThread):
                     if self.is_python_mode:
                         success = self.run_python_inference(abs_p, abs_opath, upsampler)
                     else:
+                        # For Vulkan NCNN, use native -s 4 scale to avoid GPU texture downsampling glitches
+                        run_scale = 4 if self.scale < 4 else self.scale
                         cmd = [
                             str(core_config.REALESRGAN_EXE), 
                             "-i", str(abs_p), 
                             "-o", str(abs_opath), 
                             "-n", self.model_name, 
-                            "-s", str(self.scale)
+                            "-s", str(run_scale)
                         ]
                         flags = subprocess.CREATE_NO_WINDOW if sys.platform=="win32" else 0
                         proc = subprocess.run(cmd, capture_output=True, text=True, creationflags=flags, cwd=str(core_config.REALESRGAN_RUN_DIR))
                         if proc.returncode != 0 and proc.stderr:
                             print(f"Vulkan Stderr ({p.name}): {proc.stderr}")
                         success = abs_opath.exists()
+
+                    # High-quality Lanczos downsampling if user requested a scale less than 4x (e.g. 2x)
+                    if success and self.scale < 4:
+                        try:
+                            from PIL import Image
+                            with Image.open(abs_p) as orig_img:
+                                orig_w, orig_h = orig_img.size
+                            target_w = max(1, int(orig_w * self.scale))
+                            target_h = max(1, int(orig_h * self.scale))
+                            with Image.open(abs_opath) as out_img:
+                                if out_img.size != (target_w, target_h):
+                                    resized_img = out_img.resize((target_w, target_h), Image.Resampling.LANCZOS)
+                                    resized_img.save(abs_opath)
+                        except Exception as re_err:
+                            print(f"Post-resize error: {re_err}")
 
                     if success:
                         cnt += 1
@@ -96,15 +113,22 @@ class UpscalerWorker(QThread):
         RealESRGANer = ai["RealESRGANer"]
 
         try:
+            # Check all possible model locations (AppData, Internal, Bundled)
             model_path = core_config.REALESRGAN_DIR / "models" / model_name 
             if not model_path.exists():
                 model_path = core_config.MODEL_DIR / model_name
-                if not model_path.exists(): return None
+            if not model_path.exists():
+                model_path = core_config.INTERNAL_DIR / "realesrgan_ncnn" / "models" / model_name
+            if not model_path.exists():
+                model_path = core_config.INTERNAL_DIR / "models" / model_name
+            if not model_path.exists():
+                print(f"Upsampler model missing: {model_name}")
+                return None
 
             model = SRVGGNetCompact(num_in_ch=3, num_out_ch=3, num_feat=64, num_conv=32, upscale=4, act_type='prelu')
             
             upsampler = RealESRGANer(
-                scale=self.scale,
+                scale=4,
                 model_path=str(model_path),
                 model=model,
                 tile=400,       
@@ -117,7 +141,7 @@ class UpscalerWorker(QThread):
             return upsampler
 
         except Exception as e:
-            print(f"Error: {e}")
+            print(f"Error initializing upsampler: {e}")
             import traceback; traceback.print_exc()
             return None
 
@@ -134,6 +158,13 @@ class UpscalerWorker(QThread):
             img_array = np.frombuffer(img_bytes, dtype=np.uint8)
             img = cv2.imdecode(img_array, cv2.IMREAD_UNCHANGED)
             output, _ = upsampler.enhance(img, outscale=self.scale)
+
+            # Ensure output exact dimensions match target scale
+            h, w = img.shape[:2]
+            target_w = max(1, int(w * self.scale))
+            target_h = max(1, int(h * self.scale))
+            if output.shape[1] != target_w or output.shape[0] != target_h:
+                output = cv2.resize(output, (target_w, target_h), interpolation=cv2.INTER_AREA)
             
             is_success, buf = cv2.imencode(".png", output)
             if is_success:

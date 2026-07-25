@@ -1,13 +1,13 @@
 [Setup]
 AppName=LABOKit
-AppVersion=3.3.2
+AppVersion=3.3.1
 DefaultDirName={autopf}\LABOKit
 DefaultGroupName=LABOKit
 UninstallDisplayIcon={app}\LABOKit.exe
 Compression=lzma2/ultra64
 SolidCompression=yes
 OutputDir=dist
-OutputBaseFilename=LABOKit_v3.3.2_Setup
+OutputBaseFilename=LABOKit_v3.3.1_Setup
 SetupIconFile=labokit.ico
 PrivilegesRequired=lowest
 

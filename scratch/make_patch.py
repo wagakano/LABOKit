@@ -2,7 +2,7 @@ import os
 import zipfile
 
 def create_patch_zip():
-    output_path = 'dist/LABOKit_v3.3.2_Patch.zip'
+    output_path = 'dist/LABOKit_v3.3.1_Patch.zip'
     
     files_to_zip = [
         'main.py',
