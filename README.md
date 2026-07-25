@@ -1,11 +1,11 @@
 <div align="center">
 
-# LABOKit 3.3.1
+# LABOKit 3.3.2 Stable - Coming Soon
 
 <img width="1796" height="523" alt="LABOKit Banner" src="https://github.com/user-attachments/assets/2f0b033f-3cfb-4d59-b124-379dcef14b39" />
 
 <p align="center">
-  <a href="https://github.com/wagakano/LABOKit/releases/latest"><img src="https://img.shields.io/badge/VERSION-v3.3.1-d93f3f?style=flat-square" alt="Version" /></a>
+  <a href="https://github.com/wagakano/LABOKit/releases/latest"><img src="https://img.shields.io/badge/VERSION-v3.3.2%20Stable--Coming%20Soon-d93f3f?style=flat-square" alt="Version" /></a>
   <a href="https://github.com/wagakano/LABOKit/blob/main/LICENSE"><img src="https://img.shields.io/badge/LICENSE-MIT-dfb317?style=flat-square" alt="License" /></a>
   <a href="https://github.com/wagakano/LABOKit/stargazers"><img src="https://img.shields.io/github/stars/wagakano/LABOKit?style=flat-square&label=STARS&color=dfb317" alt="Stars" /></a>
   <a href="https://github.com/wagakano/LABOKit/releases"><img src="https://img.shields.io/github/downloads/wagakano/LABOKit/total?style=flat-square&label=DOWNLOADS&color=007ec6" alt="Downloads" /></a>
@@ -19,11 +19,14 @@ LABOKit is a modular desktop tool for offline batch image processing. Built with
 
 ---
 
-## What's New in LABOKit 3.3.1
+## What's New in LABOKit 3.3.2 (Coming Soon)
 
-- **Multi-Language Expansion**: Support for English, Japanese, Indonesian, Chinese, Korean, Spanish, French, German, and more.
-- **Batch Import Speed Optimizations**: High-performance disk I/O and state updates.
-- **UI & Theme Engine**: Modern responsive layout and controls.
+- **Theme Engine**: Dynamic Light and Dark Mode theme engine with persistent state storage in settings.
+- **Window Resizability & Native Border Dragging**: Resizable main window with double-click titlebar toggle, Maximize control, and native Windows border dragging.
+- **PyInstaller Windowed Crashfix**: Safe stream redirection resolving windowed mode crashes.
+- **Performance & State Optimizations**: Throttled Divergence Meter status spinner and O(K) disk I/O callback state loop optimizations.
+- **Model Restorations**: Restored `"Performance"` (`u2netp`) and `"Human Portrait"` (`silueta`) background remover models.
+- **UI Harmonization**: Standardized list boxes, scrollbars, dialogs, and controls across core tabs and plugins.
 
 ---
 
@@ -39,11 +42,11 @@ LABOKit is a modular desktop tool for offline batch image processing. Built with
 
 ---
 
-## Download LABOKit 3.3.1
+## Download LABOKit 3.3.2 (Coming Soon)
 
 ### Windows
-1. Download the installer: **[LABOKit_v3.3.1_Setup.exe](https://github.com/wagakano/LABOKit/releases/download/v3.3.1/LABOKit_v3.3.1_Setup.exe)**
-2. Run `LABOKit_v3.3.1_Setup.exe` to install.
+1. Download the installer: **[LABOKit_v3.3.2_Setup.exe](https://github.com/wagakano/LABOKit/releases/download/v3.3.2/LABOKit_v3.3.2_Setup.exe)**
+2. Run `LABOKit_v3.3.2_Setup.exe` to install.
 
 ### Linux
 Source code and Linux build instructions are on the [main_linux branch](https://github.com/wagakano/LABOKit/tree/main_linux).
