@@ -213,6 +213,9 @@ class ZoomableImageWidget(QScrollArea):
         self._scale_timer.setInterval(50)
         self._scale_timer.timeout.connect(self._do_update_display)
 
+        self.setAccessibleName("Zoomable Image Viewer")
+        self.setToolTip("Ctrl + Mouse Wheel to zoom")
+
         self.btn_toggle = QPushButton("Split View", self)
         self.btn_toggle.setCheckable(True)
         self.btn_toggle.setChecked(True)
