@@ -1,5 +1,5 @@
 {
-  "version": "3.3.1",
-  "url": "https://github.com/wagakano/LABOKit/releases/download/v3.3.1/LABOKit_v3.3.1_Setup.exe",
-  "changelog": "3.3.1 - Multi-Language Expansion and Batch Import Speed optimizations."
+  "version": "3.3.2",
+  "url": "https://github.com/wagakano/LABOKit",
+  "changelog": "LABOKit 3.3.2 Stable — We are truly sorry for the bugs and unstable experience that has been delivered without a deep testing phase. We are currently working on making the app truly work as intended. The app is indeed vibe-coded, but we are now building it more carefully through multiple phases in upcoming updates. Once again, sorry! The stable version is expected on July 30th with solid improvements in UI/UX and performance. Check out: https://github.com/wagakano/LABOKit"
 }
