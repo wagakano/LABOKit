@@ -251,9 +251,21 @@ class ExamplePluginTab(QWidget):
                 "QFrame#list_box { border: 1px solid #b3bcd1; border-radius: 4px; background-color: #f5f7fb; }"
             )
             
-        # Update the list widget's internal styles
+        # Update the list widget's internal styles (border: none to avoid duplicate stroke inside list_box)
         if hasattr(self, 'file_list') and hasattr(self.file_list, 'set_theme'):
             self.file_list.set_theme(theme_name)
+            if is_dark:
+                self.file_list.setStyleSheet(
+                    "FileDropListWidget { background-color: #141414; border: none; color: #ffffff; outline: 0; }"
+                    "FileDropListWidget::viewport { background-color: #141414; }"
+                    "FileDropListWidget::item:selected { background-color: #323242; color: #ffffff; }"
+                )
+            else:
+                self.file_list.setStyleSheet(
+                    "FileDropListWidget { background-color: #ffffff; border: none; color: #1c2333; outline: 0; }"
+                    "FileDropListWidget::viewport { background-color: #ffffff; }"
+                    "FileDropListWidget::item:selected { background-color: #cce0ff; color: #1c2333; }"
+                )
             
         # Theme-specific colors and button styles
         if is_dark:
