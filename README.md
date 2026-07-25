@@ -29,11 +29,43 @@ LABOKit is a modular desktop tool for offline batch image processing. Built with
 ## What's New in LABOKit 3.3.2 Stable (Coming Soon)
 
 - **Theme Engine**: Dynamic Light and Dark Mode theme engine with persistent state storage in settings.
-- **Window Resizability & Native Border Dragging**: Resizable main window with double-click titlebar toggle, Maximize control, and native Windows border dragging.
-- **PyInstaller Windowed Crashfix**: Safe stream redirection resolving windowed mode crashes.
-- **Performance & State Optimizations**: Throttled Divergence Meter status spinner and O(K) disk I/O callback state loop optimizations.
-- **Model Restorations**: Restored `"Performance"` (`u2netp`) and `"Human Portrait"` (`silueta`) background remover models.
-- **UI Harmonization**: Standardized list boxes, scrollbars, dialogs, and controls across core tabs and plugins.
+- **Native Window Resizability**: Resizable main window with titlebar toggle, Maximize control, and border dragging.
+- **Glitch-Free Upscaling**: High-quality Lanczos downsampling for 2x and 3x upscales without Vulkan texture artifacts.
+- **Performance Boosts**: O(K) callback state loop optimizations eliminating main-thread UI freezes during large batch processing.
+- **UI & Accessibility Polish**: Standardized styling, tooltips, and screen-reader accessibility across all core tabs and plugins.
+
+---
+
+## Changelog 3.3.2
+
+### Theme Engine & Full UI Harmonization
+- **Light & Dark Theme Engine**: Introduced a dynamic theme engine with persistent theme state storage.
+- **Menu Popup Styling Fix**: Fixed transparent QMenu dropdown popups in QMenuBar across both light and dark themes.
+- **Universal Component Styling**: Standardized list box containers, scrollbars, frame borders, and buttons universally across core tabs and plugins.
+- **ImageLAB Checkbox Fix**: Fixed invisible checkbox labels in light mode by adding explicit QCheckBox text and indicator CSS rules.
+
+### Window Mechanics & Resizability
+- **Native Resizing & Maximize Controls**: Made the custom frameless main window resizable with native Windows border dragging, double-click titlebar toggling, and dedicated Maximize/Restore controls.
+- **Rounded Border Insets**: Added 1px margin offsets on the main frame to prevent window mask clipping on rounded corners.
+
+### Performance & Speed Optimizations
+- **O(K) Callback State Loop**: Reduced post-processing main-thread disk I/O in on_worker_finished from O(N) full list scanning down to O(K) processed subset scanning, preventing UI lockups when handling thousands of files.
+- **Numba JIT Bundling**: Restored numba in PyInstaller build specifications, enabling C-speed execution for matrix and dithering math.
+
+### Stability & Engine Reliability
+- **PyInstaller EBADF Crash Fix**: Resolved windowed mode (--noconsole) startup crashes by implementing global SafeStream stdout/stderr redirection.
+- **Event Starvation Throttling**: Throttled Divergence Meter status spinner updates to prevent Qt event loop starvation during intensive background runs.
+- **Atomic Model Asset Deployment**: Implemented atomic temporary file copying (.tmp_copy -> .onnx) on app startup to prevent AI engines from reading partially copied model files.
+- **Instant Progress Feedback**: Progress dialogs now immediately display status updates ("Loading model...") before loading heavy AI engines.
+
+### Upscaler Improvements
+- **Multi-Path Model Detection**: Updated init_upsampler to check internal bundle directories as fallbacks, resolving "Failed to initialize upsampler" errors for realesr-general-x4v3.pth.
+- **Glitch-Free 2x & 3x Scaling**: Fixed Vulkan GPU downsampling texture glitches on 2x/3x scale requests by running native 4x model inference followed by high-quality CPU Lanczos post-resampling.
+
+### Models, Plugins & Accessibility
+- **Model Restorations**: Restored pre-packaged offline weights for "Performance" (u2netp) and "Human Portrait" (silueta) background remover models.
+- **Example Plugin**: Added plugins/ExamplePlugin.kit and updated developer guidelines.
+- **Micro-UX & Accessibility**: Added tooltips and screen-reader labels to FileDropListWidget, SplitImageLabel, split-view toggle buttons, and zoom sliders.
 
 ---
 
