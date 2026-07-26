@@ -925,8 +925,11 @@ def main():
 
     class CursorFilter(QObject):
         def eventFilter(self, obj, event):
-            if isinstance(obj, QPushButton):
-                if event.type() in (QEvent.Enter, QEvent.EnabledChange):
+            # ⚡ Bolt Optimization: Check `event.type()` before `isinstance()` to avoid expensive
+            # isinstance checks for the vast majority of events (e.g. MouseMove, Paint) that pass
+            # through this global filter. Improves UI responsiveness.
+            if event.type() in (QEvent.Enter, QEvent.EnabledChange):
+                if isinstance(obj, QPushButton):
                     if obj.isEnabled():
                         obj.setCursor(Qt.PointingHandCursor)
                     else:
