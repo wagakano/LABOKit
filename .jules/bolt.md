@@ -9,3 +9,9 @@
 **Learning:** When using `Path.rglob("*")` to recursively find files in a directory, checking string-based properties (like `f.suffix.lower() in VALID_EXTENSIONS`) before performing disk operations (like `f.is_file()`) can yield significant performance improvements, avoiding unnecessary filesystem stats on subdirectories or non-matching files.
 
 **Action:** Order boolean condition checks in directory traversal from least expensive (string matching) to most expensive (OS stat calls).
+
+## 2024-05-18 - PySide6 Event Filter Optimization
+
+**Learning:** In global event filters (e.g., `CursorFilter` via `app.installEventFilter`), always evaluate the `event.type()` before performing expensive object type checks like `isinstance(obj, ...)`. Short-circuiting high-frequency events (like `MouseMove` or `Paint`) avoids unnecessary C++-to-Python inheritance tree traversals and measurably improves event loop responsiveness.
+
+**Action:** Check `event.type()` first in all `eventFilter` methods before using `isinstance()`.

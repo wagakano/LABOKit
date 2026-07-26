@@ -345,7 +345,9 @@ class ZoomableImageWidget(QScrollArea):
         elif self.result_image: target_size = self.result_image.size()
         elif self.result_movie: target_size = self._result_movie_size
         
-        if target_size.isValid() and not target_size.isEmpty():
+        # ⚡ Bolt Optimization: Replace `isValid() and not isEmpty()` with just `not isEmpty()` for QSize objects.
+        # This simplifies the check and improves performance while maintaining the same logical guarantees.
+        if not target_size.isEmpty():
             w_ratio = self.width() / target_size.width()
             h_ratio = self.height() / target_size.height()
             fit_scale = min(w_ratio, h_ratio)
@@ -377,7 +379,8 @@ class ZoomableImageWidget(QScrollArea):
                 movie = self.original_movie
                 
             base_size = self._result_movie_size if movie == self.result_movie else self._original_movie_size
-            if base_size.isValid() and not base_size.isEmpty():
+            # ⚡ Bolt Optimization: Replace `isValid() and not isEmpty()` with just `not isEmpty()`
+            if not base_size.isEmpty():
                 new_size = QSize(int(base_size.width() * self.scale_factor), int(base_size.height() * self.scale_factor))
                 if movie.scaledSize() != new_size:
                     movie.setScaledSize(new_size)
@@ -388,7 +391,8 @@ class ZoomableImageWidget(QScrollArea):
             if self.original_image: base_size = self.original_image.size()
             elif self.result_image: base_size = self.result_image.size()
             
-            if base_size.isValid() and not base_size.isEmpty():
+            # ⚡ Bolt Optimization: Replace `isValid() and not isEmpty()` with just `not isEmpty()`
+            if not base_size.isEmpty():
                 new_size = QSize(int(base_size.width() * self.scale_factor), int(base_size.height() * self.scale_factor))
                 
                 # Perform scaling synchronously
