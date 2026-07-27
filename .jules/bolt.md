@@ -9,3 +9,9 @@
 **Learning:** When using `Path.rglob("*")` to recursively find files in a directory, checking string-based properties (like `f.suffix.lower() in VALID_EXTENSIONS`) before performing disk operations (like `f.is_file()`) can yield significant performance improvements, avoiding unnecessary filesystem stats on subdirectories or non-matching files.
 
 **Action:** Order boolean condition checks in directory traversal from least expensive (string matching) to most expensive (OS stat calls).
+
+## 2024-05-24 - Precompile Regex for Sorting Operations
+
+**Learning:** When using `re.split` inside a sorting key function (e.g., natural sorting), compiling the regex inline causes cache check overhead for every item. In scenarios processing thousands of items (like image sequences), precompiling the regex at the module level removes this overhead entirely, resulting in measurably faster O(N log N) sorting.
+
+**Action:** Always precompile static regex expressions at the module level when they are used within sorting or high-frequency mapping operations.
