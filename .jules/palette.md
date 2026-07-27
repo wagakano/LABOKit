@@ -7,3 +7,6 @@
 ## 2026-05-27 - Accessible Icon-only Buttons in PySide6
 **Learning:** Custom UI controls like 'Minimize' or 'Close' buttons that only use symbols (e.g., "−", "×") or icons are opaque to screen readers and can be confusing to users without context.
 **Action:** Always explicitly implement `setAccessibleName` (for screen reader accessibility) and `setToolTip` (for visual context on hover) for icon-only or non-textual UI buttons.
+## 2026-05-27 - Batch Processing Multi-selection in PySide6 List Widgets
+**Learning:** PySide6's `QListWidget` defaults to single-item selection. When list widgets serve as inputs for batch processing operations (like "Process Selected" vs "Process All"), users intuitively expect standard Shift/Ctrl click multi-selection to work, but it is disabled by default.
+**Action:** When implementing list widgets that support batch processing for backend operations, explicitly enable multi-selection via `setSelectionMode(QAbstractItemView.ExtendedSelection)` and communicate this capability through widget tooltips.
