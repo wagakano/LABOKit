@@ -9,3 +9,6 @@
 **Learning:** When using `Path.rglob("*")` to recursively find files in a directory, checking string-based properties (like `f.suffix.lower() in VALID_EXTENSIONS`) before performing disk operations (like `f.is_file()`) can yield significant performance improvements, avoiding unnecessary filesystem stats on subdirectories or non-matching files.
 
 **Action:** Order boolean condition checks in directory traversal from least expensive (string matching) to most expensive (OS stat calls).
+## 2026-07-29 - Pre-compile Regex for Sorting Optimization
+**Learning:** Python's `sorted()` function evaluates the `key` function for every item in the list, making any overhead inside that function extremely costly (O(N log N)). Inline `re.split(r'(...)`, ...)` inside the `key` lambda forces the regex engine to parse and fetch the compiled regex from cache on every single call.
+**Action:** Always pre-compile static regular expressions (e.g., `NATURAL_SORT_RE = re.compile(...)`) at the module level when they are used inside tight loops or high-frequency callbacks like sorting keys. Call `NATURAL_SORT_RE.split(...)` directly to skip cache lookups and improve execution speed.
