@@ -1,7 +1,7 @@
 from PySide6.QtCore import Qt, Signal, QTimer, QPoint, QSize, QRunnable, QThreadPool, QObject
 from PySide6.QtGui import QPixmap, QPainter, QColor, QPen, QIcon, QAction, QFont, QCursor, QGuiApplication, QMovie, QImage
 from PySide6.QtWidgets import (
-    QListWidget, QScrollArea, QLabel, QPushButton, QMenu, QFrame, QHBoxLayout, QApplication, QWidget, QVBoxLayout, QSlider
+    QListWidget, QScrollArea, QLabel, QPushButton, QMenu, QFrame, QHBoxLayout, QApplication, QWidget, QVBoxLayout, QSlider, QAbstractItemView
 )
 import random
 from pathlib import Path
@@ -24,7 +24,8 @@ class FileDropListWidget(QListWidget):
         self.setAcceptDrops(True)
         self.current_theme = "light"
         self.setAccessibleName("File Drop List")
-        self.setToolTip("Drag and drop files here. Right-click an item for more options.")
+        self.setSelectionMode(QAbstractItemView.ExtendedSelection)
+        self.setToolTip("Drag and drop files here. Use Shift/Ctrl to select multiple items. Right-click for more options.")
         self.update_style()
 
     def set_theme(self, theme_name):
