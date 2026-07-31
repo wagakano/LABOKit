@@ -7,3 +7,6 @@
 ## 2026-05-27 - Accessible Icon-only Buttons in PySide6
 **Learning:** Custom UI controls like 'Minimize' or 'Close' buttons that only use symbols (e.g., "−", "×") or icons are opaque to screen readers and can be confusing to users without context.
 **Action:** Always explicitly implement `setAccessibleName` (for screen reader accessibility) and `setToolTip` (for visual context on hover) for icon-only or non-textual UI buttons.
+## 2026-05-27 - Form Accessibility in PySide6
+**Learning:** Form labels (`QLabel`) must explicitly use `.setBuddy(target_widget)` to link with input controls (like `QComboBox` or `QListWidget`). This ensures screen readers correctly announce the label text upon focus and enables keyboard navigation shortcuts.
+**Action:** Add `lbl.setBuddy(target)` wherever `QLabel` is acting as a label for a subsequent input widget.
