@@ -118,6 +118,7 @@ class BgRemoverTab(QWidget):
         self.list_w.currentRowChanged.connect(self.on_file_selected)
         self.lbl_header = QLabel(tr("lbl_loaded_bg"))
         self.lbl_header.setStyleSheet("font-weight: bold; background-color: #e2e7f2; border: 1px solid #cbd2e1; border-radius: 3px; padding: 4px 6px; color: #333d51;")
+        self.lbl_header.setBuddy(self.list_w)
         list_box_layout.addWidget(self.lbl_header)
         list_box_layout.addWidget(self.list_w)
         
@@ -155,15 +156,17 @@ class BgRemoverTab(QWidget):
         pres_row.setSpacing(5)
 
         l_mod = QLabel(tr("lbl_model")); l_mod.setStyleSheet("font-weight: bold; border: none; background: transparent;")
-        pres_row.addWidget(l_mod)
         self.combo_model = QComboBox()
         self.combo_model.addItems(["General", "Performance", "Anime", "Human Portrait"])
+        l_mod.setBuddy(self.combo_model)
+        pres_row.addWidget(l_mod)
         pres_row.addWidget(self.combo_model)
 
         l_sen = QLabel(tr("lbl_sens")); l_sen.setStyleSheet("font-weight: bold; border: none; background: transparent;")
-        pres_row.addWidget(l_sen)
         self.combo = QComboBox(); self.combo.addItems(self.presets.keys())
         self.combo.currentTextChanged.connect(self.on_preset)
+        l_sen.setBuddy(self.combo)
+        pres_row.addWidget(l_sen)
         pres_row.addWidget(self.combo)
         left.addLayout(pres_row)
 
