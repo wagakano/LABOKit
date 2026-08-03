@@ -158,12 +158,14 @@ class BgRemoverTab(QWidget):
         pres_row.addWidget(l_mod)
         self.combo_model = QComboBox()
         self.combo_model.addItems(["General", "Performance", "Anime", "Human Portrait"])
+        l_mod.setBuddy(self.combo_model)
         pres_row.addWidget(self.combo_model)
 
         l_sen = QLabel(tr("lbl_sens")); l_sen.setStyleSheet("font-weight: bold; border: none; background: transparent;")
         pres_row.addWidget(l_sen)
         self.combo = QComboBox(); self.combo.addItems(self.presets.keys())
         self.combo.currentTextChanged.connect(self.on_preset)
+        l_sen.setBuddy(self.combo)
         pres_row.addWidget(self.combo)
         left.addLayout(pres_row)
 
