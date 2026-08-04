@@ -1,40 +1,16 @@
 import sys
 import os
 
-class SafeStream:
-    def __init__(self, original_stream=None):
-        self.original_stream = original_stream
+# Prevent OpenMP multi-threading duplicate library conflicts and loading deadlocks
+os.environ["KMP_DUPLICATE_LIB_OK"] = "TRUE"
+os.environ["OMP_NUM_THREADS"] = "1"
+os.environ["MKL_NUM_THREADS"] = "1"
 
-    def write(self, data):
-        if self.original_stream:
-            try:
-                self.original_stream.write(data)
-                return
-            except Exception:
-                pass
-
-    def flush(self):
-        if self.original_stream:
-            try:
-                self.original_stream.flush()
-            except Exception:
-                pass
-
-if sys.stdout is None or not hasattr(sys.stdout, 'write'):
-    sys.stdout = SafeStream(None)
-else:
-    sys.stdout = SafeStream(sys.stdout)
-
-if sys.stderr is None or not hasattr(sys.stderr, 'write'):
-    sys.stderr = SafeStream(None)
-else:
-    sys.stderr = SafeStream(sys.stderr)
-
+import json
 import shutil
+import zipfile
 from pathlib import Path
 from packaging import version
-import urllib3
-urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
 
 # Ensure main directory is in path for plugins to import other modules
 script_dir = os.path.dirname(os.path.abspath(__file__))
@@ -42,7 +18,6 @@ if script_dir not in sys.path:
     sys.path.insert(0, script_dir)
 
 # --- NUMBA MISSING NJIT PATCH FOR PYMATTING (dependency of REMBG) ---
-import sys
 import types
 try:
     from numba import njit
@@ -103,22 +78,18 @@ try:
 except AttributeError:
     pass
 
-
-def resource_path(relative_path):
-    try:
-        base_path = sys._MEIPASS
-    except Exception:
-        base_path = os.path.abspath(".")
-    return os.path.join(base_path, relative_path)
-
 # --- APP INFO ---
-APP_VERSION = "3.3.1"
+APP_VERSION = "3.3.2"
 APP_UPDATE_URL = "https://raw.githubusercontent.com/wagakano/LABOKit/main_windows/latest_version.json"
 PLUGIN_MANIFEST_URL = "https://raw.githubusercontent.com/wagakano/LABOKit/main_windows/plugins_manifest.json"
 
 # --- PATH & ASSETS SETUP ---
 # 1. Internal Path (Source files inside EXE/Build)
 INTERNAL_DIR = Path(getattr(sys, "_MEIPASS", Path(__file__).resolve().parent))
+
+def resource_path(relative_path):
+    """Return absolute path to resource, working for dev and for PyInstaller."""
+    return str(INTERNAL_DIR / relative_path)
 
 # 2. Persistent Path (User AppData folder: %APPDATA%/LABOKit)
 _app_data = os.getenv('APPDATA')
@@ -131,7 +102,6 @@ APP_DATA.mkdir(parents=True, exist_ok=True)
 SETTINGS_FILE = APP_DATA / "settings.json"
 
 def load_settings():
-    import json
     default_settings = {"theme": "light"}
     if SETTINGS_FILE.exists():
         try:
@@ -143,7 +113,6 @@ def load_settings():
     return default_settings
 
 def save_settings(settings):
-    import json
     try:
         with open(SETTINGS_FILE, "w", encoding="utf-8") as f:
             json.dump(settings, f, indent=2)
@@ -158,6 +127,22 @@ FFMPEG_DIR = APP_DATA / "ffmpeg"
 # Setup Environment Variables
 os.environ["U2NET_HOME"] = str(MODEL_DIR)
 
+def ensure_offline_models_extracted():
+    """100% Offline bootstrap: Unpack local bundled models.zip if models directory is missing weights."""
+    try:
+        MODEL_DIR.mkdir(parents=True, exist_ok=True)
+        local_archive = INTERNAL_DIR / "models.zip"
+        if local_archive.exists():
+            existing = list(MODEL_DIR.glob("*"))
+            if not existing:
+                with zipfile.ZipFile(local_archive, 'r') as z:
+                    z.extractall(MODEL_DIR)
+                print(f"Offline model archive unpacked to {MODEL_DIR}")
+    except Exception as e:
+        print(f"Offline model extraction check warning: {e}")
+
+ensure_offline_models_extracted()
+
 def cleanup_temp_model_files():
     if MODEL_DIR.exists():
         for f in MODEL_DIR.glob("tmp*"):
@@ -168,40 +153,6 @@ def cleanup_temp_model_files():
                 pass
 
 cleanup_temp_model_files()
-
-ARROW_LIGHT_PATH = APP_DATA / "arrow_light.png"
-ARROW_DARK_PATH = APP_DATA / "arrow_dark.png"
-
-def ensure_arrow_icons():
-    try:
-        from PySide6.QtGui import QImage, QPainter, QColor, QPolygon
-        from PySide6.QtCore import Qt, QPoint
-
-        if not ARROW_LIGHT_PATH.exists():
-            img_light = QImage(9, 6, QImage.Format_ARGB32)
-            img_light.fill(QColor(0,0,0,0))
-            p = QPainter(img_light)
-            p.setRenderHint(QPainter.Antialiasing)
-            p.setBrush(QColor(0, 0, 0))
-            p.setPen(Qt.NoPen)
-            p.drawPolygon(QPolygon([QPoint(0, 1), QPoint(8, 1), QPoint(4, 5)]))
-            p.end()
-            img_light.save(str(ARROW_LIGHT_PATH))
-
-        if not ARROW_DARK_PATH.exists():
-            img_dark = QImage(9, 6, QImage.Format_ARGB32)
-            img_dark.fill(QColor(0,0,0,0))
-            p = QPainter(img_dark)
-            p.setRenderHint(QPainter.Antialiasing)
-            p.setBrush(QColor(255, 255, 255))
-            p.setPen(Qt.NoPen)
-            p.drawPolygon(QPolygon([QPoint(0, 1), QPoint(8, 1), QPoint(4, 5)]))
-            p.end()
-            img_dark.save(str(ARROW_DARK_PATH))
-    except Exception as e:
-        print(f"Failed to generate arrow icons: {e}")
-
-ensure_arrow_icons()
 
 # Fallback: check if the executable exists in AppData, if not use the bundled version directly
 _realesrgan_exe_appdata = REALESRGAN_DIR / "realesrgan-ncnn-vulkan.exe"

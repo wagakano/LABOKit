@@ -4,9 +4,12 @@ All notable changes and updates made during this development cycle for the relea
 
 ---
 
-## [3.3.2] - 2026-07-19
+## [3.3.2] - 2026-07-26
 
 ### Added
+* **100% Offline Local Model Unpacking**: Implemented `ensure_offline_models_extracted()` in `core_config.py` to automatically unpack local bundled `models.zip` archives into `%APPDATA%/LABOKit/models/` without any network requests.
+* **Zooming UX Overhaul**: Enhanced `ZoomableImageWidget` in `ui_shared.py` with cursor-anchored zooming (maintains focal point under mouse pointer), double-click shortcut to toggle between 100% (1:1 Native Resolution) and Fit-to-Window, and preserved user zoom levels during processing result updates.
+* **Automated Verification Suite**: Added `scratch/test_full_suite.py` covering core module imports, offline model bootstrapping, translation dictionary integrity, zoom UX, and window lifecycle.
 * **Theme System**: Implemented dynamic Light Mode and Dark Mode theme engine with persistent state storage in `%APPDATA%/LABOKit/settings.json` and menu selection under `Config -> Theme`.
 * **Window Resizability & Native Border Dragging**: Made main window resizable (`resize(1200, 800)`, `setMinimumSize(900, 600)`) with double-click titlebar toggle, Maximize/Restore button control, and `WM_NCHITTEST` native Windows border hit-testing for frameless window resizing (Issue #22).
 * **macOS Traffic Light Window Controls**: Redesigned title bar window control buttons to clean, borderless macOS traffic light color-coded circles (Red, Yellow, Green) without text symbols.
@@ -28,6 +31,9 @@ All notable changes and updates made during this development cycle for the relea
 * **Loaded Images Dark Theme universalization**: Explicitly targeted `FileDropListWidget` and its viewports in both local widget styles and parent frame scoped sheets to eliminate all remaining light background and border leaks in Dark Mode.
 
 ### Fixed
+* **Main Window Thread Cleanup**: Added a `closeEvent` handler to `LABOKitMainWindow` in `main.py` to gracefully stop active `BgRemovalWorker` and `UpscalerWorker` `QThread` instances before purging AI model memory on application shutdown.
+* **Worker Partial Error Logging**: Fixed partial batch error reporting in `BgRemovalWorker` and `UpscalerWorker` to prevent silent discarding of item-level errors.
+* **Redundant Main Block Clean-Up**: Removed duplicate incomplete `main()` function definition and dead event filter blocks in `main.py`.
 * **EXE Processing Freeze**: Bundled the `numba` package in the PyInstaller executable specifications (`LABOKit.spec` and `LABOKit_3.1.spec`). This ensures that `pymatting` (dependency of `rembg`) compiles computation loops at runtime to C speed, preventing application freezes/hangs during background removal.
 
 ### Changed

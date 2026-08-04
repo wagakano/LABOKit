@@ -18,7 +18,7 @@ from PySide6.QtWidgets import (
     QFrame, QComboBox, QGroupBox, QApplication, QProgressBar, QCheckBox,
     QPlainTextEdit
 )
-from ui_shared import FileDropListWidget, create_plus_icon
+from ui_shared import FileDropListWidget, create_plus_icon, ModernDialog, setup_combobox
 
 # Import Translations
 try:
@@ -265,7 +265,7 @@ class VideoUpscalerTab(QWidget):
         l_scale = QLabel("Scale Factor:")
         l_scale.setStyleSheet("font-weight: bold; border: none; background: transparent;")
         left_layout.addWidget(l_scale)
-        self.combo_scale = QComboBox()
+        self.combo_scale = setup_combobox(QComboBox())
         self.combo_scale.addItems(["2x", "3x", "4x"])
         self.combo_scale.setCurrentText("2x")
         left_layout.addWidget(self.combo_scale)
@@ -273,7 +273,7 @@ class VideoUpscalerTab(QWidget):
         l_ai = QLabel("AI Model:")
         l_ai.setStyleSheet("font-weight: bold; border: none; background: transparent;")
         left_layout.addWidget(l_ai)
-        self.combo_model = QComboBox()
+        self.combo_model = setup_combobox(QComboBox())
         self.combo_model.addItems(["realesrgan-x4plus", "realesrgan-x4plus-anime", "realesr-animevideov3"])
         self.combo_model.setCurrentText("realesr-animevideov3")
         left_layout.addWidget(self.combo_model)
@@ -317,7 +317,7 @@ class VideoUpscalerTab(QWidget):
         if self.input_file and self.input_file.parent.exists():
             os.startfile(str(self.input_file.parent))
         else:
-            QMessageBox.information(self, "Info", "No video loaded or folder does not exist.")
+            ModernDialog.show_info(self, "Info", "No video loaded or folder does not exist.")
 
     def clear_list(self):
         self.file_list.clear()
@@ -329,7 +329,7 @@ class VideoUpscalerTab(QWidget):
 
     def start_process(self):
         if not self.input_file:
-            return QMessageBox.warning(self, "Error", "Please select a video first.")
+            return ModernDialog.show_warning(self, "Error", "Please select a video first.")
         
         scale_str = self.combo_scale.currentText()
         scale = int(scale_str.replace("x", ""))
@@ -359,7 +359,7 @@ class VideoUpscalerTab(QWidget):
         self.pbar.setValue(100)
         self.log_text.appendPlainText("Finished!")
         if self.meter: self.meter.set_message(None)
-        QMessageBox.information(self, "Success", "Video Upscaling Complete!")
+        ModernDialog.show_info(self, "Success", "Video Upscaling Complete!")
 
     def on_error(self, msg):
         self.btn_run.setEnabled(True)
@@ -367,7 +367,7 @@ class VideoUpscalerTab(QWidget):
         self.pbar.setValue(0)
         self.log_text.appendPlainText("Error occurred.")
         if self.meter: self.meter.set_message("Error")
-        QMessageBox.critical(self, "Error", f"Process Failed:\n{msg}")
+        ModernDialog.show_critical(self, "Error", f"Process Failed:\n{msg}")
 
 def create_tab(parent=None):
     tab = VideoUpscalerTab(parent)

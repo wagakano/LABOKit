@@ -17,7 +17,7 @@ from PySide6.QtWidgets import (
     QFileDialog, QMessageBox, QFrame, QProgressBar, QSlider,
     QComboBox, QPlainTextEdit, QListWidgetItem
 )
-from ui_shared import FileDropListWidget, ZoomableImageWidget, create_plus_icon
+from ui_shared import FileDropListWidget, ZoomableImageWidget, create_plus_icon, ModernDialog, setup_combobox
 
 # Import Translations
 try:
@@ -333,7 +333,7 @@ class ImageSequencerPlugin(QWidget):
         l_fmt.setStyleSheet("font-weight: bold; border: none; background: transparent;")
         left_layout.addWidget(l_fmt)
         
-        self.combo_format = QComboBox()
+        self.combo_format = setup_combobox(QComboBox())
         self.combo_format.addItems(["GIF", "MP4"])
         self.combo_format.currentTextChanged.connect(self.on_format_changed)
         left_layout.addWidget(self.combo_format)
@@ -344,7 +344,7 @@ class ImageSequencerPlugin(QWidget):
         l_bg.setStyleSheet("font-weight: bold; border: none; background: transparent;")
         left_layout.addWidget(l_bg)
         
-        self.combo_bg = QComboBox()
+        self.combo_bg = setup_combobox(QComboBox())
         self.combo_bg.addItems(["Transparent", "White", "Black"])
         left_layout.addWidget(self.combo_bg)
 
@@ -438,14 +438,14 @@ class ImageSequencerPlugin(QWidget):
         if self.output_dir and self.output_dir.exists():
             os.startfile(str(self.output_dir))
         else:
-            QMessageBox.information(self, "Info", "Output folder does not exist or has not been set yet.")
+            ModernDialog.show_info(self, "Info", "Output folder does not exist or has not been set yet.")
 
     def start_process(self):
         if not self.image_paths:
-            return QMessageBox.warning(self, "Error", "Please load some images first.")
+            return ModernDialog.show_warning(self, "Error", "Please load some images first.")
         
         if not self.output_dir:
-            return QMessageBox.warning(self, "Error", "Please select an output folder.")
+            return ModernDialog.show_warning(self, "Error", "Please select an output folder.")
 
         fmt = self.combo_format.currentText().lower()
         fps = self.slider_fps.value()
@@ -478,7 +478,7 @@ class ImageSequencerPlugin(QWidget):
         if self.meter:
             self.meter.set_message(None)
             
-        QMessageBox.information(self, tr("msg_done", "Done"), f"Sequence generated successfully!\nFile: {out_path}")
+        ModernDialog.show_info(self, tr("msg_done", "Done"), f"Sequence generated successfully!\nFile: {out_path}")
         
         # Preview if GIF
         if out_path.lower().endswith(".gif"):
@@ -508,7 +508,7 @@ class ImageSequencerPlugin(QWidget):
         self.progress_bar.setValue(0)
         if self.meter:
             self.meter.set_message(None)
-        QMessageBox.critical(self, "Error", f"Failed to generate sequence:\n{err_msg}")
+        ModernDialog.show_critical(self, "Error", f"Failed to generate sequence:\n{err_msg}")
 
 # --- ENTRY POINT ---
 def create_tab(parent=None):

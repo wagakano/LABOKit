@@ -26,7 +26,7 @@ from PySide6.QtWidgets import (
     QDialog, QPlainTextEdit, QSplashScreen, QMenuBar, QSizePolicy,
     QScrollArea, QMenu
 )
-from ui_shared import FileDropListWidget, ZoomableImageWidget, DivergenceMeter, create_plus_icon, VALID_EXTENSIONS
+from ui_shared import FileDropListWidget, ZoomableImageWidget, DivergenceMeter, create_plus_icon, ModernDialog, ModernProgressDialog, VALID_EXTENSIONS
 
 # Import Core Tabs
 from bg_remover_tab import BgRemoverTab
@@ -49,11 +49,11 @@ class AppUpdater(QThread):
         try:
             import requests
             url = "https://raw.githubusercontent.com/wagakano/LABOKit-assets/main/app_manifest.json"
-            response = requests.get(url, timeout=5)
+            response = requests.get(url, timeout=10)
             if response.status_code == 200:
                 data = response.json()
                 latest_version = data.get("version", "0.0")
-                if latest_version != APP_VERSION:
+                if version.parse(latest_version) > version.parse(APP_VERSION):
                     self.update_available.emit(latest_version, data.get("download_url"), data.get("changelog", "No changelog provided."))
         except Exception as e:
             print(f"Failed to check for app updates: {e}")
@@ -315,10 +315,10 @@ class AppUpdateChecker(QThread):
         import urllib.request
         import json
         try:
-            with urllib.request.urlopen(APP_UPDATE_URL) as url:
+            with urllib.request.urlopen(APP_UPDATE_URL, timeout=10) as url:
                 data = json.loads(url.read().decode())
                 remote_ver = data.get("version", "0.0.0")
-                if remote_ver > APP_VERSION:
+                if version.parse(remote_ver) > version.parse(APP_VERSION):
                     self.found_update.emit(remote_ver, data.get("url", ""), data.get("changelog", ""))
         except Exception as e:
             print(f"App Update Check Failed: {e}")
@@ -345,13 +345,14 @@ class PluginUpdater(QThread):
                     local_ver = self.get_local_version(kit_file)
                     remote_ver = remote_info.get("version", "1.0")
                     
-                    if remote_ver > local_ver:
+                    if version.parse(remote_ver) > version.parse(local_ver):
                         enc_url = remote_info.get("url_encoded", "")
                         try:
                             if enc_url == "-" or not enc_url: continue
                             real_url = base64.b64decode(enc_url).decode("utf-8")
                             self.update_found.emit(plugin_id, remote_ver, remote_info.get("changelog", ""), real_url)
-                        except: pass
+                        except Exception as e:
+                            print(f"Error decoding plugin URL for {plugin_id}: {e}")
 
         except Exception as e:
             print(f"Plugin Update Check Failed: {e}")
@@ -379,7 +380,7 @@ class PluginUpdater(QThread):
 class LABOKitMainWindow(QMainWindow):
     def __init__(self):
         super().__init__()
-        self.setWindowTitle("LABOKit 3.3")
+        self.setWindowTitle(f"LABOKit {APP_VERSION}")
         
         screen = QApplication.primaryScreen().geometry()
         screen_height = screen.height()
@@ -595,6 +596,22 @@ class LABOKitMainWindow(QMainWindow):
                 self.meter.status_label.setStyleSheet("")
                 self._purge_notice_active = False
 
+    def closeEvent(self, event):
+        """Gracefully terminate worker threads and release model memory on application shutdown."""
+        try:
+            if hasattr(self, 'bg_tab') and hasattr(self.bg_tab, 'worker') and self.bg_tab.worker:
+                if self.bg_tab.worker.isRunning():
+                    self.bg_tab.worker.stop()
+                    self.bg_tab.worker.wait(1000)
+            if hasattr(self, 'up_tab') and hasattr(self.up_tab, 'worker') and self.up_tab.worker:
+                if self.up_tab.worker.isRunning():
+                    self.up_tab.worker.stop()
+                    self.up_tab.worker.wait(1000)
+            self.purge_ai_models()
+        except Exception as e:
+            print(f"Error during closeEvent cleanup: {e}")
+        event.accept()
+
 
     def resizeEvent(self, event):
         path = QPainterPath()
@@ -663,35 +680,48 @@ class LABOKitMainWindow(QMainWindow):
                     self.menu_plugins.addAction(action)
 
     def on_update_available(self, version, download_url, changelog):
-        msg = QMessageBox(self)
-        msg.setWindowTitle("Update Available")
-        msg.setText(f"A new version of LABOKit (v{version}) is available!\n\nChangelog:\n{changelog}\n\nWould you like to download and install it now?")
-        msg.setStandardButtons(QMessageBox.Yes | QMessageBox.No)
-        if msg.exec() == QMessageBox.Yes:
+        if ModernDialog.confirm(self, "Update Available", f"A new version of LABOKit (v{version}) is available!\n\nChangelog:\n{changelog}\n\nWould you like to download and install it now?"):
             self.apply_update(download_url)
             
     def apply_update(self, url):
-        self.progress_dialog = QProgressDialog("Downloading update...", "Cancel", 0, 100, self)
-        self.progress_dialog.setWindowModality(Qt.WindowModal)
-        self.progress_dialog.setAutoClose(True)
+        self.progress_dialog = ModernProgressDialog("Downloading update...", "Cancel", 0, 100, self)
         self.progress_dialog.show()
         
         self.downloader = PatchDownloader(url)
         self.downloader.progress.connect(self.progress_dialog.setValue)
-        self.downloader.error.connect(lambda e: QMessageBox.critical(self, "Update Failed", str(e)))
+        self.downloader.error.connect(lambda e: ModernDialog.show_critical(self, "Update Failed", str(e)))
         self.downloader.finished.connect(self.on_download_finished)
         self.downloader.start()
         
     def on_download_finished(self, patch_path):
         import tempfile
         import subprocess
+        import zipfile
         
         patch_path_obj = Path(patch_path)
-        bat_path = Path(tempfile.gettempdir()) / "labokit_updater.bat"
         target_dir = Path(sys.executable).parent if getattr(sys, 'frozen', False) else Path(__file__).parent
         
-        if patch_path_obj.suffix.lower() == '.exe':
-            bat_content = f"""@echo off
+        # Secure extraction for zip archives with path traversal guards
+        if patch_path_obj.suffix.lower() == '.zip':
+            try:
+                with zipfile.ZipFile(patch_path_obj, 'r') as zip_ref:
+                    for member in zip_ref.infolist():
+                        target_path = (target_dir / member.filename).resolve()
+                        if not target_path.is_relative_to(target_dir.resolve()):
+                            raise RuntimeError(f"Path traversal detected in zip member: {member.filename}")
+                        zip_ref.extract(member, target_dir)
+                ModernDialog.show_info(self, tr("msg_done", "Done"), "Update applied successfully! Please restart LABOKit.")
+                return
+            except Exception as e:
+                ModernDialog.show_critical(self, "Extraction Error", f"Failed to extract update zip:\n{e}")
+                return
+
+        # Secure temp file for batch installer
+        fd, bat_path_str = tempfile.mkstemp(suffix=".bat", prefix="labokit_updater_")
+        os.close(fd)
+        bat_path = Path(bat_path_str)
+
+        bat_content = f"""@echo off
 timeout /t 2 /nobreak > NUL
 echo Installing Update...
 start /wait "" "{patch_path_obj}" /SILENT /DIR="{target_dir}"
@@ -699,38 +729,15 @@ start "" "{target_dir}\\LABOKit.exe"
 del "{patch_path_obj}"
 del "%~f0"
 """
-        else:
-            bat_content = f"""@echo off
-timeout /t 2 /nobreak > NUL
-echo Updating LABOKit...
-tar -xf "{patch_path_obj}" -C "{target_dir}"
-if %errorlevel% neq 0 (
-    echo Extraction failed!
-    pause
-    exit /b %errorlevel%
-)
-start "" "{target_dir}\\LABOKit.exe"
-del "{patch_path_obj}"
-del "%~f0"
-"""
         with open(bat_path, "w", encoding="utf-8") as f:
             f.write(bat_content)
             
-        QMessageBox.information(self, "Update Ready", "LABOKit will now close to apply the update.")
+        ModernDialog.show_info(self, "Update Ready", "LABOKit will now close to apply the update.")
         
         subprocess.Popen(["cmd.exe", "/c", str(bat_path)], creationflags=subprocess.CREATE_NO_WINDOW)
         QApplication.quit()
         
-    def populate_plugin_menu(self):
-        if hasattr(self, "menu_plugins"):
-            self.menu_plugins.clear()
-            if not self.loaded_plugins:
-                self.menu_plugins.addAction(QAction("(No plugins loaded)", self, enabled=False))
-            else:
-                for p in self.loaded_plugins:
-                    a = QAction(p["name"], self)
-                    a.triggered.connect(lambda c, x=p: QMessageBox.information(self, "Help", x["help"]))
-                    self.menu_plugins.addAction(a)
+
 
     def load_plugin_file(self):
         f, _ = QFileDialog.getOpenFileName(self, "Load Plugin", "", "LABOKit Plugin (*.kit)")
@@ -738,8 +745,8 @@ del "%~f0"
             try:
                 shutil.copy2(f, PLUGIN_DIR)
                 self._load_plugins()
-                QMessageBox.information(self, "Success", "Plugin loaded!")
-            except Exception as e: QMessageBox.warning(self, "Error", str(e))
+                ModernDialog.show_info(self, "Success", "Plugin loaded!")
+            except Exception as e: ModernDialog.show_warning(self, "Error", str(e))
 
     def open_url(self, url): QDesktopServices.openUrl(QUrl(url))
     def _setup_menu(self):
@@ -789,14 +796,14 @@ del "%~f0"
 
     def switch_language(self, lang):
         set_language(lang)
-        QMessageBox.information(self, "Restart Required", "Please restart LABOKit to apply language changes.\n\n言語変更を適用するには再起動してください。\nSilakan restart untuk menerapkan bahasa.")
+        ModernDialog.show_info(self, "Restart Required", "Please restart LABOKit to apply language changes.\n\n言語変更を適用するには再起動してください。\nSilakan restart untuk menerapkan bahasa.")
 
     def show_bg_help(self): self.bg_tab.show_help()
     def show_upscale_help(self): self.up_tab.show_help()
 
     def show_notice(self):
         p = INTERNAL_DIR / "LABOKit_NOTICE.txt"
-        if not p.exists(): return QMessageBox.warning(self, "Error", "Notice file missing.")
+        if not p.exists(): return ModernDialog.show_warning(self, "Error", "Notice file missing.")
         dlg = QDialog(self); dlg.setWindowTitle("NOTICE"); dlg.resize(600,400)
         lay = QVBoxLayout(dlg); t = QPlainTextEdit(p.read_text(encoding="utf-8")); t.setReadOnly(True)
         t.setFont(QFont("Consolas",9)); lay.addWidget(t); dlg.exec()
@@ -807,15 +814,7 @@ del "%~f0"
         self.app_checker.start()
 
     def show_app_update_dialog(self, new_ver, url, log):
-        msg = QMessageBox(self)
-        msg.setWindowTitle("Update Available!")
-        msg.setText(f"<b>New version {new_ver} is available!</b>")
-        msg.setInformativeText(f"Current: v{APP_VERSION}\n\n<b>What's New:</b>\n{log}")
-        msg.setIcon(QMessageBox.Information)
-        btn_download = msg.addButton("Download Now", QMessageBox.AcceptRole)
-        msg.addButton("Later", QMessageBox.RejectRole)
-        msg.exec()
-        if msg.clickedButton() == btn_download:
+        if ModernDialog.confirm(self, "Update Available!", f"New version {new_ver} is available!\n\nCurrent: v{APP_VERSION}\n\nWhat's New:\n{log}\n\nDownload now?"):
             QDesktopServices.openUrl(QUrl(url))
 
     def check_plugin_updates(self):
@@ -826,9 +825,7 @@ del "%~f0"
     def download_and_install_plugin(self, name, new_ver, log, url):
         import requests
         try:
-            prog = QProgressDialog(f"Auto-updating {name} to v{new_ver}...", None, 0, 0, self)
-            prog.setWindowModality(Qt.WindowModal)
-            prog.setStyleSheet("QProgressDialog { background-color: #f5f7fb; }")
+            prog = ModernProgressDialog(f"Auto-updating {name}", "Cancel", 0, 0, self)
             prog.show()
             QApplication.processEvents()
             
@@ -842,7 +839,7 @@ del "%~f0"
                 'Upgrade-Insecure-Requests': '1'
             }
 
-            with requests.get(url, headers=headers, stream=True, verify=False, timeout=30) as r:
+            with requests.get(url, headers=headers, stream=True, verify=True, timeout=30) as r:
                 r.raise_for_status() # Cek error 403/404/500
                 with open(target_file, 'wb') as f:
                     for chunk in r.iter_content(chunk_size=8192): 
@@ -850,7 +847,7 @@ del "%~f0"
             
             prog.close()
             
-            QMessageBox.information(self, "Plugin Updated", f"<b>{name}</b> has been auto-updated to v{new_ver}!\n\nChangelog:\n{log}")
+            ModernDialog.show_info(self, "Plugin Updated", f"{name} has been auto-updated to v{new_ver}!\n\nChangelog:\n{log}")
             self._load_plugins() 
             
         except Exception as e:
@@ -888,55 +885,16 @@ def global_exception_handler(exc_type, exc_value, exc_traceback):
         with open("crash_log.txt", "a") as f:
             f.write(f"\n--- Crash at {datetime.now()} ---\n")
             f.write(err_msg)
-    except: pass
+    except Exception as e:
+        print(f"Failed to write crash log: {e}")
     try:
-        msg = QMessageBox()
-        msg.setIcon(QMessageBox.Critical)
-        msg.setText("LABOKit encountered a critical error.")
-        msg.setDetailedText(err_msg)
-        msg.setWindowTitle("Fatal Error")
-        msg.exec()
-    except: pass
-
-def main():
-    sys.excepthook = global_exception_handler
-    
-    # --- Windows Taskbar Icon Fix ---
-    try:
-        import ctypes
-        myappid = 'wagakano.labokit.advanced.3.3' # arbitrary string
-        ctypes.windll.shell32.SetCurrentProcessExplicitAppUserModelID(myappid)
-    except Exception:
-        pass
-        
-    app = QApplication(sys.argv)
-    app.setApplicationName("LABOKit Advanced")
-    if ICON_PATH.exists(): app.setWindowIcon(QIcon(str(ICON_PATH)))
-    default_font = QFont("Consolas", 9)
-    app.setFont(default_font)
-
-    # Revert to Qt Splash Screen
-    splash_img_path = INTERNAL_DIR / "splash.png"
-    pix = QPixmap(str(splash_img_path)) if splash_img_path.exists() else QPixmap(400,100)
-    if not splash_img_path.exists(): pix.fill(Qt.white)
-    
-    splash = QSplashScreen(pix.scaledToWidth(400, Qt.SmoothTransformation), Qt.WindowStaysOnTopHint)
-    splash.show(); app.processEvents()
-
-    class CursorFilter(QObject):
-        def eventFilter(self, obj, event):
-            if isinstance(obj, QPushButton):
-                if event.type() in (QEvent.Enter, QEvent.EnabledChange):
-                    if obj.isEnabled():
-                        obj.setCursor(Qt.PointingHandCursor)
-                    else:
-                        obj.setCursor(Qt.ForbiddenCursor)
-            return super().eventFilter(obj, event)
-
-    cursor_filter = CursorFilter()
-    app.installEventFilter(cursor_filter)
+        ModernDialog.show_critical(None, "Fatal Error", "LABOKit encountered a critical error.\n\n" + err_msg)
+    except Exception as e:
+        print(f"Failed to display crash dialog: {e}")
 
 def get_app_stylesheet(theme="light"):
+    arrow_dark = (APP_DATA / "arrow_dark.png").as_posix()
+    arrow_light = (APP_DATA / "arrow_light.png").as_posix()
     if theme == "dark":
         return f"""
             QMessageBox {{ font-family: "Segoe UI", sans-serif; background-color: #16161a; color: #e1e1e6; }}
@@ -965,10 +923,12 @@ def get_app_stylesheet(theme="light"):
             QListWidget, QListWidget::viewport {{ background-color: #16161a; border: 1px solid #2e2e38; border-radius: 4px; outline: 0; padding: 4px; color: #e1e1e6; }}
             QListWidget::item:selected {{ background-color: #323242; color: #ffffff; border-radius: 3px; }}
             QListWidget::item:hover {{ background-color: #242430; border-radius: 3px; }}
-            QComboBox {{ background-color: #16161a; border: 1px solid #2e2e38; border-radius: 4px; padding: 3px 20px 3px 8px; color: #e1e1e6; }}
+            QComboBox {{ background-color: #16161a; border: 1px solid #2e2e38; border-radius: 4px; padding: 4px 20px 4px 10px; color: #e1e1e6; font-weight: bold; }}
             QComboBox::drop-down {{ subcontrol-origin: padding; subcontrol-position: top right; width: 20px; border: none; background: transparent; }}
-            QComboBox::down-arrow {{ image: url({ARROW_DARK_PATH.as_posix()}); }}
-            QComboBox QAbstractItemView {{ background-color: #16161a; border: 1px solid #2e2e38; selection-background-color: #323242; color: #e1e1e6; selection-color: #ffffff; }}
+            QComboBox::down-arrow {{ image: url({arrow_dark}); }}
+            QComboBox QAbstractItemView, QComboBox QListView {{ background-color: #1c1c1c; border: 1px solid #3d3d3d; border-radius: 6px; color: #ffffff; selection-background-color: #333333; selection-color: #ffffff; outline: 0px; padding: 4px; }}
+            QComboBox QAbstractItemView::item, QComboBox QListView::item {{ min-height: 24px; padding: 4px 8px; border-radius: 4px; color: #ffffff; }}
+            QComboBox QAbstractItemView::item:hover, QComboBox QAbstractItemView::item:selected {{ background-color: #333333; color: #ffffff; }}
             QScrollBar:vertical {{ background: #121216; width: 12px; margin: 0px 0px 0px 0px; border-radius: 6px; }}
             QScrollBar::handle:vertical {{ background: #383846; min-height: 20px; border-radius: 6px; }}
             QScrollBar::add-line:vertical, QScrollBar::sub-line:vertical {{ height: 0px; }}
@@ -981,6 +941,7 @@ def get_app_stylesheet(theme="light"):
             QMenu::item {{ padding: 4px 20px; color: #e1e1e6; }}
             QMenu::item:selected {{ background-color: #282832; color: #ffffff; }}
             QFrame {{ background-color: #16161a; border: 1px solid #2e2e38; border-radius: 0px; }}
+            QComboBox QFrame {{ background: transparent; border: none; }}
             #PixelBar {{
                 background-color: #121216;
             }}
@@ -1026,10 +987,12 @@ def get_app_stylesheet(theme="light"):
             QListWidget {{ background-color: #ffffff; border: 1px solid #b3bcd1; border-radius: 4px; outline: 0; padding: 4px; color: #1c2333; }}
             QListWidget::item:selected {{ background-color: #cce0ff; color: #1c2333; border-radius: 3px; }}
             QListWidget::item:hover {{ background-color: #e6f0ff; border-radius: 3px; }}
-            QComboBox {{ background-color: #f7f9fc; border: 1px solid #b3bcd1; border-radius: 4px; padding: 3px 20px 3px 8px; color: #1c2333; }}
+            QComboBox {{ background-color: #f7f9fc; border: 1px solid #b3bcd1; border-radius: 4px; padding: 4px 20px 4px 10px; color: #1c2333; font-weight: bold; }}
             QComboBox::drop-down {{ subcontrol-origin: padding; subcontrol-position: top right; width: 20px; border: none; background: transparent; }}
-            QComboBox::down-arrow {{ image: url({ARROW_LIGHT_PATH.as_posix()}); }}
-            QComboBox QAbstractItemView {{ background-color: #ffffff; border: 1px solid #b3bcd1; selection-background-color: #cfe2ff; color: #1c2333; selection-color: #101522; }}
+            QComboBox::down-arrow {{ image: url({arrow_light}); }}
+            QComboBox QAbstractItemView, QComboBox QListView {{ background-color: #ffffff; border: 1px solid #9ca7c2; border-radius: 6px; color: #1c2333; selection-background-color: #d4e3fc; selection-color: #1c2333; outline: 0px; padding: 4px; }}
+            QComboBox QAbstractItemView::item, QComboBox QListView::item {{ min-height: 24px; padding: 4px 8px; border-radius: 4px; color: #1c2333; }}
+            QComboBox QAbstractItemView::item:hover, QComboBox QAbstractItemView::item:selected {{ background-color: #d4e3fc; color: #1c2333; }}
             QScrollBar:vertical {{ background: #e9edf5; width: 12px; margin: 0px 0px 0px 0px; border-radius: 6px; }}
             QScrollBar::handle:vertical {{ background: #b3bcd1; min-height: 20px; border-radius: 6px; }}
             QScrollBar::add-line:vertical, QScrollBar::sub-line:vertical {{ height: 0px; }}
@@ -1041,6 +1004,7 @@ def get_app_stylesheet(theme="light"):
             QMenu {{ background-color: #f7f9fc; border: 1px solid #b3bcd1; }}
             QMenu::item {{ padding: 4px 20px; color: #1c2333; }}
             QFrame {{ background-color: #f5f7fb; border: 1px solid #b3bcd1; border-radius: 0px; }}
+            QComboBox QFrame {{ background: transparent; border: none; }}
             #PixelBar {{
                 background-color: #dde4f5;
             }}
@@ -1106,6 +1070,11 @@ def main():
 
             app.main_window.show()
             splash.finish(app.main_window)
+
+            # Warm up AI engines on the main thread after window is shown (Idle background warmup).
+            # This makes the app open instantly in <1s while avoiding background QThread CUDA loading deadlocks.
+            QTimer.singleShot(400, lambda: core_config.load_ai_engine())
+            QTimer.singleShot(900, lambda: core_config.load_rembg_engine())
         except Exception as e:
             print(f"Error during startup: {e}")
 

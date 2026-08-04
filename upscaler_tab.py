@@ -7,7 +7,7 @@ from PySide6.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QFrame, QLabel, QPushButton, 
     QFileDialog, QMessageBox, QProgressDialog, QComboBox, QListWidgetItem, QMenu
 )
-from ui_shared import FileDropListWidget, ZoomableImageWidget, create_plus_icon, VALID_EXTENSIONS
+from ui_shared import FileDropListWidget, ZoomableImageWidget, create_plus_icon, ModernDialog, ModernProgressDialog, VALID_EXTENSIONS, setup_combobox
 from translations import tr
 import core_config
 
@@ -52,11 +52,31 @@ class UpscalerWorker(QThread):
                     if self.is_python_mode:
                         success = self.run_python_inference(abs_p, abs_opath, upsampler)
                     else:
+                        from PIL import Image
+                        # Check if original image contains alpha transparency
+                        alpha_channel = None
+                        input_to_proc = abs_p
+                        tmp_in_path = None
+
+                        try:
+                            with Image.open(abs_p) as test_img:
+                                if test_img.mode in ("RGBA", "LA", "PA") or (test_img.mode == "P" and "transparency" in test_img.info):
+                                    rgba_img = test_img.convert("RGBA")
+                                    alpha_channel = rgba_img.split()[-1]
+                                    # Create RGB version for NCNN executable without black fill
+                                    rgb_img = Image.new("RGB", rgba_img.size, (255, 255, 255))
+                                    rgb_img.paste(rgba_img, mask=alpha_channel)
+                                    tmp_in_path = abs_opath.parent / f"_tmp_in_{i}_{p.name}.png"
+                                    rgb_img.save(tmp_in_path, "PNG")
+                                    input_to_proc = tmp_in_path
+                        except Exception as alpha_prep_err:
+                            print(f"Alpha prep warning: {alpha_prep_err}")
+
                         # For Vulkan NCNN, use native -s 4 scale to avoid GPU texture downsampling glitches
                         run_scale = 4 if self.scale < 4 else self.scale
                         cmd = [
                             str(core_config.REALESRGAN_EXE), 
-                            "-i", str(abs_p), 
+                            "-i", str(input_to_proc), 
                             "-o", str(abs_opath), 
                             "-n", self.model_name, 
                             "-s", str(run_scale)
@@ -66,6 +86,21 @@ class UpscalerWorker(QThread):
                         if proc.returncode != 0 and proc.stderr:
                             print(f"Vulkan Stderr ({p.name}): {proc.stderr}")
                         success = abs_opath.exists()
+
+                        # Re-apply upscaled alpha channel if present
+                        if success and alpha_channel is not None:
+                            try:
+                                with Image.open(abs_opath) as out_img:
+                                    out_rgb = out_img.convert("RGB")
+                                    alpha_resized = alpha_channel.resize(out_rgb.size, Image.Resampling.LANCZOS)
+                                    rgba_out = Image.merge("RGBA", (*out_rgb.split(), alpha_resized))
+                                    rgba_out.save(abs_opath, "PNG")
+                            except Exception as alpha_post_err:
+                                print(f"Alpha restore warning: {alpha_post_err}")
+
+                        if tmp_in_path and tmp_in_path.exists():
+                            try: tmp_in_path.unlink()
+                            except Exception: pass
 
                     # High-quality Lanczos downsampling if user requested a scale less than 4x (e.g. 2x)
                     if success and self.scale < 4:
@@ -92,6 +127,8 @@ class UpscalerWorker(QThread):
                     print(f"Upscale Error: {msg}")
                     err_list.append(msg)
             
+            if err_list:
+                print("Upscaler worker encountered items with errors:\n" + "\n".join(err_list))
             if cnt == 0 and err_list:
                 self.error.emit("\n".join(err_list))
             else:
@@ -157,7 +194,19 @@ class UpscalerWorker(QThread):
                 img_bytes = f.read()
             img_array = np.frombuffer(img_bytes, dtype=np.uint8)
             img = cv2.imdecode(img_array, cv2.IMREAD_UNCHANGED)
-            output, _ = upsampler.enhance(img, outscale=self.scale)
+            if img is None:
+                return False
+
+            has_alpha = (len(img.shape) == 3 and img.shape[2] == 4)
+            if has_alpha:
+                bgr = img[:, :, :3]
+                alpha = img[:, :, 3]
+                output_bgr, _ = upsampler.enhance(bgr, outscale=self.scale)
+                h_out, w_out = output_bgr.shape[:2]
+                alpha_out = cv2.resize(alpha, (w_out, h_out), interpolation=cv2.INTER_LANCZOS4)
+                output = cv2.merge([output_bgr[:, :, 0], output_bgr[:, :, 1], output_bgr[:, :, 2], alpha_out])
+            else:
+                output, _ = upsampler.enhance(img, outscale=self.scale)
 
             # Ensure output exact dimensions match target scale
             h, w = img.shape[:2]
@@ -186,6 +235,7 @@ class UpscalerWorker(QThread):
 class UpscalerTab(QWidget):
     def __init__(self, meter=None, parent=None):
         super().__init__(parent)
+        self.main_window = parent
         self.meter = meter
         self.image_paths = []
         self.image_paths_set = set() # O(1) membership check
@@ -259,12 +309,12 @@ class UpscalerTab(QWidget):
         
         l_scale = QLabel(tr("lbl_scale")); l_scale.setStyleSheet("font-weight: bold; border: none; background: transparent;")
         opt_layout.addWidget(l_scale)
-        self.combo_s = QComboBox(); self.combo_s.addItems(["2x", "4x"]); self.combo_s.setCurrentText("4x")
+        self.combo_s = setup_combobox(QComboBox()); self.combo_s.addItems(["2x", "4x"]); self.combo_s.setCurrentText("4x")
         opt_layout.addWidget(self.combo_s)
         
         l_mod = QLabel(tr("lbl_model")); l_mod.setStyleSheet("font-weight: bold; border: none; background: transparent;")
         opt_layout.addWidget(l_mod)
-        self.combo_m = QComboBox()
+        self.combo_m = setup_combobox(QComboBox())
         self.combo_m.addItems([
             "General", 
             "Anime", 
@@ -365,7 +415,6 @@ class UpscalerTab(QWidget):
         if not self.output_dir:
             self.output_dir = sample.parent / "LABOKit_UP"; self.output_dir.mkdir(exist_ok=True)
             self.out_lbl.setText(f"UPSCALE OUTPUT FOLDER: {self.output_dir}")
-            QMessageBox.information(self, "Info", f"Output folder set to:\n{self.output_dir}")
         return self.output_dir
     
     def change_output_folder(self):
@@ -380,15 +429,20 @@ class UpscalerTab(QWidget):
         if d and d.exists():
             QDesktopServices.openUrl(QUrl.fromLocalFile(str(d)))
         else:
-            QMessageBox.information(self, "Info", "Output folder does not exist yet. Process an image first.")
+            ModernDialog.show_info(self, "Info", "Output folder does not exist yet. Process an image first.")
 
     def proc_sel(self):
-        sel = [i.data(Qt.UserRole) for i in self.list_w.selectedItems()]
-        if not sel: return QMessageBox.information(self, "Info", tr("msg_select"))
+        sel = [i.data(Qt.UserRole) for i in self.list_w.selectedItems() if i.data(Qt.UserRole)]
+        if not sel:
+            if self.list_w.currentItem() and self.list_w.currentItem().data(Qt.UserRole):
+                sel = [self.list_w.currentItem().data(Qt.UserRole)]
+            elif self.image_paths:
+                sel = list(self.image_paths)
+        if not sel: return ModernDialog.show_info(self, "Info", tr("msg_select"))
         self._run(sel)
 
     def proc_all(self):
-        if not self.image_paths: return QMessageBox.information(self, "Info", tr("msg_add"))
+        if not self.image_paths: return ModernDialog.show_info(self, "Info", tr("msg_add"))
         self._run(self.image_paths)
 
     def _run(self, paths):
@@ -410,12 +464,11 @@ class UpscalerTab(QWidget):
         is_python_mode = model_name.endswith(".pth")
 
         if not is_python_mode and not core_config.REALESRGAN_EXE.exists():
-            return QMessageBox.warning(self, "Error", f"Executable not found at:\n{core_config.REALESRGAN_EXE}")
+            return ModernDialog.show_warning(self, "Error", f"Executable not found at:\n{core_config.REALESRGAN_EXE}")
         
         out = self.ensure_out(paths[0])
-        self.dlg = QProgressDialog("Initializing Upscaler...", "Cancel", 0, len(paths), self)
-        self.dlg.setWindowModality(Qt.ApplicationModal)
-        self.dlg.setFixedWidth(350)
+        theme = getattr(self.main_window, 'current_theme', getattr(self, 'current_theme', 'light'))
+        self.dlg = ModernProgressDialog("Upscaler", "Cancel", 0, len(paths), self, theme=theme)
         self.dlg.show()
         self.dlg.setValue(0)
         
@@ -450,13 +503,20 @@ class UpscalerTab(QWidget):
             if opath.exists():
                 self.output_map[p] = opath
 
-        QMessageBox.information(self, tr("msg_done"), f"Upscaled {cnt} images.\nFolder: {actual_out_dir}")
-        if self.list_w.currentItem(): self.on_item(self.list_w.currentItem(), None)
+        # Update preview BEFORE showing info dialog
+        curr = self.list_w.currentItem()
+        if not curr and self.list_w.count() > 0:
+            self.list_w.setCurrentRow(0)
+            curr = self.list_w.currentItem()
+        if curr:
+            self.on_item(curr, None)
+
+        ModernDialog.show_info(self, tr("msg_done"), f"Upscaled {cnt} images.\nFolder: {actual_out_dir}")
 
     def on_worker_error(self, err):
         self.dlg.close()
         if self.meter: self.meter.set_message(None)
-        QMessageBox.critical(self, tr("msg_error"), f"Upscale Failed:\n{err}")
+        ModernDialog.show_critical(self, tr("msg_error"), f"Upscale Failed:\n{err}")
 
     def show_help(self):
         text = (
@@ -476,4 +536,4 @@ class UpscalerTab(QWidget):
             "<b>⚠️ Hardware Note:</b><br>"
             "This feature requires a Vulkan-compatible GPU. On first run, it might take a few seconds to initialize."
         )
-        QMessageBox.information(self, "Help – Upscaler", text)
+        ModernDialog.show_info(self, "Help – Upscaler", text)

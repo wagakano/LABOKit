@@ -1,8 +1,38 @@
-from PySide6.QtCore import Qt, Signal, QTimer, QPoint, QSize, QRunnable, QThreadPool, QObject
-from PySide6.QtGui import QPixmap, QPainter, QColor, QPen, QIcon, QAction, QFont, QCursor, QGuiApplication, QMovie, QImage
+from PySide6.QtCore import Qt, Signal, QTimer, QPoint, QSize, QObject, QPropertyAnimation, QEasingCurve
+from PySide6.QtGui import QPixmap, QPainter, QColor, QPen, QIcon, QAction, QFont, QMovie, QImage
 from PySide6.QtWidgets import (
-    QListWidget, QScrollArea, QLabel, QPushButton, QMenu, QFrame, QHBoxLayout, QApplication, QWidget, QVBoxLayout, QSlider
+    QListWidget, QScrollArea, QLabel, QPushButton, QMenu, QFrame, QHBoxLayout, QApplication, QWidget, QVBoxLayout, QSlider, QDialog, QProgressBar, QListView, QGraphicsOpacityEffect
 )
+
+def setup_combobox(combo, is_dark=False):
+    if combo:
+        combo.setMaxVisibleItems(15)
+        border_col = "#3d3d3d" if is_dark else "#b3bcd1"
+        bg_col = "#1c1c1c" if is_dark else "#ffffff"
+        text_col = "#ffffff" if is_dark else "#1c2333"
+        hover_bg = "#333333" if is_dark else "#d4e3fc"
+        
+        combo.setStyleSheet(f"""
+            QComboBox QAbstractItemView {{
+                border: 1px solid {border_col} !important;
+                background-color: {bg_col};
+                color: {text_col};
+                outline: 0px;
+                padding: 2px;
+            }}
+            QComboBox QAbstractItemView::item {{
+                min-height: 22px;
+                padding: 4px 8px;
+                border-radius: 3px;
+                color: {text_col};
+                background-color: transparent;
+            }}
+            QComboBox QAbstractItemView::item:hover, QComboBox QAbstractItemView::item:selected {{
+                background-color: {hover_bg};
+                color: {text_col};
+            }}
+        """)
+    return combo
 import random
 from pathlib import Path
 import psutil
@@ -107,7 +137,6 @@ class SplitImageLabel(QLabel):
         self.is_dragging = False
         self.setMouseTracking(True)
         self.setAccessibleName("Split View Comparison")
-        self.setToolTip("Drag left or right to compare original and result images")
         
         self.orig_pixmap = None
         self.res_pixmap = None
@@ -234,11 +263,6 @@ class ZoomableImageWidget(QScrollArea):
         self.zoom_slider.setAccessibleName("Zoom Level")
         self.zoom_slider.setToolTip("Adjust image zoom level (Ctrl + Mouse Wheel)")
         self.zoom_slider.valueChanged.connect(self._on_zoom_slider)
-        self.zoom_slider.setStyleSheet("""
-            QSlider { background: rgba(255, 255, 255, 0.7); border-radius: 4px; padding: 2px; }
-            QSlider::groove:horizontal { border: 1px solid #999; height: 6px; background: #eee; border-radius: 3px; }
-            QSlider::handle:horizontal { background: #ff9933; border: 1px solid #d67a18; width: 14px; margin: -4px 0; border-radius: 7px; }
-        """)
         self.zoom_slider.hide()
 
         # Debounce timer for resize events to avoid flooding the thread pool
@@ -246,6 +270,22 @@ class ZoomableImageWidget(QScrollArea):
         self._resize_timer.setSingleShot(True)
         self._resize_timer.setInterval(150)
         self._resize_timer.timeout.connect(self._do_fit_and_update)
+
+    def set_theme(self, theme="light"):
+        is_dark = (theme == "dark")
+        btn_bg = "rgba(28, 28, 34, 0.9)" if is_dark else "rgba(255, 255, 255, 0.9)"
+        btn_text = "#e1e1e6" if is_dark else "#333"
+        btn_border = "#3e3e4e" if is_dark else "#999"
+        
+        self.btn_toggle.setStyleSheet(f"""
+            QPushButton {{ background-color: {btn_bg}; border: 1px solid {btn_border}; border-radius: 4px; padding: 6px 10px; color: {btn_text}; font-weight: bold; }}
+            QPushButton:checked {{ background-color: #ff9933; color: white; border: 1px solid #d67a18; }}
+        """)
+        self.zoom_slider.setStyleSheet(f"""
+            QSlider {{ background: {"rgba(28, 28, 34, 0.7)" if is_dark else "rgba(255, 255, 255, 0.7)"}; border-radius: 4px; padding: 2px; }}
+            QSlider::groove:horizontal {{ border: 1px solid {btn_border}; height: 6px; background: {"#242430" if is_dark else "#eee"}; border-radius: 3px; }}
+            QSlider::handle:horizontal {{ background: #ff9933; border: 1px solid #d67a18; width: 14px; margin: -4px 0; border-radius: 7px; }}
+        """)
 
 
     def set_images(self, original_path, result_path):
@@ -373,8 +413,8 @@ class ZoomableImageWidget(QScrollArea):
             
         if self.original_movie or self.result_movie:
             movie = self.result_movie if self.result_movie else self.original_movie
-            if not self.btn_toggle.isChecked() and self.original_movie:
-                movie = self.original_movie
+            if not self.btn_toggle.isChecked() and self.result_movie:
+                movie = self.result_movie
                 
             base_size = self._result_movie_size if movie == self.result_movie else self._original_movie_size
             if base_size.isValid() and not base_size.isEmpty():
@@ -414,36 +454,61 @@ class ZoomableImageWidget(QScrollArea):
             self.image_label.setFixedSize(target.size())
             
         use_split = self.btn_toggle.isChecked() and o_pix and r_pix
-        if not self.btn_toggle.isChecked() and o_pix:
-            r_pix = None # only show original if split is disabled
+        if not self.btn_toggle.isChecked() and r_pix:
+            o_pix = None # only show result if split is disabled
         self.image_label.set_images(o_pix, r_pix, use_split)
 
-    def _on_zoom_slider(self, val):
+    def _zoom_relative(self, new_scale, cursor_pos=None):
+        old_scale = self.scale_factor
+        if old_scale <= 0 or new_scale <= 0:
+            return
+            
         self.auto_fit = False
-        self.scale_factor = val / 100.0
+        self.scale_factor = max(0.1, min(new_scale, 10.0))
+        
+        h_bar = self.horizontalScrollBar()
+        v_bar = self.verticalScrollBar()
+        
+        if cursor_pos is None:
+            cursor_pos = self.viewport().rect().center()
+            
+        old_point = cursor_pos + QPoint(h_bar.value(), v_bar.value())
+        scale_ratio = self.scale_factor / old_scale
+        new_point = old_point * scale_ratio
+        
+        self.zoom_slider.blockSignals(True)
+        self.zoom_slider.setValue(int(self.scale_factor * 100))
+        self.zoom_slider.blockSignals(False)
+        
         self.update_display()
+        
+        new_h = int(new_point.x() - cursor_pos.x())
+        new_v = int(new_point.y() - cursor_pos.y())
+        h_bar.setValue(new_h)
+        v_bar.setValue(new_v)
+
+    def _on_zoom_slider(self, val):
+        self._zoom_relative(val / 100.0)
 
     def set_zoom_level(self, zoom_float):
-        self.scale_factor = zoom_float
-        self.zoom_slider.blockSignals(True)
-        self.zoom_slider.setValue(int(zoom_float * 100))
-        self.zoom_slider.blockSignals(False)
-        self.update_display()
+        self._zoom_relative(zoom_float)
 
-    def wheelEvent(self, event):
-        if event.modifiers() & Qt.ControlModifier:
-            self.auto_fit = False
-            delta = event.angleDelta().y()
-            if delta > 0: self.scale_factor *= 1.25
-            else: self.scale_factor *= 0.8
-            self.scale_factor = max(0.1, min(self.scale_factor, 10.0))
-            self.zoom_slider.blockSignals(True)
-            self.zoom_slider.setValue(int(self.scale_factor * 100))
-            self.zoom_slider.blockSignals(False)
-            self.update_display()
+    def mouseDoubleClickEvent(self, event):
+        if event.button() == Qt.LeftButton:
+            if abs(self.scale_factor - 1.0) < 0.05 and not self.auto_fit:
+                self.fit_to_view()
+            else:
+                self.set_zoom_level(1.0)
             event.accept()
         else:
-            super().wheelEvent(event)
+            super().mouseDoubleClickEvent(event)
+
+    def wheelEvent(self, event):
+        delta = event.angleDelta().y()
+        if delta != 0:
+            factor = 1.25 if delta > 0 else 0.8
+            self._zoom_relative(self.scale_factor * factor, event.position().toPoint())
+            event.accept()
 
     def _do_fit_and_update(self):
         """Deferred resize handler — called once after resize settles."""
@@ -602,16 +667,431 @@ def create_plus_icon():
     global _PLUS_ICON_CACHE
     if _PLUS_ICON_CACHE is not None:
         return _PLUS_ICON_CACHE
-    pix = QPixmap(16, 16)
-    pix.fill(Qt.transparent)
-    painter = QPainter(pix)
-    painter.setRenderHint(QPainter.Antialiasing)
-    pen = QPen(QColor("#333333"))
-    pen.setWidth(2)
-    painter.setPen(pen)
-    painter.drawLine(8, 3, 8, 13)
-    painter.drawLine(3, 8, 13, 8)
-    painter.end()
-    _PLUS_ICON_CACHE = QIcon(pix)
-    return _PLUS_ICON_CACHE
+    from PySide6.QtWidgets import QApplication, QStyle
+    app = QApplication.instance()
+    if app:
+        _PLUS_ICON_CACHE = app.style().standardIcon(QStyle.SP_FileDialogNewFolder)
+        return _PLUS_ICON_CACHE
+    return QIcon()
+
+
+class ModernDialog(QDialog):
+    def __init__(self, parent=None, title="Notice", message="", is_confirm=False, theme="light"):
+        super().__init__(parent)
+        self.setWindowFlags(Qt.FramelessWindowHint | Qt.Dialog)
+        self.setWindowModality(Qt.WindowModal)
+        self.setAttribute(Qt.WA_TranslucentBackground, True)
+        
+        main_layout = QVBoxLayout(self)
+        main_layout.setContentsMargins(0, 0, 0, 0)
+        
+        self.container = QFrame(self)
+        self.container.setObjectName("DialogContainer")
+        
+        is_dark = (theme == "dark")
+        bg_color = "#16161a" if is_dark else "#f5f7fb"
+        text_color = "#e1e1e6" if is_dark else "#1c2333"
+        border_color = "#2e2e38" if is_dark else "#b3bcd1"
+        header_bg = "#121216" if is_dark else "#dde4f5"
+        
+        self.container.setStyleSheet(f"""
+            #DialogContainer {{
+                background-color: {bg_color};
+                border: 1px solid {border_color};
+                border-radius: 8px;
+            }}
+            QLabel {{ color: {text_color}; font-family: 'Segoe UI', sans-serif; }}
+        """)
+        
+        container_layout = QVBoxLayout(self.container)
+        container_layout.setContentsMargins(0, 0, 0, 12)
+        container_layout.setSpacing(10)
+        
+        # Header bar
+        header = QFrame(self.container)
+        header.setStyleSheet(f"background-color: {header_bg}; border-top-left-radius: 7px; border-top-right-radius: 7px; border-bottom: 1px solid {border_color};")
+        header_layout = QHBoxLayout(header)
+        header_layout.setContentsMargins(12, 6, 8, 6)
+        
+        title_lbl = QLabel(title, header)
+        title_lbl.setStyleSheet(f"font-weight: bold; font-size: 10pt; color: {text_color}; border: none;")
+        header_layout.addWidget(title_lbl)
+        header_layout.addStretch()
+        
+        btn_close = QPushButton("✕", header)
+        btn_close.setFixedSize(22, 22)
+        btn_close.setCursor(Qt.PointingHandCursor)
+        btn_close.setStyleSheet(f"""
+            QPushButton {{
+                background-color: {"#2a2a36" if is_dark else "#cbd5e1"};
+                border: 1px solid {"#3f3f4e" if is_dark else "#94a3b8"};
+                color: {"#a0a0b0" if is_dark else "#475569"};
+                font-weight: bold;
+                border-radius: 11px;
+                font-size: 8.5pt;
+            }}
+            QPushButton:hover {{
+                background-color: #ef4444;
+                border: 1px solid #dc2626;
+                color: #ffffff;
+            }}
+        """)
+        btn_close.clicked.connect(self.reject)
+        header_layout.addWidget(btn_close)
+        container_layout.addWidget(header)
+        
+        # Content Body
+        body_layout = QHBoxLayout()
+        body_layout.setContentsMargins(16, 8, 16, 8)
+        
+        lbl_msg = QLabel(message, self.container)
+        lbl_msg.setWordWrap(True)
+        lbl_msg.setStyleSheet("font-size: 9.5pt; border: none;")
+        body_layout.addWidget(lbl_msg, 1)
+        container_layout.addLayout(body_layout)
+        
+        # Action Buttons
+        btn_layout = QHBoxLayout()
+        btn_layout.setContentsMargins(16, 0, 16, 4)
+        btn_layout.addStretch()
+        
+        btn_style = f"""
+            QPushButton {{
+                background-color: {"#282832" if is_dark else "qlineargradient(x1:0, y1:0, x2:0, y2:1, stop:0 #ffffff, stop:1 #d8dfee)"};
+                border: 1px solid {"#383846" if is_dark else "#9ca7c2"};
+                border-radius: 5px;
+                padding: 5px 14px;
+                font-weight: bold;
+                color: {"#e1e1e6" if is_dark else "#1c2333"};
+            }}
+            QPushButton:hover {{ background-color: {"#383846" if is_dark else "#e6ecf7"}; }}
+        """
+
+        if is_confirm:
+            btn_cancel = QPushButton("Cancel", self.container)
+            btn_cancel.setCursor(Qt.PointingHandCursor)
+            btn_cancel.setFixedWidth(80)
+            btn_cancel.setStyleSheet(btn_style)
+            btn_cancel.clicked.connect(self.reject)
+            btn_layout.addWidget(btn_cancel)
+
+        btn_ok = QPushButton("OK", self.container)
+        btn_ok.setCursor(Qt.PointingHandCursor)
+        btn_ok.setFixedWidth(80)
+        btn_ok.setStyleSheet(btn_style)
+        btn_ok.clicked.connect(self.accept)
+        btn_layout.addWidget(btn_ok)
+        container_layout.addLayout(btn_layout)
+        
+        main_layout.addWidget(self.container)
+        self.setMinimumWidth(340)
+
+    def showEvent(self, event):
+        super().showEvent(event)
+        if not hasattr(self, '_anim_started'):
+            self._anim_started = True
+            
+            # Opacity animation
+            self._opacity_effect = QGraphicsOpacityEffect(self.container)
+            self.container.setGraphicsEffect(self._opacity_effect)
+            
+            self._fade_anim = QPropertyAnimation(self._opacity_effect, b"opacity", self)
+            self._fade_anim.setDuration(200)
+            self._fade_anim.setStartValue(0.0)
+            self._fade_anim.setEndValue(1.0)
+            self._fade_anim.setEasingCurve(QEasingCurve.OutCubic)
+            
+            # Pop-out slide animation
+            self._pos_anim = QPropertyAnimation(self.container, b"pos", self)
+            self._pos_anim.setDuration(200)
+            target_pos = self.container.pos()
+            start_pos = QPoint(target_pos.x(), target_pos.y() + 16)
+            self.container.move(start_pos)
+            self._pos_anim.setStartValue(start_pos)
+            self._pos_anim.setEndValue(target_pos)
+            self._pos_anim.setEasingCurve(QEasingCurve.OutBack)
+            
+            self._fade_anim.start()
+            self._pos_anim.start()
+
+    def _do_accept(self):
+        QDialog.accept(self)
+
+    def _do_reject(self):
+        QDialog.reject(self)
+
+    def accept(self):
+        self._fade_out_and_close(self._do_accept)
+
+    def reject(self):
+        self._fade_out_and_close(self._do_reject)
+
+    def _fade_out_and_close(self, callback):
+        if getattr(self, '_is_closing', False):
+            callback()
+            return
+        self._is_closing = True
+        
+        if hasattr(self, '_opacity_effect'):
+            self._fade_out = QPropertyAnimation(self._opacity_effect, b"opacity", self)
+            self._fade_out.setDuration(120)
+            self._fade_out.setStartValue(self._opacity_effect.opacity())
+            self._fade_out.setEndValue(0.0)
+            self._fade_out.setEasingCurve(QEasingCurve.InCubic)
+            self._fade_out.finished.connect(callback)
+            self._fade_out.start()
+        else:
+            callback()
+
+    def mousePressEvent(self, event):
+        if event.button() == Qt.LeftButton:
+            self._drag_pos = event.globalPosition().toPoint() - self.frameGeometry().topLeft()
+            event.accept()
+
+    def mouseMoveEvent(self, event):
+        if event.buttons() == Qt.LeftButton and hasattr(self, '_drag_pos'):
+            self.move(event.globalPosition().toPoint() - self._drag_pos)
+            event.accept()
+
+    @staticmethod
+    def _get_theme(parent):
+        if parent:
+            if hasattr(parent, 'current_theme'):
+                return parent.current_theme
+            if hasattr(parent, 'is_dark_theme'):
+                return "dark" if parent.is_dark_theme else "light"
+        return "light"
+
+    @staticmethod
+    def show_info(parent, title, message):
+        dlg = ModernDialog(parent, title=title, message=message, is_confirm=False, theme=ModernDialog._get_theme(parent))
+        dlg.exec()
+
+    @staticmethod
+    def show_warning(parent, title, message):
+        dlg = ModernDialog(parent, title=title, message=message, is_confirm=False, theme=ModernDialog._get_theme(parent))
+        dlg.exec()
+
+    @staticmethod
+    def show_critical(parent, title, message):
+        dlg = ModernDialog(parent, title=title, message=message, is_confirm=False, theme=ModernDialog._get_theme(parent))
+        dlg.exec()
+
+    @staticmethod
+    def confirm(parent, title, message):
+        dlg = ModernDialog(parent, title=title, message=message, is_confirm=True, theme=ModernDialog._get_theme(parent))
+        return dlg.exec() == QDialog.Accepted
+
+
+class ModernProgressDialog(QDialog):
+    canceled = Signal()
+
+    def __init__(self, title="Processing...", cancel_text="Cancel", minimum=0, maximum=100, parent=None, theme="light"):
+        super().__init__(parent)
+        self.setWindowFlags(Qt.FramelessWindowHint | Qt.Dialog)
+        self.setWindowModality(Qt.WindowModal)
+        self.setAttribute(Qt.WA_TranslucentBackground, True)
+        self._was_canceled = False
+
+        main_layout = QVBoxLayout(self)
+        main_layout.setContentsMargins(0, 0, 0, 0)
+
+        self.container = QFrame(self)
+        self.container.setObjectName("ProgressContainer")
+
+        is_dark = (theme == "dark")
+        bg_color = "#16161a" if is_dark else "#f5f7fb"
+        text_color = "#e1e1e6" if is_dark else "#1c2333"
+        border_color = "#2e2e38" if is_dark else "#b3bcd1"
+        header_bg = "#121216" if is_dark else "#dde4f5"
+
+        self.container.setStyleSheet(f"""
+            #ProgressContainer {{
+                background-color: {bg_color};
+                border: 1px solid {border_color};
+                border-radius: 8px;
+            }}
+            QLabel {{ color: {text_color}; font-family: 'Segoe UI', sans-serif; }}
+        """)
+
+        container_layout = QVBoxLayout(self.container)
+        container_layout.setContentsMargins(0, 0, 0, 12)
+        container_layout.setSpacing(10)
+
+        # Header bar
+        header = QFrame(self.container)
+        header.setStyleSheet(f"background-color: {header_bg}; border-top-left-radius: 7px; border-top-right-radius: 7px; border-bottom: 1px solid {border_color};")
+        header_layout = QHBoxLayout(header)
+        header_layout.setContentsMargins(12, 6, 8, 6)
+
+        title_lbl = QLabel(title, header)
+        title_lbl.setStyleSheet(f"font-weight: bold; font-size: 10pt; color: {text_color}; border: none;")
+        header_layout.addWidget(title_lbl)
+        header_layout.addStretch()
+
+        btn_close = QPushButton("✕", header)
+        btn_close.setFixedSize(22, 22)
+        btn_close.setCursor(Qt.PointingHandCursor)
+        btn_close.setStyleSheet(f"""
+            QPushButton {{
+                background-color: {"#2a2a36" if is_dark else "#cbd5e1"};
+                border: 1px solid {"#3f3f4e" if is_dark else "#94a3b8"};
+                color: {"#a0a0b0" if is_dark else "#475569"};
+                font-weight: bold;
+                border-radius: 11px;
+                font-size: 8.5pt;
+            }}
+            QPushButton:hover {{
+                background-color: #ef4444;
+                border: 1px solid #dc2626;
+                color: #ffffff;
+            }}
+        """)
+        btn_close.clicked.connect(self._on_cancel)
+        header_layout.addWidget(btn_close)
+        container_layout.addWidget(header)
+
+        # Status Label + Progress Bar
+        body_layout = QVBoxLayout()
+        body_layout.setContentsMargins(16, 6, 16, 6)
+        body_layout.setSpacing(8)
+
+        self.lbl_status = QLabel("Processing...", self.container)
+        self.lbl_status.setStyleSheet("font-size: 9.5pt; border: none;")
+        body_layout.addWidget(self.lbl_status)
+
+        self.pbar = QProgressBar(self.container)
+        self.pbar.setRange(minimum, maximum)
+        self.pbar.setValue(minimum)
+        self.pbar.setFixedHeight(18)
+        self.pbar.setStyleSheet(f"""
+            QProgressBar {{
+                background-color: {"#242430" if is_dark else "#e2e8f0"};
+                border: 1px solid {border_color};
+                border-radius: 4px;
+                text-align: center;
+                color: {text_color};
+                font-size: 8.5pt;
+                font-weight: bold;
+            }}
+            QProgressBar::chunk {{
+                background-color: #3b82f6;
+                border-radius: 3px;
+            }}
+        """)
+        body_layout.addWidget(self.pbar)
+        container_layout.addLayout(body_layout)
+
+        # Cancel Button
+        btn_layout = QHBoxLayout()
+        btn_layout.setContentsMargins(16, 0, 16, 4)
+        btn_layout.addStretch()
+
+        if cancel_text:
+            self.btn_cancel = QPushButton(cancel_text, self.container)
+            self.btn_cancel.setCursor(Qt.PointingHandCursor)
+            self.btn_cancel.setFixedWidth(80)
+            self.btn_cancel.setStyleSheet(f"""
+                QPushButton {{
+                    background-color: {"#282832" if is_dark else "qlineargradient(x1:0, y1:0, x2:0, y2:1, stop:0 #ffffff, stop:1 #d8dfee)"};
+                    border: 1px solid {"#383846" if is_dark else "#9ca7c2"};
+                    border-radius: 5px;
+                    padding: 5px 14px;
+                    font-weight: bold;
+                    color: {"#e1e1e6" if is_dark else "#1c2333"};
+                }}
+                QPushButton:hover {{ background-color: {"#383846" if is_dark else "#e6ecf7"}; }}
+            """)
+            self.btn_cancel.clicked.connect(self._on_cancel)
+            btn_layout.addWidget(self.btn_cancel)
+
+        container_layout.addLayout(btn_layout)
+        main_layout.addWidget(self.container)
+        self.setMinimumWidth(360)
+
+    def showEvent(self, event):
+        super().showEvent(event)
+        if not hasattr(self, '_anim_started'):
+            self._anim_started = True
+            
+            # Opacity animation
+            self._opacity_effect = QGraphicsOpacityEffect(self.container)
+            self.container.setGraphicsEffect(self._opacity_effect)
+            
+            self._fade_anim = QPropertyAnimation(self._opacity_effect, b"opacity", self)
+            self._fade_anim.setDuration(200)
+            self._fade_anim.setStartValue(0.0)
+            self._fade_anim.setEndValue(1.0)
+            self._fade_anim.setEasingCurve(QEasingCurve.OutCubic)
+            
+            # Pop-out slide animation
+            self._pos_anim = QPropertyAnimation(self.container, b"pos", self)
+            self._pos_anim.setDuration(200)
+            target_pos = self.container.pos()
+            start_pos = QPoint(target_pos.x(), target_pos.y() + 16)
+            self.container.move(start_pos)
+            self._pos_anim.setStartValue(start_pos)
+            self._pos_anim.setEndValue(target_pos)
+            self._pos_anim.setEasingCurve(QEasingCurve.OutBack)
+            
+            self._fade_anim.start()
+            self._pos_anim.start()
+
+    def _do_accept(self):
+        QDialog.accept(self)
+
+    def _do_reject(self):
+        QDialog.reject(self)
+
+    def accept(self):
+        self._fade_out_and_close(self._do_accept)
+
+    def reject(self):
+        self._fade_out_and_close(self._do_reject)
+
+    def _fade_out_and_close(self, callback):
+        if getattr(self, '_is_closing', False):
+            callback()
+            return
+        self._is_closing = True
+        
+        if hasattr(self, '_opacity_effect'):
+            self._fade_out = QPropertyAnimation(self._opacity_effect, b"opacity", self)
+            self._fade_out.setDuration(120)
+            self._fade_out.setStartValue(self._opacity_effect.opacity())
+            self._fade_out.setEndValue(0.0)
+            self._fade_out.setEasingCurve(QEasingCurve.InCubic)
+            self._fade_out.finished.connect(callback)
+            self._fade_out.start()
+        else:
+            callback()
+
+    def mousePressEvent(self, event):
+        if event.button() == Qt.LeftButton:
+            self._drag_pos = event.globalPosition().toPoint() - self.frameGeometry().topLeft()
+            event.accept()
+
+    def mouseMoveEvent(self, event):
+        if event.buttons() == Qt.LeftButton and hasattr(self, '_drag_pos'):
+            self.move(event.globalPosition().toPoint() - self._drag_pos)
+            event.accept()
+
+    def _on_cancel(self):
+        self._was_canceled = True
+        self.canceled.emit()
+        self.reject()
+
+    def setValue(self, val):
+        self.pbar.setValue(val)
+
+    def setLabelText(self, text):
+        self.lbl_status.setText(text)
+
+    def setMaximum(self, val):
+        self.pbar.setMaximum(val)
+
+    def wasCanceled(self):
+        return self._was_canceled
+
+
 

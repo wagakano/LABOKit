@@ -5,7 +5,7 @@ from PySide6.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QFrame, QLabel, QPushButton, 
     QFileDialog, QMessageBox, QProgressDialog, QComboBox, QListWidgetItem, QMenu
 )
-from ui_shared import FileDropListWidget, ZoomableImageWidget, create_plus_icon, VALID_EXTENSIONS
+from ui_shared import FileDropListWidget, ZoomableImageWidget, create_plus_icon, ModernDialog, ModernProgressDialog, VALID_EXTENSIONS, setup_combobox
 from translations import tr
 import core_config
 
@@ -67,6 +67,8 @@ class BgRemovalWorker(QThread):
                     print(f"Error processing {msg}")
                     err_list.append(msg)
             
+            if err_list:
+                print("BgRemoval worker encountered items with errors:\n" + "\n".join(err_list))
             if cnt == 0 and err_list:
                 self.error.emit("\n".join(err_list))
             else:
@@ -82,6 +84,7 @@ class BgRemovalWorker(QThread):
 class BgRemoverTab(QWidget):
     def __init__(self, meter=None, parent=None):
         super().__init__(parent)
+        self.main_window = parent
         self.meter = meter
         self.image_paths = []
         self.image_paths_set = set() # O(1) membership check
@@ -156,13 +159,13 @@ class BgRemoverTab(QWidget):
 
         l_mod = QLabel(tr("lbl_model")); l_mod.setStyleSheet("font-weight: bold; border: none; background: transparent;")
         pres_row.addWidget(l_mod)
-        self.combo_model = QComboBox()
+        self.combo_model = setup_combobox(QComboBox())
         self.combo_model.addItems(["General", "Performance", "Anime", "Human Portrait"])
         pres_row.addWidget(self.combo_model)
 
         l_sen = QLabel(tr("lbl_sens")); l_sen.setStyleSheet("font-weight: bold; border: none; background: transparent;")
         pres_row.addWidget(l_sen)
-        self.combo = QComboBox(); self.combo.addItems(self.presets.keys())
+        self.combo = setup_combobox(QComboBox()); self.combo.addItems(self.presets.keys())
         self.combo.currentTextChanged.connect(self.on_preset)
         pres_row.addWidget(self.combo)
         left.addLayout(pres_row)
@@ -261,7 +264,6 @@ class BgRemoverTab(QWidget):
         if not self.output_dir:
             self.output_dir = sample.parent / "LABOKit_BG"; self.output_dir.mkdir(exist_ok=True)
             self.out_lbl.setText(f"BG OUTPUT FOLDER: {self.output_dir}")
-            QMessageBox.information(self, "Info", f"Output folder set to:\n{self.output_dir}")
         return self.output_dir
 
     def change_output_folder(self):
@@ -278,22 +280,27 @@ class BgRemoverTab(QWidget):
             from PySide6.QtGui import QDesktopServices
             QDesktopServices.openUrl(QUrl.fromLocalFile(str(d)))
         else:
-            QMessageBox.information(self, "Info", "Output folder does not exist yet. Process an image first.")
+            ModernDialog.show_info(self, "Info", "Output folder does not exist yet. Process an image first.")
 
     def proc_sel(self):
-        sel = [i.data(Qt.UserRole) for i in self.list_w.selectedItems()]
-        if not sel: return QMessageBox.information(self, "Info", tr("msg_select"))
+        sel = [i.data(Qt.UserRole) for i in self.list_w.selectedItems() if i.data(Qt.UserRole)]
+        if not sel:
+            if self.list_w.currentItem() and self.list_w.currentItem().data(Qt.UserRole):
+                sel = [self.list_w.currentItem().data(Qt.UserRole)]
+            elif self.image_paths:
+                sel = list(self.image_paths)
+        if not sel: return ModernDialog.show_info(self, "Info", tr("msg_select"))
         self._run(sel)
 
     def proc_all(self):
-        if not self.image_paths: return QMessageBox.information(self, "Info", tr("msg_add"))
+        if not self.image_paths: return ModernDialog.show_info(self, "Info", tr("msg_add"))
         self._run(self.image_paths)
 
     def _run(self, paths):
         out = self.ensure_out(paths[0])
-        self.dlg = QProgressDialog("Initializing BG Remover", "Cancel", 0, len(paths), self)
-        self.dlg.setWindowModality(Qt.ApplicationModal)
-        self.dlg.setFixedWidth(350)
+        self._current_out_dir = out
+        theme = getattr(self.main_window, 'current_theme', getattr(self, 'current_theme', 'light'))
+        self.dlg = ModernProgressDialog("BG Remover", "Cancel", 0, len(paths), self, theme=theme)
         self.dlg.show()
         self.dlg.setValue(0)
         
@@ -310,12 +317,15 @@ class BgRemoverTab(QWidget):
         # Start Worker
         self.worker = BgRemovalWorker(paths, out, sel_model, preset, self)
         self.worker.progress.connect(self.on_worker_progress)
-        self.worker.finished.connect(lambda cnt: self.on_worker_finished(cnt, out))
+        self.worker.finished.connect(self._on_worker_finished_slot)
         self.worker.error.connect(self.on_worker_error)
         
         self.dlg.canceled.connect(self.worker.stop)
         
         self.worker.start()
+
+    def _on_worker_finished_slot(self, cnt):
+        self.on_worker_finished(cnt, getattr(self, '_current_out_dir', self.output_dir))
 
     def on_worker_progress(self, i, msg):
         if self.meter: self.meter.set_message(f"{msg}")
@@ -333,13 +343,20 @@ class BgRemoverTab(QWidget):
             if opath.exists():
                 self.output_map[p] = opath
 
-        QMessageBox.information(self, tr("msg_done"), f"Processed {cnt} images.\nFolder: {out_dir}")
-        if self.list_w.currentRow() >= 0: self._update_prev(self.image_paths[self.list_w.currentRow()])
+        # Update preview BEFORE showing info dialog so canvas displays result instantly
+        curr_row = self.list_w.currentRow()
+        if curr_row < 0 and self.image_paths:
+            curr_row = 0
+            self.list_w.setCurrentRow(0)
+        if curr_row >= 0:
+            self._update_prev(self.image_paths[curr_row])
+
+        ModernDialog.show_info(self, tr("msg_done"), f"Processed {cnt} images.\nFolder: {out_dir}")
 
     def on_worker_error(self, err):
         self.dlg.close()
         if self.meter: self.meter.set_message(None)
-        QMessageBox.critical(self, tr("msg_error"), f"BG Removal Failed:\n{err}")
+        ModernDialog.show_critical(self, tr("msg_error"), f"BG Removal Failed:\n{err}")
 
     def show_help(self):
         text = (
@@ -358,4 +375,4 @@ class BgRemoverTab(QWidget):
             "Click 'Remove BG (All)' to process the entire list.<br>"
             "Results are saved automatically to the <b>LABOKit_BG</b> folder next to your input files.<br><br>"
         )
-        QMessageBox.information(self, "Help – BG Remover", text)
+        ModernDialog.show_info(self, "Help – BG Remover", text)
