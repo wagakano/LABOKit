@@ -271,6 +271,7 @@ class UpscalerTab(QWidget):
         self.list_w.currentItemChanged.connect(self.on_item)
         self.lbl_header = QLabel(tr("lbl_loaded_up"))
         self.lbl_header.setStyleSheet("font-weight: bold; background-color: #e2e7f2; border: 1px solid #cbd2e1; border-radius: 3px; padding: 4px 6px; color: #333d51;")
+        self.lbl_header.setBuddy(self.list_w)
         list_box_layout.addWidget(self.lbl_header)
         list_box_layout.addWidget(self.list_w)
         
@@ -310,6 +311,7 @@ class UpscalerTab(QWidget):
         l_scale = QLabel(tr("lbl_scale")); l_scale.setStyleSheet("font-weight: bold; border: none; background: transparent;")
         opt_layout.addWidget(l_scale)
         self.combo_s = setup_combobox(QComboBox()); self.combo_s.addItems(["2x", "4x"]); self.combo_s.setCurrentText("4x")
+        l_scale.setBuddy(self.combo_s)
         opt_layout.addWidget(self.combo_s)
         
         l_mod = QLabel(tr("lbl_model")); l_mod.setStyleSheet("font-weight: bold; border: none; background: transparent;")
@@ -320,6 +322,7 @@ class UpscalerTab(QWidget):
             "Anime", 
             "General - Performance"
         ])
+        l_mod.setBuddy(self.combo_m)
         opt_layout.addWidget(self.combo_m)
         left.addLayout(opt_layout)
 
