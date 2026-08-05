@@ -1075,6 +1075,7 @@ def main():
             # This makes the app open instantly in <1s while avoiding background QThread CUDA loading deadlocks.
             QTimer.singleShot(400, lambda: core_config.load_ai_engine())
             QTimer.singleShot(900, lambda: core_config.load_rembg_engine())
+            QTimer.singleShot(1400, lambda: app.main_window.up_tab.init_upsampler("realesr-general-x4v3.pth"))
         except Exception as e:
             print(f"Error during startup: {e}")
 

@@ -180,6 +180,13 @@ class UpscalerWorker(QThread):
         except Exception as e:
             print(f"Error initializing upsampler: {e}")
             import traceback; traceback.print_exc()
+            try:
+                import datetime
+                with open("crash_log.txt", "a", encoding="utf-8") as f:
+                    f.write(f"\n--- init_upsampler Exception at {datetime.datetime.now()} ---\n")
+                    traceback.print_exc(file=f)
+            except:
+                pass
             return None
 
     def run_python_inference(self, img_path, out_path, upsampler):
