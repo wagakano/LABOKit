@@ -7,3 +7,6 @@
 ## 2026-05-27 - Accessible Icon-only Buttons in PySide6
 **Learning:** Custom UI controls like 'Minimize' or 'Close' buttons that only use symbols (e.g., "−", "×") or icons are opaque to screen readers and can be confusing to users without context.
 **Action:** Always explicitly implement `setAccessibleName` (for screen reader accessibility) and `setToolTip` (for visual context on hover) for icon-only or non-textual UI buttons.
+## 2026-05-27 - QListWidget Multi-selection and Batch Processing UX
+**Learning:** By default, `QListWidget` only allows single item selection. When implementing list widgets that support batch processing (e.g., processing arrays of `selectedItems()`), users expect to be able to use Shift/Ctrl modifiers, but cannot without explicit configuration.
+**Action:** When implementing list widgets that support batch processing for backend operations, explicitly enable multi-selection via `setSelectionMode(QAbstractItemView.ExtendedSelection)` and communicate this functionality to the user through widget tooltips.

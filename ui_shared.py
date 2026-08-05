@@ -1,7 +1,7 @@
 from PySide6.QtCore import Qt, Signal, QTimer, QPoint, QSize, QObject, QPropertyAnimation, QEasingCurve
 from PySide6.QtGui import QPixmap, QPainter, QColor, QPen, QIcon, QAction, QFont, QMovie, QImage
 from PySide6.QtWidgets import (
-    QListWidget, QScrollArea, QLabel, QPushButton, QMenu, QFrame, QHBoxLayout, QApplication, QWidget, QVBoxLayout, QSlider, QDialog, QProgressBar, QListView, QGraphicsOpacityEffect
+    QListWidget, QScrollArea, QLabel, QPushButton, QMenu, QFrame, QHBoxLayout, QApplication, QWidget, QVBoxLayout, QSlider, QDialog, QProgressBar, QListView, QGraphicsOpacityEffect, QAbstractItemView
 )
 
 def setup_combobox(combo, is_dark=False):
@@ -54,7 +54,8 @@ class FileDropListWidget(QListWidget):
         self.setAcceptDrops(True)
         self.current_theme = "light"
         self.setAccessibleName("File Drop List")
-        self.setToolTip("Drag and drop files here. Right-click an item for more options.")
+        self.setToolTip("Drag and drop files here. Right-click an item for more options. Use Shift/Ctrl to select multiple items.")
+        self.setSelectionMode(QAbstractItemView.ExtendedSelection)
         self.update_style()
 
     def set_theme(self, theme_name):
