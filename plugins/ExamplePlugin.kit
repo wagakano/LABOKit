@@ -146,11 +146,13 @@ class ExamplePluginTab(QWidget):
         # Control Sliders
         lbl_blur = QLabel("Blur Radius:")
         self.slider_blur = QSlider(Qt.Horizontal)
+        lbl_blur.setBuddy(self.slider_blur)
         self.slider_blur.setRange(0, 20)
         self.slider_blur.setValue(5)
         
         lbl_vignette = QLabel("Vignette Strength (%):")
         self.slider_vignette = QSlider(Qt.Horizontal)
+        lbl_vignette.setBuddy(self.slider_vignette)
         self.slider_vignette.setRange(0, 100)
         self.slider_vignette.setValue(30)
         
