@@ -9,3 +9,8 @@
 **Learning:** When using `Path.rglob("*")` to recursively find files in a directory, checking string-based properties (like `f.suffix.lower() in VALID_EXTENSIONS`) before performing disk operations (like `f.is_file()`) can yield significant performance improvements, avoiding unnecessary filesystem stats on subdirectories or non-matching files.
 
 **Action:** Order boolean condition checks in directory traversal from least expensive (string matching) to most expensive (OS stat calls).
+## 2024-05-18 - Avoid redundant regex compilation in tight loops
+
+**Learning:** Re-compiling a regex pattern (e.g. `re.split(r'(\d+)', s.name)`) inside a sorting key function that executes $O(N \log N)$ times during a `sorted()` call incurs unnecessary overhead. Pre-compiling the regex at the module level and using its methods (e.g. `NATURAL_SORT_RE.split(...)`) is noticeably faster and standard practice for optimal performance in hot paths.
+
+**Action:** Look for instances of `re.match`, `re.search`, or `re.split` inside functions that are called frequently (like `map`, list comprehensions over large datasets, or `sorted` key functions) and refactor them to use a module-level compiled regex object.
