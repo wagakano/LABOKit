@@ -7,6 +7,8 @@ All notable changes and updates made during this development cycle for the relea
 ## [3.3.2] - 2026-07-26
 
 ### Added
+* **Pop-Out Drop Shadows**: Added elegant drop shadows (`QGraphicsDropShadowEffect`) to frameless pop-out dialogs (`ModernDialog` and `ModernProgressDialog` in `ui_shared.py`) to give them depth and separation from the main application window. Refactored fade-in and slide slide-in animations to run on a nested shadow container to prevent graphics effect conflicts.
+* **Initial Model Load Warnings**: Integrated status warning notices into progress emissions in both BG Remover and Upscaler workers. When a model is run for the first time, a note `(Initial run: Vulkan shader compiling / AI engine loading, please wait)` is shown to avoid user confusion.
 * **100% Offline Local Model Unpacking**: Implemented `ensure_offline_models_extracted()` in `core_config.py` to automatically unpack local bundled `models.zip` archives into `%APPDATA%/LABOKit/models/` without any network requests.
 * **Zooming UX Overhaul**: Enhanced `ZoomableImageWidget` in `ui_shared.py` with cursor-anchored zooming (maintains focal point under mouse pointer), double-click shortcut to toggle between 100% (1:1 Native Resolution) and Fit-to-Window, and preserved user zoom levels during processing result updates.
 * **Automated Verification Suite**: Added `scratch/test_full_suite.py` covering core module imports, offline model bootstrapping, translation dictionary integrity, zoom UX, and window lifecycle.

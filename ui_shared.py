@@ -683,9 +683,16 @@ class ModernDialog(QDialog):
         self.setAttribute(Qt.WA_TranslucentBackground, True)
         
         main_layout = QVBoxLayout(self)
-        main_layout.setContentsMargins(0, 0, 0, 0)
+        main_layout.setContentsMargins(16, 16, 16, 16)
         
-        self.container = QFrame(self)
+        self.shadow_container = QFrame(self)
+        self.shadow_container.setObjectName("ShadowWrapper")
+        self.shadow_container.setStyleSheet("#ShadowWrapper { background: transparent; border: none; }")
+        
+        shadow_layout = QVBoxLayout(self.shadow_container)
+        shadow_layout.setContentsMargins(0, 0, 0, 0)
+        
+        self.container = QFrame(self.shadow_container)
         self.container.setObjectName("DialogContainer")
         
         is_dark = (theme == "dark")
@@ -783,17 +790,27 @@ class ModernDialog(QDialog):
         btn_layout.addWidget(btn_ok)
         container_layout.addLayout(btn_layout)
         
-        main_layout.addWidget(self.container)
-        self.setMinimumWidth(340)
+        shadow_layout.addWidget(self.container)
+        main_layout.addWidget(self.shadow_container)
+        self.setMinimumWidth(372)
+        
+        # Apply drop shadow
+        from PySide6.QtWidgets import QGraphicsDropShadowEffect
+        from PySide6.QtGui import QColor
+        shadow = QGraphicsDropShadowEffect(self)
+        shadow.setBlurRadius(16)
+        shadow.setColor(QColor(0, 0, 0, 100 if is_dark else 60))
+        shadow.setOffset(0, 4)
+        self.container.setGraphicsEffect(shadow)
 
     def showEvent(self, event):
         super().showEvent(event)
         if not hasattr(self, '_anim_started'):
             self._anim_started = True
             
-            # Opacity animation
-            self._opacity_effect = QGraphicsOpacityEffect(self.container)
-            self.container.setGraphicsEffect(self._opacity_effect)
+            # Opacity animation on the shadow_container
+            self._opacity_effect = QGraphicsOpacityEffect(self.shadow_container)
+            self.shadow_container.setGraphicsEffect(self._opacity_effect)
             
             self._fade_anim = QPropertyAnimation(self._opacity_effect, b"opacity", self)
             self._fade_anim.setDuration(200)
@@ -801,12 +818,12 @@ class ModernDialog(QDialog):
             self._fade_anim.setEndValue(1.0)
             self._fade_anim.setEasingCurve(QEasingCurve.OutCubic)
             
-            # Pop-out slide animation
-            self._pos_anim = QPropertyAnimation(self.container, b"pos", self)
+            # Pop-out slide animation on the shadow_container
+            self._pos_anim = QPropertyAnimation(self.shadow_container, b"pos", self)
             self._pos_anim.setDuration(200)
-            target_pos = self.container.pos()
+            target_pos = self.shadow_container.pos()
             start_pos = QPoint(target_pos.x(), target_pos.y() + 16)
-            self.container.move(start_pos)
+            self.shadow_container.move(start_pos)
             self._pos_anim.setStartValue(start_pos)
             self._pos_anim.setEndValue(target_pos)
             self._pos_anim.setEasingCurve(QEasingCurve.OutBack)
@@ -894,9 +911,16 @@ class ModernProgressDialog(QDialog):
         self._was_canceled = False
 
         main_layout = QVBoxLayout(self)
-        main_layout.setContentsMargins(0, 0, 0, 0)
-
-        self.container = QFrame(self)
+        main_layout.setContentsMargins(16, 16, 16, 16)
+        
+        self.shadow_container = QFrame(self)
+        self.shadow_container.setObjectName("ShadowWrapper")
+        self.shadow_container.setStyleSheet("#ShadowWrapper { background: transparent; border: none; }")
+        
+        shadow_layout = QVBoxLayout(self.shadow_container)
+        shadow_layout.setContentsMargins(0, 0, 0, 0)
+        
+        self.container = QFrame(self.shadow_container)
         self.container.setObjectName("ProgressContainer")
 
         is_dark = (theme == "dark")
@@ -1006,17 +1030,27 @@ class ModernProgressDialog(QDialog):
             btn_layout.addWidget(self.btn_cancel)
 
         container_layout.addLayout(btn_layout)
-        main_layout.addWidget(self.container)
-        self.setMinimumWidth(360)
+        shadow_layout.addWidget(self.container)
+        main_layout.addWidget(self.shadow_container)
+        self.setMinimumWidth(392)
+        
+        # Apply drop shadow
+        from PySide6.QtWidgets import QGraphicsDropShadowEffect
+        from PySide6.QtGui import QColor
+        shadow = QGraphicsDropShadowEffect(self)
+        shadow.setBlurRadius(16)
+        shadow.setColor(QColor(0, 0, 0, 100 if is_dark else 60))
+        shadow.setOffset(0, 4)
+        self.container.setGraphicsEffect(shadow)
 
     def showEvent(self, event):
         super().showEvent(event)
         if not hasattr(self, '_anim_started'):
             self._anim_started = True
             
-            # Opacity animation
-            self._opacity_effect = QGraphicsOpacityEffect(self.container)
-            self.container.setGraphicsEffect(self._opacity_effect)
+            # Opacity animation on the shadow_container
+            self._opacity_effect = QGraphicsOpacityEffect(self.shadow_container)
+            self.shadow_container.setGraphicsEffect(self._opacity_effect)
             
             self._fade_anim = QPropertyAnimation(self._opacity_effect, b"opacity", self)
             self._fade_anim.setDuration(200)
@@ -1024,12 +1058,12 @@ class ModernProgressDialog(QDialog):
             self._fade_anim.setEndValue(1.0)
             self._fade_anim.setEasingCurve(QEasingCurve.OutCubic)
             
-            # Pop-out slide animation
-            self._pos_anim = QPropertyAnimation(self.container, b"pos", self)
+            # Pop-out slide animation on the shadow_container
+            self._pos_anim = QPropertyAnimation(self.shadow_container, b"pos", self)
             self._pos_anim.setDuration(200)
-            target_pos = self.container.pos()
+            target_pos = self.shadow_container.pos()
             start_pos = QPoint(target_pos.x(), target_pos.y() + 16)
-            self.container.move(start_pos)
+            self.shadow_container.move(start_pos)
             self._pos_anim.setStartValue(start_pos)
             self._pos_anim.setEndValue(target_pos)
             self._pos_anim.setEasingCurve(QEasingCurve.OutBack)

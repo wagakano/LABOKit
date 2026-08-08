@@ -29,7 +29,7 @@ class UpscalerWorker(QThread):
         try:
             upsampler = None
             if self.is_python_mode:
-                self.progress.emit(0, "Initializing AI Engine...")
+                self.progress.emit(0, "Initializing AI Engine...\n(Initial load may take some time, please wait)")
                 upsampler = self.init_upsampler(self.model_name)
                 if not upsampler:
                     self.error.emit("Failed to initialize upsampler.")
@@ -41,7 +41,10 @@ class UpscalerWorker(QThread):
             for i, p in enumerate(self.paths):
                 if not self.is_running: break
                 
-                self.progress.emit(i, f"Processing {p.name}...")
+                msg = f"Processing {p.name}..."
+                if i == 0:
+                    msg += "\n(Initial run: Vulkan shader compiling / AI engine loading, please wait)"
+                self.progress.emit(i, msg)
                 
                 try:
                     opath = self.out_dir / f"{p.stem}_up{self.scale}x.png"
