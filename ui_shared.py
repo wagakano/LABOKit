@@ -579,6 +579,9 @@ class DivergenceMeter(QFrame):
         self._update_text()
 
     def set_message(self, text):
+        if text:
+            # Only use the first line to prevent the divergence meter from doubling in height
+            text = text.split("\n")[0]
         self.override_message = text
         self._update_status_box()
         # Speed up animation when processing, slow down when idle
