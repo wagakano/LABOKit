@@ -186,11 +186,12 @@ DEFAULT_PRESET_NAME = "Standard"
 
 # --- LAZY LOADING AI ENGINE ---
 AI_MODULES = None
+_last_ai_engine_error = ""
 GLOBAL_UPSAMPLER_CACHE = {}
 GLOBAL_REMBG_SESSION_CACHE = {}
 
 def load_ai_engine():
-    global AI_MODULES
+    global AI_MODULES, _last_ai_engine_error
     if AI_MODULES:
         return AI_MODULES
 
@@ -220,8 +221,16 @@ def load_ai_engine():
             "RealESRGANer": RealESRGANer
         }
         return AI_MODULES
-    except ImportError as e:
+    except Exception as e:
+        _last_ai_engine_error = f"{type(e).__name__}: {e}"
         print(f"AI Engine Load Error: {e}")
+        try:
+            import datetime, traceback
+            with open(APP_DATA / "crash_log.txt", "a", encoding="utf-8") as f:
+                f.write(f"\n--- AI Engine Load Error at {datetime.datetime.now()} ---\n")
+                traceback.print_exc(file=f)
+        except:
+            pass
         return None
 
 REMBG_MODULE = None

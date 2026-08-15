@@ -32,7 +32,8 @@ class UpscalerWorker(QThread):
                 self.progress.emit(0, "Initializing AI Engine...\n(Initial load may take some time, please wait)")
                 upsampler = self.init_upsampler(self.model_name)
                 if not upsampler:
-                    self.error.emit("Failed to initialize upsampler.")
+                    err_msg = getattr(self, '_last_error', 'Initialization returned None')
+                    self.error.emit(f"Failed to initialize upsampler:\n{err_msg}")
                     return
 
             cnt = 0
@@ -141,27 +142,45 @@ class UpscalerWorker(QThread):
             self.error.emit(str(e))
 
     def init_upsampler(self, model_name):
+        self._last_error = ""
         if model_name in core_config.GLOBAL_UPSAMPLER_CACHE:
             return core_config.GLOBAL_UPSAMPLER_CACHE[model_name]
 
         ai = core_config.load_ai_engine()
         if not ai:
+            self._last_error = getattr(core_config, '_last_ai_engine_error', 'Could not load AI engine (PyTorch/BasicSR modules failed to import).')
             return None
 
         # Unpack
-        SRVGGNetCompact = ai["SRVGGNetCompact"]
-        RealESRGANer = ai["RealESRGANer"]
+        SRVGGNetCompact = ai.get("SRVGGNetCompact")
+        RealESRGANer = ai.get("RealESRGANer")
+        if not SRVGGNetCompact or not RealESRGANer:
+            self._last_error = "SRVGGNetCompact or RealESRGANer class missing from AI engine."
+            return None
 
         try:
-            # Check all possible model locations (AppData, Internal, Bundled)
-            model_path = core_config.REALESRGAN_DIR / "models" / model_name 
-            if not model_path.exists():
-                model_path = core_config.MODEL_DIR / model_name
-            if not model_path.exists():
-                model_path = core_config.INTERNAL_DIR / "realesrgan_ncnn" / "models" / model_name
-            if not model_path.exists():
-                model_path = core_config.INTERNAL_DIR / "models" / model_name
-            if not model_path.exists():
+            # Check all possible model locations (AppData, Internal, Bundled, Dev)
+            possible_paths = [
+                core_config.REALESRGAN_DIR / "models" / model_name,
+                core_config.MODEL_DIR / model_name,
+                core_config.INTERNAL_DIR / "realesrgan_ncnn" / "models" / model_name,
+                core_config.INTERNAL_DIR / "models" / model_name,
+                core_config.INTERNAL_DIR.parent / "realesrgan_ncnn" / "models" / model_name,
+                core_config.INTERNAL_DIR.parent / "models" / model_name,
+                Path("realesrgan_ncnn/models") / model_name,
+                Path("models") / model_name,
+                Path(sys.executable).parent / "realesrgan_ncnn" / "models" / model_name,
+                Path(sys.executable).parent / "_internal" / "realesrgan_ncnn" / "models" / model_name,
+            ]
+            model_path = None
+            for p in possible_paths:
+                if p.exists():
+                    model_path = p
+                    break
+
+            if not model_path:
+                checked_str = "\n".join(str(p) for p in possible_paths[:4])
+                self._last_error = f"Model file '{model_name}' not found.\nTried paths:\n{checked_str}"
                 print(f"Upsampler model missing: {model_name}")
                 return None
 
@@ -181,11 +200,12 @@ class UpscalerWorker(QThread):
             return upsampler
 
         except Exception as e:
+            self._last_error = f"{type(e).__name__}: {e}"
             print(f"Error initializing upsampler: {e}")
             import traceback; traceback.print_exc()
             try:
                 import datetime
-                with open("crash_log.txt", "a", encoding="utf-8") as f:
+                with open(core_config.APP_DATA / "crash_log.txt", "a", encoding="utf-8") as f:
                     f.write(f"\n--- init_upsampler Exception at {datetime.datetime.now()} ---\n")
                     traceback.print_exc(file=f)
             except:
