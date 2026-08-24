@@ -29,7 +29,10 @@ class UpscalerWorker(QThread):
         try:
             upsampler = None
             if self.is_python_mode:
-                self.progress.emit(0, "Initializing AI Engine...\n(Initial load may take some time, please wait)")
+                if self.model_name in core_config.GLOBAL_UPSAMPLER_CACHE:
+                    self.progress.emit(0, "Initializing AI Engine...")
+                else:
+                    self.progress.emit(0, "Initializing AI Engine...\n(Initial load may take some time, please wait)")
                 upsampler = self.init_upsampler(self.model_name)
                 if not upsampler:
                     err_msg = getattr(self, '_last_error', 'Initialization returned None')
@@ -43,8 +46,8 @@ class UpscalerWorker(QThread):
                 if not self.is_running: break
                 
                 msg = f"Processing {p.name}..."
-                if i == 0:
-                    msg += "\n(Initial run: Vulkan shader compiling / AI engine loading, please wait)"
+                if i == 0 and not self.is_python_mode and not getattr(core_config, 'NCNN_WARMED_UP', False):
+                    msg += "\n(Initial run: Vulkan shader compiling, please wait)"
                 self.progress.emit(i, msg)
                 
                 try:
@@ -56,6 +59,7 @@ class UpscalerWorker(QThread):
                     if self.is_python_mode:
                         success = self.run_python_inference(abs_p, abs_opath, upsampler)
                     else:
+                        core_config.NCNN_WARMED_UP = True
                         from PIL import Image
                         # Check if original image contains alpha transparency
                         alpha_channel = None

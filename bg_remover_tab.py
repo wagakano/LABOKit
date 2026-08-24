@@ -24,7 +24,10 @@ class BgRemovalWorker(QThread):
 
     def run(self):
         try:
-            self.progress.emit(0, f"Loading model ({self.model_name})...\n(Initial load may take some time, please wait)")
+            if self.model_name in core_config.GLOBAL_REMBG_SESSION_CACHE:
+                self.progress.emit(0, f"Loading model ({self.model_name})...")
+            else:
+                self.progress.emit(0, f"Loading model ({self.model_name})...\n(Initial load may take some time, please wait)")
 
             target_model_file = core_config.MODEL_DIR / f"{self.model_name}.onnx"
             internal_model_file = core_config.INTERNAL_DIR / "models" / f"{self.model_name}.onnx"

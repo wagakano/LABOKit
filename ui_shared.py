@@ -935,27 +935,6 @@ class ModernProgressDialog(QDialog):
         title_lbl.setStyleSheet(f"font-weight: bold; font-size: 10pt; color: {text_color}; border: none;")
         header_layout.addWidget(title_lbl)
         header_layout.addStretch()
-
-        btn_close = QPushButton("✕", header)
-        btn_close.setFixedSize(22, 22)
-        btn_close.setCursor(Qt.PointingHandCursor)
-        btn_close.setStyleSheet(f"""
-            QPushButton {{
-                background-color: {"#2a2a36" if is_dark else "#cbd5e1"};
-                border: 1px solid {"#3f3f4e" if is_dark else "#94a3b8"};
-                color: {"#a0a0b0" if is_dark else "#475569"};
-                font-weight: bold;
-                border-radius: 11px;
-                font-size: 8.5pt;
-            }}
-            QPushButton:hover {{
-                background-color: #ef4444;
-                border: 1px solid #dc2626;
-                color: #ffffff;
-            }}
-        """)
-        btn_close.clicked.connect(self._on_cancel)
-        header_layout.addWidget(btn_close)
         container_layout.addWidget(header)
 
         # Status Label + Progress Bar

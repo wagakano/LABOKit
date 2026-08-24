@@ -7,6 +7,9 @@ All notable changes and updates made during this development cycle for the relea
 ## [3.3.2] - 2026-07-26
 
 ### Added
+* **SymPy Module Bundling**: Added `sympy` to PyInstaller collection and removed it from `excluded_modules` in `LABOKit.spec`, fixing `ModuleNotFoundError: No module named 'sympy'` during RealESRGAN initialization in PyTorch 2.x.
+* **Progress Dialog Streamlining**: Removed redundant header close button from `ModernProgressDialog` in `ui_shared.py` to maintain a clean loading dialog interface.
+* **Dynamic Initial Load Notices**: Updated `BgRemovalWorker` and `UpscalerWorker` to automatically suppress `(Initial load...)` notices once models and Vulkan shaders have already completed their first initialization in the session.
 * **Pop-Out Drop Shadows**: Added elegant drop shadows (`QGraphicsDropShadowEffect`) to frameless pop-out dialogs (`ModernDialog` and `ModernProgressDialog` in `ui_shared.py`) to give them depth and separation from the main application window. Refactored fade-in and slide slide-in animations to run on a nested shadow container to prevent graphics effect conflicts.
 * **Initial Model Load Warnings**: Integrated status warning notices into progress emissions in both BG Remover and Upscaler workers. When a model is run for the first time, a note `(Initial run: Vulkan shader compiling / AI engine loading, please wait)` is shown to avoid user confusion.
 * **100% Offline Local Model Unpacking**: Implemented `ensure_offline_models_extracted()` in `core_config.py` to automatically unpack local bundled `models.zip` archives into `%APPDATA%/LABOKit/models/` without any network requests.
