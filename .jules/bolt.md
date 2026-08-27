@@ -9,3 +9,9 @@
 **Learning:** When using `Path.rglob("*")` to recursively find files in a directory, checking string-based properties (like `f.suffix.lower() in VALID_EXTENSIONS`) before performing disk operations (like `f.is_file()`) can yield significant performance improvements, avoiding unnecessary filesystem stats on subdirectories or non-matching files.
 
 **Action:** Order boolean condition checks in directory traversal from least expensive (string matching) to most expensive (OS stat calls).
+
+## 2024-05-18 - PySide6 Event Hierarchy Pattern
+
+**Learning:** When optimizing PySide6 event filters for UI interactions (e.g., mouse moves, clicks, key presses), leverage `QInputEvent` as the base class for `isinstance()` fast-fail checks, as common input events like `QMouseEvent` and `QKeyEvent` inherit from it. Do not evaluate `event.type()` before `isinstance()` in PySide6 global event filters to 'short-circuit' execution. `isinstance()` is a highly optimized, native C-level operation in Python, whereas calling `event.type()` on a PySide event requires crossing the Python-C++ boundary, making it slower. Preserve `isinstance()` as the primary fast-fail check.
+
+**Action:** In `eventFilter`, always use `isinstance(event, QInputEvent)` before evaluating `event.type()`.
