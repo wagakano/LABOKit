@@ -1,3 +1,5 @@
+import os
+import psutil
 from PySide6.QtCore import Qt, Signal, QTimer, QPoint, QSize, QObject, QPropertyAnimation, QEasingCurve
 from PySide6.QtGui import QPixmap, QPainter, QColor, QPen, QIcon, QAction, QFont, QMovie, QImage
 from PySide6.QtWidgets import (

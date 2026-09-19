@@ -1,3 +1,4 @@
+import os
 from pathlib import Path
 from PySide6.QtCore import Qt, QThread, Signal
 from PySide6.QtGui import QAction
