@@ -7,6 +7,9 @@ All notable changes and updates made during this development cycle for the relea
 ## [3.3.2] - 2026-07-26
 
 ### Added
+* **Instant Model Session Loading**: Resolved slow loading times in the compiled executable by implementing `get_u2net_home()` to point `U2NET_HOME` directly to bundled/existing models, setting `MODEL_CHECKSUM_DISABLED=1` to bypass 176MB MD5 hashing, and removing disk-copying overhead.
+* **Background Rembg Warmup**: Added non-blocking background warmup for the `u2net` session after app launch, allowing background removal to start with near-zero latency.
+* **SafeStream Restoration**: Restored `SafeStream` stdout/stderr proxy in `core_config.py` to prevent deadlocks and EBADF issues in windowed PyInstaller environments.
 * **SymPy Module Bundling**: Added `sympy` to PyInstaller collection and removed it from `excluded_modules` in `LABOKit.spec`, fixing `ModuleNotFoundError: No module named 'sympy'` during RealESRGAN initialization in PyTorch 2.x.
 * **Progress Dialog Streamlining**: Removed redundant header close button from `ModernProgressDialog` in `ui_shared.py` to maintain a clean loading dialog interface.
 * **Dynamic Initial Load Notices**: Updated `BgRemovalWorker` and `UpscalerWorker` to automatically suppress `(Initial load...)` notices once models and Vulkan shaders have already completed their first initialization in the session.

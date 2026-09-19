@@ -1,6 +1,38 @@
 import sys
 import os
 
+class SafeStream:
+    def __init__(self, original_stream=None):
+        self.original_stream = original_stream
+
+    def write(self, data):
+        if self.original_stream:
+            try:
+                self.original_stream.write(data)
+                return
+            except Exception:
+                pass
+
+    def flush(self):
+        if self.original_stream:
+            try:
+                self.original_stream.flush()
+            except Exception:
+                pass
+
+    def isatty(self):
+        return False
+
+if sys.stdout is None or not hasattr(sys.stdout, 'write'):
+    sys.stdout = SafeStream(None)
+else:
+    sys.stdout = SafeStream(sys.stdout)
+
+if sys.stderr is None or not hasattr(sys.stderr, 'write'):
+    sys.stderr = SafeStream(None)
+else:
+    sys.stderr = SafeStream(sys.stderr)
+
 # Prevent OpenMP multi-threading duplicate library conflicts and loading deadlocks
 os.environ["KMP_DUPLICATE_LIB_OK"] = "TRUE"
 os.environ["OMP_NUM_THREADS"] = "1"
@@ -125,7 +157,26 @@ PLUGIN_DIR = APP_DATA / "plugins"
 FFMPEG_DIR = APP_DATA / "ffmpeg"
 
 # Setup Environment Variables
+os.environ["MODEL_CHECKSUM_DISABLED"] = "1"
 os.environ["U2NET_HOME"] = str(MODEL_DIR)
+
+def get_u2net_home(model_name="u2net"):
+    """Locates the directory containing the given .onnx model without copying or downloading."""
+    fname = f"{model_name}.onnx"
+    # 1. User AppData models folder
+    if (MODEL_DIR / fname).exists():
+        return MODEL_DIR
+    # 2. Bundled _internal/models folder
+    if (INTERNAL_DIR / "models" / fname).exists():
+        return INTERNAL_DIR / "models"
+    # 3. Bundled root/models folder
+    if (INTERNAL_DIR.parent / "models" / fname).exists():
+        return INTERNAL_DIR.parent / "models"
+    # 4. Development models folder
+    dev_path = Path("models") / fname
+    if dev_path.exists():
+        return dev_path.parent.resolve()
+    return MODEL_DIR
 
 def ensure_offline_models_extracted():
     """100% Offline bootstrap: Unpack local bundled models.zip if models directory is missing weights."""

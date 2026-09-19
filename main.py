@@ -1076,6 +1076,18 @@ def main():
             QTimer.singleShot(400, lambda: core_config.load_ai_engine())
             QTimer.singleShot(900, lambda: core_config.load_rembg_engine())
             QTimer.singleShot(1400, lambda: app.main_window.up_tab.init_upsampler("realesr-general-x4v3.pth"))
+            
+            def _warmup_rembg_session():
+                try:
+                    rembg = core_config.load_rembg_engine()
+                    if rembg and "u2net" not in core_config.GLOBAL_REMBG_SESSION_CACHE:
+                        os.environ["U2NET_HOME"] = str(core_config.get_u2net_home("u2net"))
+                        os.environ["MODEL_CHECKSUM_DISABLED"] = "1"
+                        core_config.GLOBAL_REMBG_SESSION_CACHE["u2net"] = rembg.new_session("u2net")
+                except Exception as e:
+                    print(f"Background rembg session warmup notice: {e}")
+
+            QTimer.singleShot(1800, _warmup_rembg_session)
         except Exception as e:
             print(f"Error during startup: {e}")
 
