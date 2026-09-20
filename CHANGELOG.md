@@ -7,6 +7,7 @@ All notable changes and updates made during this development cycle for the relea
 ## [3.3.2] - 2026-07-26
 
 ### Added
+* **Self-Contained RealESRGAN Engine**: Replaced external `basicsr` and `realesrgan` imports in `core_config.py` with a lightweight, self-contained PyTorch `SRVGGNetCompact` and `RealESRGANer` implementation. This completely resolves `NameError: name 'name' is not defined` (caused by `torch._numpy._ufuncs` in Python 3.12 PEP 709 inlined comprehensions) and `NameError: name 'obj' is not defined` in `scipy.stats` when running "General - Performance" (`realesr-general-x4v3.pth`) in frozen PyInstaller builds.
 * **Instant Model Session Loading**: Resolved slow loading times in the compiled executable by implementing `get_u2net_home()` to point `U2NET_HOME` directly to bundled/existing models, setting `MODEL_CHECKSUM_DISABLED=1` to bypass 176MB MD5 hashing, and removing disk-copying overhead.
 * **Background Rembg Warmup**: Added non-blocking background warmup for the `u2net` session after app launch, allowing background removal to start with near-zero latency.
 * **SafeStream Restoration**: Restored `SafeStream` stdout/stderr proxy in `core_config.py` to prevent deadlocks and EBADF issues in windowed PyInstaller environments.
