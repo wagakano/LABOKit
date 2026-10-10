@@ -9,3 +9,12 @@
 **Learning:** When using `Path.rglob("*")` to recursively find files in a directory, checking string-based properties (like `f.suffix.lower() in VALID_EXTENSIONS`) before performing disk operations (like `f.is_file()`) can yield significant performance improvements, avoiding unnecessary filesystem stats on subdirectories or non-matching files.
 
 **Action:** Order boolean condition checks in directory traversal from least expensive (string matching) to most expensive (OS stat calls).
+## 2026-07-28 - Pre-compile Regex in Sorting Loops
+**Learning:** Calling  inside an O(N log N) sorting loop introduces significant overhead because Python has to parse, compile, and cache the regex on every single element comparison. This overhead adds up when processing large numbers of strings (like image sequence files).
+**Action:** Always pre-compile regexes at the module level using  and use the compiled object's  or  methods inside loops or hot paths.
+
+## 2024-05-18 - Pre-compile Regex in Sorting Loops
+
+**Learning:** Calling `re.split` inside an O(N log N) sorting loop introduces significant overhead because Python has to parse, compile, and cache the regex on every single element comparison. This overhead adds up when processing large numbers of strings (like image sequence files).
+
+**Action:** Always pre-compile regexes at the module level using `re.compile()` and use the compiled object's `.split()` or `.search()` methods inside loops or hot paths.
