@@ -18,7 +18,7 @@ from translations import tr, set_language, CURRENT_LANG
 
 # --- IMPORTS ---
 from PySide6.QtCore import Qt, QSize, QTimer, QUrl, QRectF, QThread, Signal, QObject, QDateTime, QEvent, QPoint
-from PySide6.QtGui import QAction, QPixmap, QFont, QIcon, QDesktopServices, QPainterPath, QRegion, QColor, QPalette
+from PySide6.QtGui import QAction, QPixmap, QFont, QIcon, QDesktopServices, QPainterPath, QRegion, QColor, QPalette, QInputEvent
 from PySide6.QtWidgets import (
     QApplication, QMainWindow, QWidget, QVBoxLayout, QHBoxLayout,
     QListWidget, QListWidgetItem, QLabel, QPushButton, QFileDialog,
@@ -864,12 +864,15 @@ class InactivityFilter(QObject):
         self._last_reset_ms = 0  # Cooldown to avoid resetting on every mouse-move
 
     def eventFilter(self, obj, event):
-        if event.type() in (event.Type.MouseMove, event.Type.MouseButtonPress, event.Type.KeyPress):
-            # Throttle: only call reset_inactivity() at most every 500ms
-            now = QDateTime.currentMSecsSinceEpoch()
-            if now - self._last_reset_ms > 500:
-                self._last_reset_ms = now
-                self.main_window.reset_inactivity()
+        # ⚡ Bolt Optimization: Use isinstance to fast-fail on non-input events before
+        # crossing Python-C++ boundary with event.type()
+        if isinstance(event, QInputEvent):
+            if event.type() in (event.Type.MouseMove, event.Type.MouseButtonPress, event.Type.KeyPress):
+                # Throttle: only call reset_inactivity() at most every 500ms
+                now = QDateTime.currentMSecsSinceEpoch()
+                if now - self._last_reset_ms > 500:
+                    self._last_reset_ms = now
+                    self.main_window.reset_inactivity()
         return False
 
 
