@@ -344,11 +344,13 @@ class UpscalerTab(QWidget):
         l_scale = QLabel(tr("lbl_scale")); l_scale.setStyleSheet("font-weight: bold; border: none; background: transparent;")
         opt_layout.addWidget(l_scale)
         self.combo_s = setup_combobox(QComboBox()); self.combo_s.addItems(["2x", "4x"]); self.combo_s.setCurrentText("4x")
+        l_scale.setBuddy(self.combo_s)
         opt_layout.addWidget(self.combo_s)
         
         l_mod = QLabel(tr("lbl_model")); l_mod.setStyleSheet("font-weight: bold; border: none; background: transparent;")
         opt_layout.addWidget(l_mod)
         self.combo_m = setup_combobox(QComboBox())
+        l_mod.setBuddy(self.combo_m)
         self.combo_m.addItems([
             "General", 
             "Anime", 
