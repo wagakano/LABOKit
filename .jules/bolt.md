@@ -9,3 +9,6 @@
 **Learning:** When using `Path.rglob("*")` to recursively find files in a directory, checking string-based properties (like `f.suffix.lower() in VALID_EXTENSIONS`) before performing disk operations (like `f.is_file()`) can yield significant performance improvements, avoiding unnecessary filesystem stats on subdirectories or non-matching files.
 
 **Action:** Order boolean condition checks in directory traversal from least expensive (string matching) to most expensive (OS stat calls).
+## 2024-05-24 - PySide6 Global Event Filter C++ Overhead
+**Learning:** In PySide6 applications, calling `event.type()` on a QEvent object crosses the Python-C++ boundary, creating massive overhead in high-frequency global event filters (like those tracking every single input event).
+**Action:** Use Python's built-in `isinstance(event, QInputEvent)` as a fast-fail check before calling `event.type()`. This avoids crossing the C++ boundary for the thousands of background paint/timer events, yielding a measurable performance boost.
