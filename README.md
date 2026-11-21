@@ -1,11 +1,11 @@
 <div align="center">
 
-# LABOKit 3.3.2 Stable - Coming Soon
+# LABOKit 3.3.2
 
 <img width="1796" height="523" alt="LABOKit Banner" src="https://github.com/user-attachments/assets/2f0b033f-3cfb-4d59-b124-379dcef14b39" />
 
 <p align="center">
-  <a href="https://github.com/wagakano/LABOKit/releases/latest"><img src="https://img.shields.io/badge/VERSION-v3.3.2_Stable_--_Coming_Soon-d93f3f?style=flat-square" alt="Version" /></a>
+  <a href="https://github.com/wagakano/LABOKit/releases/tag/v3.3.2-windows"><img src="https://img.shields.io/badge/VERSION-v3.3.2-d93f3f?style=flat-square" alt="Version" /></a>
   <a href="https://github.com/wagakano/LABOKit/blob/main/LICENSE"><img src="https://img.shields.io/badge/LICENSE-MIT-dfb317?style=flat-square" alt="License" /></a>
   <a href="https://github.com/wagakano/LABOKit/stargazers"><img src="https://img.shields.io/github/stars/wagakano/LABOKit?style=flat-square&label=STARS&color=dfb317" alt="Stars" /></a>
   <a href="https://github.com/wagakano/LABOKit/releases"><img src="https://img.shields.io/github/downloads/wagakano/LABOKit/total?style=flat-square&label=DOWNLOADS&color=007ec6" alt="Downloads" /></a>
@@ -19,14 +19,14 @@ LABOKit is a modular desktop tool for offline batch image processing. Built with
 
 ---
 
-> [!NOTE]  
-> LABOKit 3.3.2 is currently in its final testing phase to ensure we deliver the most reliable experience possible before launch.
+> [!NOTE]
+> Plugin fixes are still in progress. Video Upscaler may show two completion dialogs for a single export. The MP4 still saves successfully. The bundled Example Plugin is still undergoing verification.
 
 <div align="center">
   <img src="assets/labokit_3.3.2_preview.png" alt="LABOKit 3.3.2 Interface Preview" width="100%" />
 </div>
 
-## What's New in LABOKit 3.3.2 Stable (Coming Soon)
+## What's New in LABOKit 3.3.2
 
 - **Theme Engine**: Dynamic Light and Dark Mode theme engine with persistent state storage in settings.
 - **Native Window Resizability**: Resizable main window with titlebar toggle, Maximize control, and border dragging.
@@ -81,11 +81,11 @@ LABOKit is a modular desktop tool for offline batch image processing. Built with
 
 ---
 
-## Download LABOKit 3.3.2 Stable (Coming Soon)
+## Download LABOKit 3.3.2
 
 ### Windows
-1. Download the installer: **[LABOKit_v3.3.2_Setup.exe](https://github.com/wagakano/LABOKit/releases/download/v3.3.2/LABOKit_v3.3.2_Setup.exe)**
-2. Run `LABOKit_v3.3.2_Setup.exe` to install.
+- **Windows installer** — [LABOKit_v3.3.2_Setup.exe](https://github.com/wagakano/LABOKit/releases/download/v3.3.2-windows/LABOKit_v3.3.2_Setup.exe)
+- **Patch ZIP for source checkouts** — [LABOKit_v3.3.2_Patch.zip](https://github.com/wagakano/LABOKit/releases/download/v3.3.2-windows/LABOKit_v3.3.2_Patch.zip)
 
 ### Linux
 Source code and Linux build instructions are on the [main_linux branch](https://github.com/wagakano/LABOKit/tree/main_linux).
