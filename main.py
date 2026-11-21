@@ -921,7 +921,6 @@ def get_app_stylesheet(theme="light"):
             QMenu::item {{ padding: 4px 20px; color: #e1e1e6; }}
             QMenu::item:selected {{ background-color: #282832; color: #ffffff; }}
             QFrame {{ background-color: #16161a; border: 1px solid #2e2e38; border-radius: 0px; }}
-            QComboBox QFrame {{ background: transparent; border: none; }}
             #PixelBar {{
                 background-color: #121216;
             }}
@@ -987,7 +986,6 @@ def get_app_stylesheet(theme="light"):
             QMenu {{ background-color: #f7f9fc; border: 1px solid #b3bcd1; }}
             QMenu::item {{ padding: 4px 20px; color: #1c2333; }}
             QFrame {{ background-color: #f5f7fb; border: 1px solid #b3bcd1; border-radius: 0px; }}
-            QComboBox QFrame {{ background: transparent; border: none; }}
             #PixelBar {{
                 background-color: #dde4f5;
             }}

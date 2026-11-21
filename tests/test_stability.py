@@ -165,6 +165,31 @@ class WindowsStabilityTests(unittest.TestCase):
         self.assertEqual(window.pending_installer, "update.exe")
         window.close.assert_called_once()
 
+    def test_dropdown_popup_rows_have_opaque_backgrounds(self):
+        combo = QComboBox()
+        combo.addItems(["General", "Anime", "General - Performance"])
+        combo.resize(260, 32)
+        combo.show()
+        self.addCleanup(combo.close)
+        for theme, background in (("light", "#ffffff"), ("dark", "#1c1c1c")):
+            with self.subTest(theme=theme):
+                self.app.setStyleSheet(self.main.get_app_stylesheet(theme))
+                combo.setCurrentIndex(0)
+                combo.showPopup()
+                try:
+                    self.app.processEvents()
+                    view = combo.view()
+                    row = view.visualRect(combo.model().index(1, 0))
+                    viewport = view.viewport()
+                    image = viewport.grab().toImage()
+                    pixel = image.pixelColor(image.width() - 15, row.center().y())
+                    self.assertEqual(pixel.alpha(), 255)
+                    self.assertEqual(pixel.name(), background)
+                    QTest.mouseClick(viewport, Qt.LeftButton, pos=row.center())
+                    self.assertEqual(combo.currentText(), "Anime")
+                finally:
+                    combo.hidePopup()
+
     def test_dialogs_use_dark_mode_with_a_nested_parent(self):
         root = QWidget()
         root.current_theme = "dark"
