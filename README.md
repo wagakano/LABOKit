@@ -89,6 +89,8 @@ LABOKit is a modular desktop tool for offline batch image processing. Built with
 
 Use the Setup EXE for a new Windows installation or to upgrade an existing Windows installation. The ZIP contains source files for an existing source checkout. Supporters can install Advanced Plugins separately.
 
+On startup, LABOKit checks for newer versions. Windows builds can download and verify a new installer in the app when the release provides its checksum. LABOKit asks before closing and opening Windows Setup. Older clients and source checkouts open the release page.
+
 ### Linux
 Source code and Linux build instructions are on the [main_linux branch](https://github.com/wagakano/LABOKit/tree/main_linux).
 
@@ -100,7 +102,7 @@ Contributed by **[Chizuu](https://github.com/Chizuui)**:
 
 ## Plugins & Downloads
 
-LABOKit features can be extended using `.kit` plugins. Download plugins below and install them through **Config** > **Load Plugin (.kit)**. LABOKit checks for updates to installed plugins on startup.
+LABOKit features can be extended using `.kit` plugins. Download plugins below and install them through **Config** > **Load Plugin (.kit)**. LABOKit checks for updates to installed plugins on startup and uses successfully downloaded updates after the next restart.
 
 ### Installing Plugins (.kit)
 1. Open **LABOKit**.

@@ -1,12 +1,17 @@
+import base64
+import hashlib
 import importlib.machinery
 import importlib.util
+import io
+import json
 import os
+import sys
 import tempfile
 import threading
 import time
 import unittest
 from pathlib import Path
-from unittest.mock import patch
+from unittest.mock import MagicMock, patch
 
 from PIL import Image
 from PySide6.QtCore import Qt, QThread
@@ -53,6 +58,113 @@ class WindowsStabilityTests(unittest.TestCase):
         self.assertIsNone(tab.worker, "worker did not finish")
         QTest.qWait(30)  # Let Qt deliver any additional queued completion signals.
 
+    def test_plugin_update_preserves_previous_version_on_failure_and_newer_version_on_restart(self):
+        baseline = b'PLUGIN_VERSION = "1.5"\ndef create_tab():\n    pass\n'
+        newer = baseline.replace(b"1.5", b"1.6")
+        address = "https://example.invalid/VideoUpscaler.kit"
+        manifest = {"VideoUpscaler": {"version": "1.6", "url_encoded": base64.b64encode(address.encode()).decode()}}
+        response = MagicMock()
+        response.__enter__.return_value = response
+
+        def interrupted(**kwargs):
+            yield newer[:15]
+            raise OSError("connection interrupted")
+
+        with tempfile.TemporaryDirectory(dir=ROOT) as folder:
+            root = Path(folder)
+            bundled = root / "runtime" / "plugins"
+            installed = root / "profile"
+            bundled.mkdir(parents=True)
+            installed.mkdir()
+            target = installed / "VideoUpscaler.kit"
+            target.write_bytes(baseline)
+            (bundled / target.name).write_bytes(baseline)
+            updater = self.main.PluginUpdater()
+            completed = []
+            updater.plugin_updated.connect(lambda *event: completed.append(event))
+
+            with (
+                patch.object(self.main, "PLUGIN_DIR", installed),
+                patch.object(self.main, "INTERNAL_DIR", bundled.parent),
+                patch.object(self.main, "sync_folder"),
+                patch("urllib.request.urlopen", side_effect=lambda *args, **kwargs: io.BytesIO(json.dumps(manifest).encode())),
+                patch("requests.get", return_value=response),
+            ):
+                response.iter_content.side_effect = interrupted
+                updater.run()
+                self.assertEqual(target.read_bytes(), baseline)
+                response.iter_content.side_effect = None
+                response.iter_content.return_value = iter([b'<html>not a plugin</html>'])
+                updater.run()
+                self.assertEqual(target.read_bytes(), baseline)
+                self.assertEqual(completed, [])
+                self.assertEqual(list(installed.iterdir()), [target])
+
+                response.iter_content.return_value = iter([newer])
+                updater.run()
+                self.main.deploy_assets()
+                self.assertEqual(target.read_bytes(), newer)
+                self.assertEqual(completed, [("VideoUpscaler", "1.6")])
+
+    def test_app_update_manifest_and_download_verify_the_installer(self):
+        installer = b"test Windows installer data"
+        digest = hashlib.sha256(installer).hexdigest()
+        release = "https://github.com/wagakano/LABOKit/releases/tag/v3.3.3-windows"
+        address = "https://github.com/wagakano/LABOKit/releases/download/v3.3.3-windows/LABOKit_Setup.exe"
+        manifest = {"version": "3.3.3", "url": release, "changelog": "Update", "installer": {"url": address, "sha256": digest}}
+        checker = self.main.AppUpdateChecker()
+        notices = []
+        checker.found_update.connect(lambda *event: notices.append(event))
+        with patch("urllib.request.urlopen", return_value=io.BytesIO(json.dumps(manifest).encode())):
+            checker.run()
+        self.assertEqual(notices, [("3.3.3", release, "Update", (address, digest))])
+        manifest.pop("installer")
+        with patch("urllib.request.urlopen", return_value=io.BytesIO(json.dumps(manifest).encode())):
+            checker.run()
+        self.assertIsNone(notices[-1][3])
+
+        response = MagicMock()
+        response.__enter__.return_value = response
+        response.headers = {"content-length": str(len(installer))}
+        with tempfile.TemporaryDirectory(dir=ROOT) as folder:
+            staged = Path(folder) / "LABOKit-update.exe"
+            staged.write_bytes(b"previous verified installer")
+            with patch.object(self.main, "APP_DATA", staged.parent), patch("requests.get", return_value=response):
+                downloader = self.main.InstallerDownloader(address, digest)
+                completed, errors = [], []
+                downloader.downloaded.connect(completed.append)
+                downloader.error.connect(errors.append)
+                response.iter_content.return_value = iter([b"incomplete installer"])
+                downloader.run()
+                self.assertEqual(completed, [])
+                self.assertIn("checksum", errors[0])
+                self.assertEqual(staged.read_bytes(), b"previous verified installer")
+                self.assertEqual(list(staged.parent.iterdir()), [staged])
+
+                response.iter_content.return_value = iter([installer])
+                downloader.run()
+                self.assertEqual(completed, [str(staged)])
+                self.assertEqual(staged.read_bytes(), installer)
+
+    def test_app_update_asks_before_closing_to_open_setup(self):
+        window = MagicMock()
+        window._closing = False
+        installer = ("https://github.com/wagakano/LABOKit/releases/download/v3.3.3-windows/LABOKit_Setup.exe", "a" * 64)
+        release = "https://github.com/wagakano/LABOKit/releases/tag/v3.3.3-windows"
+
+        with patch.object(sys, "frozen", True, create=True), patch.object(self.main.ModernDialog, "confirm", return_value=True):
+            self.main.LABOKitMainWindow.show_app_update_dialog(window, "3.3.3", release, "Update", installer)
+        window.download_installer.assert_called_once_with(*installer)
+
+        with patch.object(self.main.ModernDialog, "confirm", return_value=False):
+            self.main.LABOKitMainWindow.on_installer_downloaded(window, "update.exe")
+        window.close.assert_not_called()
+
+        with patch.object(self.main.ModernDialog, "confirm", return_value=True):
+            self.main.LABOKitMainWindow.on_installer_downloaded(window, "update.exe")
+        self.assertEqual(window.pending_installer, "update.exe")
+        window.close.assert_called_once()
+
     def test_dialogs_use_dark_mode_with_a_nested_parent(self):
         root = QWidget()
         root.current_theme = "dark"
@@ -95,7 +207,6 @@ class WindowsStabilityTests(unittest.TestCase):
 
     def test_overflow_tabs_are_reachable_and_theme_preserves_other_settings(self):
         with (
-            patch.object(self.main.AppUpdater, "start", lambda self: None),
             patch.object(self.main.LABOKitMainWindow, "check_app_updates", lambda self: None),
             patch.object(self.main.LABOKitMainWindow, "check_plugin_updates", lambda self: None),
         ):
@@ -170,7 +281,6 @@ class WindowsStabilityTests(unittest.TestCase):
                 self.requestInterruption()
 
         with (
-            patch.object(self.main.AppUpdater, "start", lambda self: None),
             patch.object(self.main.LABOKitMainWindow, "check_app_updates", lambda self: None),
             patch.object(self.main.LABOKitMainWindow, "check_plugin_updates", lambda self: None),
         ):

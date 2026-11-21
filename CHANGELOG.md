@@ -40,6 +40,7 @@ All notable changes and updates made during this development cycle for the relea
 * **Loaded Images Dark Theme universalization**: Explicitly targeted `FileDropListWidget` and its viewports in both local widget styles and parent frame scoped sheets to eliminate all remaining light background and border leaks in Dark Mode.
 
 ### Fixed
+* **Windows Updates**: Unified update checks and added checksum verification before opening Windows Setup. Plugin downloads preserve the installed copy on failure, and newer plugins carry over after restart.
 * **Theme Readability**: Corrected Dark Mode dialog colors, output paths, image metadata, format menus, and preview zoom controls. Restored dropdown arrows in both themes on a fresh install.
 * **Tab Overflow**: Restored scroll controls so all tools are reachable at smaller window widths.
 * **Video Upscaler Completion**: Reports one result per job and replaces the output only after FFmpeg completes successfully.

@@ -1,5 +1,9 @@
 {
   "version": "3.3.2",
   "url": "https://github.com/wagakano/LABOKit/releases/tag/v3.3.2-windows",
-  "changelog": "LABOKit 3.3.2 for Windows fixes Dark Mode readability, restores tab navigation and dropdown arrows, and improves Video Upscaler and Example Plugin exports. Some optional plugins are still undergoing fixes and compatibility testing."
+  "changelog": "LABOKit 3.3.2 for Windows fixes Dark Mode, exports, and plugin updates. Newer plugin versions survive restart, and interrupted downloads preserve the installed copy. Some optional plugins are still undergoing fixes and compatibility testing.",
+  "installer": {
+    "url": "https://github.com/wagakano/LABOKit/releases/download/v3.3.2-windows/LABOKit_v3.3.2_Setup.exe",
+    "sha256": "984752a807589df9f96d211ea044a907adb187e465c62f2bc2e081a8eaf23f01"
+  }
 }

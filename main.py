@@ -1,9 +1,13 @@
+import ast
+import hashlib
 import sys
 import os
 import shutil
 import subprocess
 import psutil
 import re
+from tempfile import NamedTemporaryFile
+from urllib.parse import urlsplit
 from pathlib import Path
 
 # ⚡ Bolt Optimization: Pre-compile regex to avoid compilation overhead during plugin updates.
@@ -43,77 +47,67 @@ def _new_btn_init(self, *args, **kwargs):
         self.setCursor(Qt.ForbiddenCursor)
 QPushButton.__init__ = _new_btn_init
 
-class AppUpdater(QThread):
-    update_available = Signal(str, str, str) # version, download_url, changelog
-    
-    def run(self):
-        try:
-            import requests
-            url = "https://raw.githubusercontent.com/wagakano/LABOKit-assets/main/app_manifest.json"
-            response = requests.get(url, timeout=10)
-            if response.status_code == 200:
-                data = response.json()
-                latest_version = data.get("version", "0.0")
-                if version.parse(latest_version) > version.parse(APP_VERSION):
-                    self.update_available.emit(latest_version, data.get("download_url"), data.get("changelog", "No changelog provided."))
-        except Exception as e:
-            print(f"Failed to check for app updates: {e}")
-
-class PatchDownloader(QThread):
+class InstallerDownloader(QThread):
     progress = Signal(int)
-    finished = Signal(str)
+    downloaded = Signal(str)
     error = Signal(str)
     
-    def __init__(self, url):
+    def __init__(self, url, sha256):
         super().__init__()
         self.url = url
+        self.sha256 = sha256
         
     def run(self):
+        import requests
+
+        pending = None
         try:
-            import tempfile
-            from urllib.parse import urlparse
-            from urllib.request import url2pathname
-            # Preserve original extension from URL (.exe or .zip)
-            url_filename = Path(urlparse(self.url).path).name or "labokit_update.zip"
-            patch_path = Path(tempfile.gettempdir()) / url_filename
-            
-            if self.url.startswith("file://"):
-                import shutil
-                local_path_str = url2pathname(urlparse(self.url).path)
-                # On Windows, url2pathname might prepend a slash like \C:\...
-                if local_path_str.startswith('\\') and ':' in local_path_str:
-                    local_path_str = local_path_str.lstrip('\\')
-                local_file_path = Path(local_path_str)
-                if not local_file_path.exists():
-                    path_str = self.url.replace("file:///", "").replace("file://", "")
-                    local_file_path = Path(path_str)
-                shutil.copy2(local_file_path, patch_path)
-                self.progress.emit(100)
-                self.finished.emit(str(patch_path))
+            checksum = hashlib.sha256()
+            with requests.get(self.url, stream=True, timeout=(10, 20)) as response:
+                response.raise_for_status()
+                total = int(response.headers.get("content-length", 0))
+                received = 0
+                progress = -1
+                with NamedTemporaryFile(dir=APP_DATA, suffix=".part", delete=False) as output:
+                    pending = Path(output.name)
+                    for chunk in response.iter_content(chunk_size=1024 * 1024):
+                        if self.isInterruptionRequested():
+                            return
+                        output.write(chunk)
+                        checksum.update(chunk)
+                        received += len(chunk)
+                        if total:
+                            percent = min(99, received * 100 // total)
+                            if percent != progress:
+                                self.progress.emit(percent)
+                                progress = percent
+            if self.isInterruptionRequested():
                 return
-                
-            import requests
-            response = requests.get(self.url, stream=True, timeout=300)
-            response.raise_for_status()
-            total_size = int(response.headers.get('content-length', 0))
-            
-            downloaded = 0
-            with open(patch_path, 'wb') as f:
-                for chunk in response.iter_content(chunk_size=8192):
-                    if chunk:
-                        f.write(chunk)
-                        downloaded += len(chunk)
-                        if total_size > 0:
-                            self.progress.emit(int((downloaded / total_size) * 100))
-                            
-            self.finished.emit(str(patch_path))
+            if checksum.hexdigest() != self.sha256:
+                raise ValueError("The installer checksum did not match the release manifest.")
+            installer = APP_DATA / "LABOKit-update.exe"
+            pending.replace(installer)
+            self.progress.emit(100)
+            self.downloaded.emit(str(installer))
         except Exception as e:
             self.error.emit(str(e))
+        finally:
+            if pending is not None:
+                pending.unlink(missing_ok=True)
 
 # --- LAZY LOADING AI ENGINE ---
 AI_MODULES = None
 GLOBAL_UPSAMPLER_CACHE = {}
 GLOBAL_REMBG_SESSION_CACHE = {}
+
+def plugin_version(path):
+    try:
+        match = PLUGIN_VERSION_RE.search(path.read_text(encoding="utf-8"))
+        if match:
+            return version.parse(match.group(1))
+    except (OSError, UnicodeError, version.InvalidVersion):
+        pass
+    return version.parse("1.0")
 
 def sync_folder(src_dir, dst_dir):
     if not src_dir.exists(): return
@@ -147,32 +141,25 @@ def deploy_assets():
     # 3. FFMPEG
     sync_folder(INTERNAL_DIR / "ffmpeg", FFMPEG_DIR)
 
-    # 4. Plugins Folder (Default Plugins)
-    internal_plugins = INTERNAL_DIR / "plugins"
-    if internal_plugins.exists():
-        PLUGIN_DIR.mkdir(exist_ok=True)
-        for item in internal_plugins.glob("*.kit"):
-            dst_item = PLUGIN_DIR / item.name
-            try:
-                shutil.copy2(item, dst_item)
-                # print(f"[System] Built-in plugin deployed/updated: {item.name}")
-            except Exception as e:
-                print(f"Failed to deploy built-in {item.name}: {e}")
-
-    # 4b. Local Plugins for Development/Testing
-    # If there is a local 'plugins' directory, copy the plugins to PLUGIN_DIR
-    local_dev_plugins = Path(__file__).resolve().parent / "plugins"
-    if local_dev_plugins.exists():
-        PLUGIN_DIR.mkdir(exist_ok=True)
-        for item in local_dev_plugins.glob("*.kit"):
-            if "stickerprepper" in item.name.lower():
-                continue
-            dst_item = PLUGIN_DIR / item.name
-            try:
-                shutil.copy2(item, dst_item)
-                print(f"[System] Developer plugin deployed/updated: {item.name}")
-            except Exception as e:
-                print(f"Failed to deploy dev plugin {item.name}: {e}")
+    PLUGIN_DIR.mkdir(exist_ok=True)
+    for item in (INTERNAL_DIR / "plugins").glob("*.kit"):
+        if "stickerprepper" in item.name.lower():
+            continue
+        target = PLUGIN_DIR / item.name
+        if target.exists() and plugin_version(target) > plugin_version(item):
+            continue
+        pending = None
+        try:
+            with item.open("rb") as source, NamedTemporaryFile(dir=PLUGIN_DIR, suffix=".part", delete=False) as output:
+                pending = Path(output.name)
+                shutil.copyfileobj(source, output)
+            if not target.exists() or plugin_version(target) <= plugin_version(item):
+                pending.replace(target)
+        except OSError as e:
+            print(f"Failed to deploy bundled plugin {item.name}: {e}")
+        finally:
+            if pending is not None:
+                pending.unlink(missing_ok=True)
 
 # ==========================================
 # TABS
@@ -310,7 +297,7 @@ class CustomTitleBar(QWidget):
 # --- UPDATE WORKERS ---
 
 class AppUpdateChecker(QThread):
-    found_update = Signal(str, str, str) # version, url, changelog
+    found_update = Signal(str, str, str, object)
 
     def run(self):
         import urllib.request
@@ -320,12 +307,24 @@ class AppUpdateChecker(QThread):
                 data = json.loads(url.read().decode())
                 remote_ver = data.get("version", "0.0.0")
                 if version.parse(remote_ver) > version.parse(APP_VERSION):
-                    self.found_update.emit(remote_ver, data.get("url", ""), data.get("changelog", ""))
+                    installer = data.get("installer")
+                    if isinstance(installer, dict):
+                        address = installer.get("url", "")
+                        digest = installer.get("sha256", "")
+                        if (isinstance(address, str) and isinstance(digest, str)
+                                and address.startswith("https://github.com/wagakano/LABOKit/releases/download/")
+                                and address.endswith(".exe") and re.fullmatch(r"[a-fA-F0-9]{64}", digest)):
+                            installer = (address, digest.lower())
+                        else:
+                            installer = None
+                    else:
+                        installer = None
+                    self.found_update.emit(remote_ver, data.get("url", ""), data.get("changelog", ""), installer)
         except Exception as e:
             print(f"App Update Check Failed: {e}")
 
 class PluginUpdater(QThread):
-    update_found = Signal(str, str, str, str) 
+    plugin_updated = Signal(str, str)
 
     def run(self):
         import urllib.request
@@ -334,7 +333,7 @@ class PluginUpdater(QThread):
         try:
             if not PLUGIN_DIR.exists(): return
             
-            with urllib.request.urlopen(PLUGIN_MANIFEST_URL) as url:
+            with urllib.request.urlopen(PLUGIN_MANIFEST_URL, timeout=10) as url:
                 remote_data = json.loads(url.read().decode())
 
             for kit_file in PLUGIN_DIR.glob("*.kit"):
@@ -343,36 +342,53 @@ class PluginUpdater(QThread):
                 if plugin_id in remote_data:
                     remote_info = remote_data[plugin_id]
                     
-                    local_ver = self.get_local_version(kit_file)
                     remote_ver = remote_info.get("version", "1.0")
                     
-                    if version.parse(remote_ver) > version.parse(local_ver):
+                    try:
+                        if self.isInterruptionRequested():
+                            return
+                        new_version = version.parse(remote_ver)
+                        if new_version <= plugin_version(kit_file):
+                            continue
                         enc_url = remote_info.get("url_encoded", "")
-                        try:
-                            if enc_url == "-" or not enc_url: continue
-                            real_url = base64.b64decode(enc_url).decode("utf-8")
-                            self.update_found.emit(plugin_id, remote_ver, remote_info.get("changelog", ""), real_url)
-                        except Exception as e:
-                            print(f"Error decoding plugin URL for {plugin_id}: {e}")
+                        if not enc_url or enc_url == "-":
+                            continue
+                        real_url = base64.b64decode(enc_url, validate=True).decode("utf-8")
+                        if self.install_update(kit_file, new_version, real_url):
+                            self.plugin_updated.emit(plugin_id, remote_ver)
+                    except Exception as e:
+                        print(f"Auto-update failed for {plugin_id}: {e}")
 
         except Exception as e:
             print(f"Plugin Update Check Failed: {e}")
 
-    def get_local_version(self, path):
+    def install_update(self, path, new_version, url):
+        import requests
+
+        if urlsplit(url).scheme != "https":
+            raise ValueError("Plugin updates require an HTTPS download URL.")
+        pending = None
         try:
-            with open(path, "r", encoding="utf-8", errors="ignore") as f:
-                content = f.read()
-            
-            match = PLUGIN_VERSION_RE.search(content)
-            
-            if match:
-                return match.group(1) 
-            
-            return "1.0" 
-            
-        except Exception as e:
-            # print(f"Version check error for {path.name}: {e}")
-            return "1.0"
+            with requests.get(url, stream=True, timeout=(10, 20)) as response:
+                response.raise_for_status()
+                with NamedTemporaryFile(dir=path.parent, suffix=".part", delete=False) as output:
+                    pending = Path(output.name)
+                    for chunk in response.iter_content(chunk_size=8192):
+                        if self.isInterruptionRequested():
+                            return False
+                        output.write(chunk)
+            tree = ast.parse(pending.read_bytes(), filename=path.name)
+            if plugin_version(pending) != new_version or not any(
+                isinstance(node, ast.FunctionDef) and node.name == "create_tab" for node in tree.body
+            ):
+                raise ValueError("The downloaded plugin does not match the update manifest.")
+            if self.isInterruptionRequested() or plugin_version(path) >= new_version:
+                return False
+            pending.replace(path)
+            return True
+        finally:
+            if pending is not None:
+                pending.unlink(missing_ok=True)
 
 # ==========================================
 # MAIN WINDOW
@@ -441,6 +457,8 @@ class LABOKitMainWindow(QMainWindow):
         self._close_retry.timeout.connect(self.close)
 
         self.loaded_plugins = []
+        self.pending_installer = None
+        self._closing = False
         self._setup_menu()
         self._load_plugins()
         self.check_app_updates()
@@ -607,12 +625,16 @@ class LABOKitMainWindow(QMainWindow):
                 self._purge_notice_active = False
 
     def closeEvent(self, event):
+        self._closing = True
         owners = [self, self.bg_tab, self.up_tab, *(plugin["tab"] for plugin in self.loaded_plugins)]
         running = {
             worker for owner in owners for worker in vars(owner).values()
             if isinstance(worker, QThread) and isValid(worker) and worker.isRunning()
         }
         if running:
+            for worker in running:
+                if isinstance(worker, (InstallerDownloader, PluginUpdater)):
+                    worker.requestInterruption()
             for tab in (self.bg_tab, self.up_tab):
                 worker = getattr(tab, "worker", None)
                 if worker in running:
@@ -676,11 +698,6 @@ class LABOKitMainWindow(QMainWindow):
 
         self._refresh_plugin_menu()
 
-        # Check for updates
-        self.updater = AppUpdater()
-        self.updater.update_available.connect(self.on_update_available)
-        self.updater.start()
-
     def _refresh_plugin_menu(self):
         if hasattr(self, "menu_plugins"):
             self.menu_plugins.clear()
@@ -694,66 +711,6 @@ class LABOKitMainWindow(QMainWindow):
                     # When clicked, switch to that tab
                     action.triggered.connect(lambda checked, t=p["tab"]: self.tabs.setCurrentWidget(t))
                     self.menu_plugins.addAction(action)
-
-    def on_update_available(self, version, download_url, changelog):
-        if ModernDialog.confirm(self, "Update Available", f"A new version of LABOKit (v{version}) is available!\n\nChangelog:\n{changelog}\n\nWould you like to download and install it now?"):
-            self.apply_update(download_url)
-            
-    def apply_update(self, url):
-        self.progress_dialog = ModernProgressDialog("Downloading update...", "Cancel", 0, 100, self)
-        self.progress_dialog.show()
-        
-        self.downloader = PatchDownloader(url)
-        self.downloader.progress.connect(self.progress_dialog.setValue)
-        self.downloader.error.connect(lambda e: ModernDialog.show_critical(self, "Update Failed", str(e)))
-        self.downloader.finished.connect(self.on_download_finished)
-        self.downloader.start()
-        
-    def on_download_finished(self, patch_path):
-        import tempfile
-        import subprocess
-        import zipfile
-        
-        patch_path_obj = Path(patch_path)
-        target_dir = Path(sys.executable).parent if getattr(sys, 'frozen', False) else Path(__file__).parent
-        
-        # Secure extraction for zip archives with path traversal guards
-        if patch_path_obj.suffix.lower() == '.zip':
-            try:
-                with zipfile.ZipFile(patch_path_obj, 'r') as zip_ref:
-                    for member in zip_ref.infolist():
-                        target_path = (target_dir / member.filename).resolve()
-                        if not target_path.is_relative_to(target_dir.resolve()):
-                            raise RuntimeError(f"Path traversal detected in zip member: {member.filename}")
-                        zip_ref.extract(member, target_dir)
-                ModernDialog.show_info(self, tr("msg_done", "Done"), "Update applied successfully! Please restart LABOKit.")
-                return
-            except Exception as e:
-                ModernDialog.show_critical(self, "Extraction Error", f"Failed to extract update zip:\n{e}")
-                return
-
-        # Secure temp file for batch installer
-        fd, bat_path_str = tempfile.mkstemp(suffix=".bat", prefix="labokit_updater_")
-        os.close(fd)
-        bat_path = Path(bat_path_str)
-
-        bat_content = f"""@echo off
-timeout /t 2 /nobreak > NUL
-echo Installing Update...
-start /wait "" "{patch_path_obj}" /SILENT /DIR="{target_dir}"
-start "" "{target_dir}\\LABOKit.exe"
-del "{patch_path_obj}"
-del "%~f0"
-"""
-        with open(bat_path, "w", encoding="utf-8") as f:
-            f.write(bat_content)
-            
-        ModernDialog.show_info(self, "Update Ready", "LABOKit will now close to apply the update.")
-        
-        subprocess.Popen(["cmd.exe", "/c", str(bat_path)], creationflags=subprocess.CREATE_NO_WINDOW)
-        QApplication.quit()
-        
-
 
     def load_plugin_file(self):
         f, _ = QFileDialog.getOpenFileName(self, "Load Plugin", "", "LABOKit Plugin (*.kit)")
@@ -829,45 +786,48 @@ del "%~f0"
         self.app_checker.found_update.connect(self.show_app_update_dialog)
         self.app_checker.start()
 
-    def show_app_update_dialog(self, new_ver, url, log):
-        if ModernDialog.confirm(self, "Update Available!", f"New version {new_ver} is available!\n\nCurrent: v{APP_VERSION}\n\nWhat's New:\n{log}\n\nDownload now?"):
+    def show_app_update_dialog(self, new_ver, url, log, installer=None):
+        if self._closing:
+            return
+        in_app = installer and sys.platform == "win32" and getattr(sys, "frozen", False)
+        prompt = "Download the Windows installer now?" if in_app else "Open the release page?"
+        message = f"LABOKit {new_ver} is available. You have {APP_VERSION}.\n\n{log}\n\n{prompt}"
+        if not ModernDialog.confirm(self, "Update Available", message):
+            return
+        if in_app:
+            self.download_installer(*installer)
+        elif urlsplit(url).scheme == "https":
             QDesktopServices.openUrl(QUrl(url))
+
+    def download_installer(self, url, sha256):
+        self.installer_progress = ModernProgressDialog("Downloading update…", "Cancel", 0, 100, self)
+        self.installer_downloader = InstallerDownloader(url, sha256)
+        self.installer_progress.canceled.connect(self.installer_downloader.requestInterruption)
+        self.installer_downloader.progress.connect(self.installer_progress.setValue)
+        self.installer_downloader.downloaded.connect(self.on_installer_downloaded)
+        self.installer_downloader.error.connect(self.on_installer_error)
+        self.installer_downloader.finished.connect(self.installer_progress.close)
+        self.installer_progress.show()
+        self.installer_downloader.start()
+
+    def on_installer_error(self, message):
+        self.installer_progress.close()
+        if not self._closing:
+            ModernDialog.show_warning(self, "Update Download Failed", message)
+
+    def on_installer_downloaded(self, installer_path):
+        self.installer_progress.close()
+        if not self._closing and ModernDialog.confirm(self, "Update Ready", "Close LABOKit and open Windows Setup?"):
+            self.pending_installer = installer_path
+            self.close()
 
     def check_plugin_updates(self):
         self.plugin_updater = PluginUpdater()
-        self.plugin_updater.update_found.connect(self.download_and_install_plugin)
+        self.plugin_updater.plugin_updated.connect(self.on_plugin_updated)
         self.plugin_updater.start()
 
-    def download_and_install_plugin(self, name, new_ver, log, url):
-        import requests
-        try:
-            prog = ModernProgressDialog(f"Auto-updating {name}", "Cancel", 0, 0, self)
-            prog.show()
-            QApplication.processEvents()
-            
-            target_file = PLUGIN_DIR / f"{name}.kit"
-            
-            headers = {
-                'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
-                'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,image/apng,*/*;q=0.8',
-                'Accept-Language': 'en-US,en;q=0.9',
-                'Connection': 'keep-alive',
-                'Upgrade-Insecure-Requests': '1'
-            }
-
-            with requests.get(url, headers=headers, stream=True, verify=True, timeout=30) as r:
-                r.raise_for_status() # Cek error 403/404/500
-                with open(target_file, 'wb') as f:
-                    for chunk in r.iter_content(chunk_size=8192): 
-                        if chunk: f.write(chunk)
-            
-            prog.close()
-            
-            ModernDialog.show_info(self, "Plugin Updated", f"{name} has been auto-updated to v{new_ver}!\n\nChangelog:\n{log}")
-            self._load_plugins() 
-            
-        except Exception as e:
-            print(f"Auto-update failed for {name}: {e}")
+    def on_plugin_updated(self, name, new_ver):
+        self.meter.set_message(f"{name} {new_ver} downloaded. Restart LABOKit to use it.")
 
 class StartupWorker(QThread):
     def run(self):
@@ -1105,7 +1065,15 @@ def main():
     worker.finished.connect(lambda: QTimer.singleShot(0, app, on_complete))
     worker.start()
 
-    sys.exit(app.exec())
+    exit_code = app.exec()
+    installer = getattr(getattr(app, "main_window", None), "pending_installer", None)
+    if installer:
+        try:
+            subprocess.Popen([installer], cwd=APP_DATA)
+        except OSError as exc:
+            ModernDialog.show_warning(None, "Could Not Open Setup", f"{exc}\n\nInstaller: {installer}")
+            exit_code = 1
+    sys.exit(exit_code)
 
 if __name__ == "__main__":
     main()
