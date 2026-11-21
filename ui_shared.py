@@ -6,35 +6,50 @@ from PySide6.QtWidgets import (
     QListWidget, QScrollArea, QLabel, QPushButton, QMenu, QFrame, QHBoxLayout, QApplication, QWidget, QVBoxLayout, QSlider, QDialog, QProgressBar, QListView, QGraphicsOpacityEffect
 )
 
-def setup_combobox(combo, is_dark=False):
+def setup_combobox(combo, is_dark=None):
     if combo:
         combo.setMaxVisibleItems(15)
+    if combo and is_dark is not None:
         border_col = "#3d3d3d" if is_dark else "#b3bcd1"
         bg_col = "#1c1c1c" if is_dark else "#ffffff"
         text_col = "#ffffff" if is_dark else "#1c2333"
         hover_bg = "#333333" if is_dark else "#d4e3fc"
         
-        combo.setStyleSheet(f"""
-            QComboBox QAbstractItemView {{
-                border: 1px solid {border_col} !important;
+        combo.view().setStyleSheet(f"""
+            QAbstractItemView {{
+                border: 1px solid {border_col};
                 background-color: {bg_col};
                 color: {text_col};
                 outline: 0px;
                 padding: 2px;
             }}
-            QComboBox QAbstractItemView::item {{
+            QAbstractItemView::item {{
                 min-height: 22px;
                 padding: 4px 8px;
                 border-radius: 3px;
                 color: {text_col};
                 background-color: transparent;
             }}
-            QComboBox QAbstractItemView::item:hover, QComboBox QAbstractItemView::item:selected {{
+            QAbstractItemView::item:hover, QAbstractItemView::item:selected {{
                 background-color: {hover_bg};
                 color: {text_col};
             }}
         """)
     return combo
+
+
+def style_preview_zoom_slider(slider, theme):
+    is_dark = theme == "dark"
+    background = "rgba(28, 28, 34, 0.85)" if is_dark else "rgba(255, 255, 255, 0.85)"
+    border = "#3e3e4e" if is_dark else "#cbd5e1"
+    groove = "#242430" if is_dark else "#f1f5f9"
+    slider.setStyleSheet(f"""
+        QSlider {{ background: {background}; border-radius: 4px; padding: 2px; }}
+        QSlider::groove:horizontal {{ border: 1px solid {border}; height: 6px; background: {groove}; border-radius: 3px; }}
+        QSlider::handle:horizontal {{ background: #ff9933; border: 1px solid #d67a18; width: 14px; margin: -4px 0; border-radius: 7px; }}
+    """)
+
+
 import random
 from pathlib import Path
 import psutil
@@ -283,11 +298,7 @@ class ZoomableImageWidget(QScrollArea):
             QPushButton {{ background-color: {btn_bg}; border: 1px solid {btn_border}; border-radius: 4px; padding: 6px 10px; color: {btn_text}; font-weight: bold; }}
             QPushButton:checked {{ background-color: #ff9933; color: white; border: 1px solid #d67a18; }}
         """)
-        self.zoom_slider.setStyleSheet(f"""
-            QSlider {{ background: {"rgba(28, 28, 34, 0.7)" if is_dark else "rgba(255, 255, 255, 0.7)"}; border-radius: 4px; padding: 2px; }}
-            QSlider::groove:horizontal {{ border: 1px solid {btn_border}; height: 6px; background: {"#242430" if is_dark else "#eee"}; border-radius: 3px; }}
-            QSlider::handle:horizontal {{ background: #ff9933; border: 1px solid #d67a18; width: 14px; margin: -4px 0; border-radius: 7px; }}
-        """)
+        style_preview_zoom_slider(self.zoom_slider, theme)
 
 
     def set_images(self, original_path, result_path):
@@ -681,7 +692,7 @@ def create_plus_icon():
 
 
 class ModernDialog(QDialog):
-    def __init__(self, parent=None, title="Notice", message="", is_confirm=False, theme="light"):
+    def __init__(self, parent=None, title="Notice", message="", is_confirm=False, theme=None):
         super().__init__(parent)
         self.setWindowFlags(Qt.FramelessWindowHint | Qt.Dialog)
         self.setWindowModality(Qt.WindowModal)
@@ -693,7 +704,7 @@ class ModernDialog(QDialog):
         self.container = QFrame(self)
         self.container.setObjectName("DialogContainer")
         
-        is_dark = (theme == "dark")
+        is_dark = (theme or self._get_theme(parent)) == "dark"
         bg_color = "#16161a" if is_dark else "#f5f7fb"
         text_color = "#e1e1e6" if is_dark else "#1c2333"
         border_color = "#2e2e38" if is_dark else "#b3bcd1"
@@ -705,7 +716,7 @@ class ModernDialog(QDialog):
                 border: 1px solid {border_color};
                 border-radius: 8px;
             }}
-            QLabel {{ color: {text_color}; font-family: 'Segoe UI', sans-serif; }}
+            QLabel {{ color: {text_color}; background: transparent; border: none; font-family: 'Segoe UI', sans-serif; }}
         """)
         
         container_layout = QVBoxLayout(self.container)
@@ -864,38 +875,41 @@ class ModernDialog(QDialog):
 
     @staticmethod
     def _get_theme(parent):
-        if parent:
-            if hasattr(parent, 'current_theme'):
-                return parent.current_theme
+        while parent is not None:
+            theme = getattr(parent, 'current_theme', None)
+            if theme in ("light", "dark"):
+                return theme
             if hasattr(parent, 'is_dark_theme'):
                 return "dark" if parent.is_dark_theme else "light"
-        return "light"
+            parent = parent.parentWidget()
+        app = QApplication.instance()
+        return "dark" if app and app.property("labokitTheme") == "dark" else "light"
 
     @staticmethod
     def show_info(parent, title, message):
-        dlg = ModernDialog(parent, title=title, message=message, is_confirm=False, theme=ModernDialog._get_theme(parent))
+        dlg = ModernDialog(parent, title=title, message=message)
         dlg.exec()
 
     @staticmethod
     def show_warning(parent, title, message):
-        dlg = ModernDialog(parent, title=title, message=message, is_confirm=False, theme=ModernDialog._get_theme(parent))
+        dlg = ModernDialog(parent, title=title, message=message)
         dlg.exec()
 
     @staticmethod
     def show_critical(parent, title, message):
-        dlg = ModernDialog(parent, title=title, message=message, is_confirm=False, theme=ModernDialog._get_theme(parent))
+        dlg = ModernDialog(parent, title=title, message=message)
         dlg.exec()
 
     @staticmethod
     def confirm(parent, title, message):
-        dlg = ModernDialog(parent, title=title, message=message, is_confirm=True, theme=ModernDialog._get_theme(parent))
+        dlg = ModernDialog(parent, title=title, message=message, is_confirm=True)
         return dlg.exec() == QDialog.Accepted
 
 
 class ModernProgressDialog(QDialog):
     canceled = Signal()
 
-    def __init__(self, title="Processing...", cancel_text="Cancel", minimum=0, maximum=100, parent=None, theme="light"):
+    def __init__(self, title="Processing...", cancel_text="Cancel", minimum=0, maximum=100, parent=None, theme=None):
         super().__init__(parent)
         self.setWindowFlags(Qt.FramelessWindowHint | Qt.Dialog)
         self.setWindowModality(Qt.WindowModal)
@@ -908,7 +922,7 @@ class ModernProgressDialog(QDialog):
         self.container = QFrame(self)
         self.container.setObjectName("ProgressContainer")
 
-        is_dark = (theme == "dark")
+        is_dark = (theme or ModernDialog._get_theme(parent)) == "dark"
         bg_color = "#16161a" if is_dark else "#f5f7fb"
         text_color = "#e1e1e6" if is_dark else "#1c2333"
         border_color = "#2e2e38" if is_dark else "#b3bcd1"
@@ -920,7 +934,7 @@ class ModernProgressDialog(QDialog):
                 border: 1px solid {border_color};
                 border-radius: 8px;
             }}
-            QLabel {{ color: {text_color}; font-family: 'Segoe UI', sans-serif; }}
+            QLabel {{ color: {text_color}; background: transparent; border: none; font-family: 'Segoe UI', sans-serif; }}
         """)
 
         container_layout = QVBoxLayout(self.container)

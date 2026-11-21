@@ -5,7 +5,6 @@
 import os
 import sys
 import subprocess
-import shutil
 import tempfile
 import random
 import time
@@ -44,13 +43,12 @@ HELP_TEXT = (
 )
 
 VIDEO_FILTER = "Video (*.mp4 *.mkv *.avi *.mov *.webm)"
+VIDEO_EXTENSIONS = {".mp4", ".mkv", ".avi", ".mov", ".webm"}
 
 # --- WORKER THREAD (Background Process) ---
 class VideoWorker(QThread):
     progress_log = Signal(str)
     progress_val = Signal(int)
-    finished = Signal()
-    error = Signal(str)
 
     def __init__(self, input_path, output_path, scale, model_name):
         super().__init__()
@@ -58,7 +56,7 @@ class VideoWorker(QThread):
         self.output_path = str(output_path)
         self.scale = scale
         self.model_name = model_name
-        self._is_running = True
+        self.failure = None
         
         app_data = Path(os.getenv('APPDATA')) / "LABOKit"
         
@@ -98,73 +96,76 @@ class VideoWorker(QThread):
             self.realesrgan_dir = str(app_data / "realesrgan")
 
     def run(self):
-        temp_dir = Path(tempfile.mkdtemp(prefix="labokit_video_"))
-        frames_in = temp_dir / "frames_in"
-        frames_out = temp_dir / "frames_out"
-        frames_in.mkdir(); frames_out.mkdir()
-
+        output_path = Path(self.output_path)
         try:
-            self.progress_log.emit("Analyzing video FPS...")
-            fps = self._get_fps()
-            
-            self.progress_log.emit("Extracting frames (FFmpeg)...")
-            cmd_extract = [
-                self.ffmpeg_exe, "-i", self.input_path, 
-                "-q:v", "1", 
-                str(frames_in / "frame_%08d.png")
-            ]
-            subprocess.run(cmd_extract, check=True, creationflags=subprocess.CREATE_NO_WINDOW)
-            
-            total_frames = len(list(frames_in.glob("*.png")))
-            self.progress_log.emit(f"Extracted {total_frames} frames.")
-
-            self.progress_log.emit(f"Upscaling ({self.model_name})... This takes time.")
-            self.progress_val.emit(10)
-            
-            cmd_upscale = [
-                self.realesrgan_exe,
-                "-i", str(frames_in),
-                "-o", str(frames_out),
-                "-n", self.model_name,
-                "-s", str(self.scale),
-                "-f", "png"
-            ]
-            
-            subprocess.run(
-                cmd_upscale, 
-                check=True, 
-                cwd=self.realesrgan_dir,
-                creationflags=subprocess.CREATE_NO_WINDOW
-            )
-            self.progress_val.emit(80)
-
-            self.progress_log.emit("Merging frames & audio...")
-            
-            cmd_merge = [
-                self.ffmpeg_exe,
-                "-r", str(fps),
-                "-i", str(frames_out / "frame_%08d.png"),
-                "-i", self.input_path,
-                "-map", "0:v:0",
-                "-map", "1:a?",
-                "-c:a", "copy",
-                "-c:v", "libx264",
-                "-crf", "17",
-                "-pix_fmt", "yuv420p",
-                "-y",
-                self.output_path
-            ]
-            
-            subprocess.run(cmd_merge, check=True, creationflags=subprocess.CREATE_NO_WINDOW)
+            with (
+                tempfile.TemporaryDirectory(prefix="labokit_video_") as frame_dir,
+                tempfile.TemporaryDirectory(prefix=".labokit_video_", dir=output_path.parent) as export_dir,
+            ):
+                temporary_output = Path(export_dir) / output_path.name
+                self._upscale(Path(frame_dir), temporary_output)
+                if temporary_output.stat().st_size == 0:
+                    raise RuntimeError("FFmpeg did not produce a video.")
+                temporary_output.replace(output_path)
             self.progress_val.emit(100)
             self.progress_log.emit("Done! Process Complete.")
-            self.finished.emit()
+        except Exception as exc:
+            self.failure = str(exc)
 
-        except Exception as e:
-            self.error.emit(str(e))
-        finally:
-            try: shutil.rmtree(temp_dir)
-            except: pass
+    def _upscale(self, temp_dir, temporary_output):
+        frames_in = temp_dir / "frames_in"
+        frames_out = temp_dir / "frames_out"
+        frames_in.mkdir()
+        frames_out.mkdir()
+
+        self.progress_log.emit("Analyzing video FPS...")
+        fps = self._get_fps()
+
+        self.progress_log.emit("Extracting frames (FFmpeg)...")
+        cmd_extract = [
+            self.ffmpeg_exe, "-i", self.input_path,
+            "-q:v", "1",
+            str(frames_in / "frame_%08d.png"),
+        ]
+        subprocess.run(cmd_extract, check=True, creationflags=subprocess.CREATE_NO_WINDOW)
+
+        total_frames = len(list(frames_in.glob("*.png")))
+        self.progress_log.emit(f"Extracted {total_frames} frames.")
+        self.progress_log.emit(f"Upscaling ({self.model_name})... This takes time.")
+        self.progress_val.emit(10)
+
+        cmd_upscale = [
+            self.realesrgan_exe,
+            "-i", str(frames_in),
+            "-o", str(frames_out),
+            "-n", self.model_name,
+            "-s", str(self.scale),
+            "-f", "png",
+        ]
+        subprocess.run(
+            cmd_upscale,
+            check=True,
+            cwd=self.realesrgan_dir,
+            creationflags=subprocess.CREATE_NO_WINDOW,
+        )
+        self.progress_val.emit(80)
+
+        self.progress_log.emit("Merging frames & audio...")
+        cmd_merge = [
+            self.ffmpeg_exe,
+            "-r", str(fps),
+            "-i", str(frames_out / "frame_%08d.png"),
+            "-i", self.input_path,
+            "-map", "0:v:0",
+            "-map", "1:a?",
+            "-c:a", "copy",
+            "-c:v", "libx264",
+            "-crf", "17",
+            "-pix_fmt", "yuv420p",
+            "-y",
+            str(temporary_output),
+        ]
+        subprocess.run(cmd_merge, check=True, creationflags=subprocess.CREATE_NO_WINDOW)
 
     def _get_fps(self):
         cmd = [
@@ -172,7 +173,7 @@ class VideoWorker(QThread):
             "-v", "0", "-of", "csv=p=0", "-select_streams", "v:0", 
             "-show_entries", "stream=r_frame_rate", self.input_path
         ]
-        result = subprocess.run(cmd, capture_output=True, text=True, creationflags=subprocess.CREATE_NO_WINDOW)
+        result = subprocess.run(cmd, check=True, capture_output=True, text=True, creationflags=subprocess.CREATE_NO_WINDOW)
         num, den = map(int, result.stdout.strip().split('/'))
         return num / den
 
@@ -235,12 +236,17 @@ class VideoUpscalerTab(QWidget):
         list_box_layout.addWidget(self.lbl_list)
 
         self.file_list = FileDropListWidget()
+        self.file_list.files_dropped.connect(self.load_video)
         list_box_layout.addWidget(self.file_list)
 
         btn_row = QHBoxLayout()
-        btn_add = QPushButton("Browse Video…"); btn_add.setIcon(create_plus_icon()); btn_add.clicked.connect(self.browse_video)
-        btn_clear = QPushButton("Clear"); btn_clear.clicked.connect(self.clear_list)
-        btn_row.addWidget(btn_add); btn_row.addWidget(btn_clear)
+        self.btn_add = QPushButton("Browse Video…")
+        self.btn_add.setIcon(create_plus_icon())
+        self.btn_add.clicked.connect(self.browse_video)
+        self.btn_clear = QPushButton("Clear")
+        self.btn_clear.clicked.connect(self.clear_list)
+        btn_row.addWidget(self.btn_add)
+        btn_row.addWidget(self.btn_clear)
         list_box_layout.addLayout(btn_row)
 
         left_layout.addWidget(self.list_box)
@@ -251,7 +257,7 @@ class VideoUpscalerTab(QWidget):
         l_out.setStyleSheet("font-weight: bold; border: none; background: transparent;")
         left_layout.addWidget(l_out)
         self.output_label = QLabel("(auto)"); self.output_label.setWordWrap(True)
-        self.output_label.setStyleSheet("color: #666; margin-bottom: 5px; border: none; background: transparent;")
+        self.output_label.setObjectName("OutputPath")
         left_layout.addWidget(self.output_label)
 
         btn_open = QPushButton(tr("btn_open_out", "Open Output Folder"))
@@ -305,13 +311,21 @@ class VideoUpscalerTab(QWidget):
     def browse_video(self):
         f, _ = QFileDialog.getOpenFileName(self, "Select Video", "", VIDEO_FILTER)
         if f:
-            self.input_file = Path(f)
-            self.file_list.clear()
-            self.file_list.addItem(QListWidgetItem(self.input_file.name))
-            self.output_label.setText(f"{self.input_file.parent}")
-            if hasattr(self, 'lbl_info'):
-                pass
-            self.log_text.appendPlainText("Video loaded. Ready.")
+            self.load_video([Path(f)])
+
+    def load_video(self, paths):
+        if self.worker is not None:
+            return
+        video = next((path for path in paths if path.suffix.lower() in VIDEO_EXTENSIONS and path.is_file()), None)
+        if video is None:
+            ModernDialog.show_warning(self, "Unsupported file", "Select an MP4, MKV, AVI, MOV, or WebM video.")
+            return
+
+        self.input_file = video
+        self.file_list.clear()
+        self.file_list.addItem(QListWidgetItem(video.name))
+        self.output_label.setText(str(video.parent))
+        self.log_text.appendPlainText("Video loaded. Ready.")
 
     def open_output_folder(self):
         if self.input_file and self.input_file.parent.exists():
@@ -322,12 +336,13 @@ class VideoUpscalerTab(QWidget):
     def clear_list(self):
         self.file_list.clear()
         self.input_file = None
-        if hasattr(self, 'lbl_info'):
-            pass
+        self.output_label.setText("(auto)")
         self.log_text.clear()
         self.pbar.setValue(0)
 
     def start_process(self):
+        if self.worker is not None:
+            return
         if not self.input_file:
             return ModernDialog.show_warning(self, "Error", "Please select a video first.")
         
@@ -337,7 +352,7 @@ class VideoUpscalerTab(QWidget):
         out_path = self.input_file.parent / out_name
         model = self.combo_model.currentText()
 
-        self.btn_run.setEnabled(False)
+        self.set_processing(True)
         self.pbar.setValue(0)
         self.pbar.setRange(0, 0) # Indeterminate
         self.log_text.appendPlainText("Starting process...")
@@ -347,22 +362,33 @@ class VideoUpscalerTab(QWidget):
         self.worker.progress_log.connect(self.log_text.appendPlainText)
         self.worker.progress_val.connect(self.update_bar)
         self.worker.finished.connect(self.on_finished)
-        self.worker.error.connect(self.on_error)
         self.worker.start()
+
+    def set_processing(self, processing):
+        self.btn_run.setEnabled(not processing)
+        self.btn_add.setEnabled(not processing)
+        self.btn_clear.setEnabled(not processing)
 
     def update_bar(self, val):
         self.pbar.setRange(0, 100)
         self.pbar.setValue(val)
 
     def on_finished(self):
-        self.btn_run.setEnabled(True)
+        worker = self.worker
+        self.worker = None
+        failure = worker.failure
+        worker.deleteLater()
+        self.set_processing(False)
+        if failure is not None:
+            self.on_error(failure)
+            return
+        self.pbar.setRange(0, 100)
         self.pbar.setValue(100)
         self.log_text.appendPlainText("Finished!")
         if self.meter: self.meter.set_message(None)
         ModernDialog.show_info(self, "Success", "Video Upscaling Complete!")
 
     def on_error(self, msg):
-        self.btn_run.setEnabled(True)
         self.pbar.setRange(0, 100)
         self.pbar.setValue(0)
         self.log_text.appendPlainText("Error occurred.")
@@ -374,4 +400,3 @@ def create_tab(parent=None):
     if parent and hasattr(parent, 'current_theme') and hasattr(tab, 'set_theme'):
         tab.set_theme(parent.current_theme)
     return tab
-    return VideoUpscalerTab(parent)

@@ -143,7 +143,7 @@ class BgRemoverTab(QWidget):
         l_out = QLabel(tr("lbl_out")); l_out.setStyleSheet("font-weight: bold; border: none; background: transparent;")
         left.addWidget(l_out)
         self.out_lbl = QLabel("(auto)"); self.out_lbl.setWordWrap(True)
-        self.out_lbl.setStyleSheet("color: #666; margin-bottom: 5px; border: none; background: transparent;")
+        self.out_lbl.setObjectName("OutputPath")
         left.addWidget(self.out_lbl)
 
         out_btn_lay = QHBoxLayout()

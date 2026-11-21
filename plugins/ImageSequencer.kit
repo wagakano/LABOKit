@@ -356,7 +356,7 @@ class ImageSequencerPlugin(QWidget):
         
         self.lbl_out_dir = QLabel("(auto)")
         self.lbl_out_dir.setWordWrap(True)
-        self.lbl_out_dir.setStyleSheet("color: #666; margin-bottom: 5px; border: none; background: transparent;")
+        self.lbl_out_dir.setObjectName("OutputPath")
         left_layout.addWidget(self.lbl_out_dir)
         
         btn_out_lay = QHBoxLayout()

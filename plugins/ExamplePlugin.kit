@@ -2,14 +2,14 @@
 # LABOKit Example Developer Plugin
 # Shows how to build a custom plugin with async processing, translations, and theme support.
 
-import os
 from pathlib import Path
 from PySide6.QtCore import Qt, QThread, Signal
 from PySide6.QtWidgets import (
     QWidget, QHBoxLayout, QVBoxLayout, QPushButton, QLabel,
-    QSlider, QFrame, QFileDialog, QMessageBox
+    QSlider, QFrame, QFileDialog, QListWidgetItem
 )
 from PIL import Image, ImageFilter
+from ui_shared import FileDropListWidget, ModernDialog, VALID_EXTENSIONS, create_plus_icon
 
 # ----------------------------------------------------------------------
 # 1. Plugin Metadata & Hooks
@@ -23,12 +23,12 @@ def create_tab(parent=None):
     return ExamplePluginTab(parent)
 
 # The main window will inject its global translation helper here
-def tr(key):
+def tr(key, default=None):
     # Fallback to local translation or identity if the loader hasn't injected it yet
     global tr_func
     if 'tr_func' in globals():
         return tr_func(key)
-    return key
+    return default if default is not None else key
 
 # ----------------------------------------------------------------------
 # 2. Asynchronous Worker Thread
@@ -36,16 +36,16 @@ def tr(key):
 class ProcessingWorker(QThread):
     progress = Signal(int)
     log_message = Signal(str)
-    finished = Signal(list)
 
     def __init__(self, file_paths, blur_radius, vignette_strength):
         super().__init__()
         self.file_paths = file_paths
         self.blur_radius = blur_radius
         self.vignette_strength = vignette_strength
+        self.output_files = []
+        self.failures = []
 
     def run(self):
-        output_files = []
         total_files = len(self.file_paths)
         
         self.log_message.emit(f"Starting processing of {total_files} file(s)...")
@@ -56,7 +56,8 @@ class ProcessingWorker(QThread):
                 self.log_message.emit(f"Processing: {img_path.name}")
                 
                 # Load image
-                img = Image.open(img_path).convert("RGBA")
+                with img_path.open("rb") as source_file, Image.open(source_file) as source:
+                    img = source.convert("RGBA")
                 
                 # Apply Blur if strength > 0
                 if self.blur_radius > 0:
@@ -85,17 +86,21 @@ class ProcessingWorker(QThread):
                     img = Image.composite(img, black, mask)
                 
                 # Save processed image to the same folder as a new file
-                out_path = img_path.parent / f"processed_{img_path.name}"
+                out_path = img_path.with_name(f"processed_{img_path.name}")
+                copy_number = 2
+                while out_path.exists():
+                    out_path = img_path.with_name(f"processed_{img_path.stem}_{copy_number}{img_path.suffix}")
+                    copy_number += 1
+                if img_path.suffix.lower() in {".jpg", ".jpeg"}:
+                    img = img.convert("RGB")
                 img.save(out_path)
-                output_files.append(str(out_path))
+                self.output_files.append(out_path)
                 
-                self.progress.emit(int(((idx + 1) / total_files) * 100))
-                
-            except Exception as e:
-                self.log_message.emit(f"Error processing {path_str}: {e}")
-        
-        self.log_message.emit("All processing finished successfully!")
-        self.finished.emit(output_files)
+            except Exception as exc:
+                failure = f"{img_path.name}: {exc}"
+                self.failures.append(failure)
+                self.log_message.emit(failure)
+            self.progress.emit((idx + 1) * 100 // total_files)
 
 # ----------------------------------------------------------------------
 # 3. Main Plugin User Interface
@@ -103,12 +108,11 @@ class ProcessingWorker(QThread):
 class ExamplePluginTab(QWidget):
     def __init__(self, parent=None):
         super().__init__(parent)
-        self.parent = parent
         self.meter = None  # Will be set via set_meter(self, meter)
+        self.worker = None
         
-        # Import reusable widgets from ui_shared
-        from ui_shared import FileDropListWidget
         self.file_list = FileDropListWidget()
+        self.file_list.files_dropped.connect(self.add_files)
         
         self._setup_ui()
         
@@ -155,11 +159,15 @@ class ExamplePluginTab(QWidget):
         self.slider_vignette.setValue(30)
         
         # Action Buttons
+        self.btn_add = QPushButton(tr("btn_add", "Add Images…"))
+        self.btn_add.setIcon(create_plus_icon())
+        self.btn_add.clicked.connect(self.browse_images)
+
         self.btn_process = QPushButton("Process Images")
         self.btn_process.clicked.connect(self.start_processing)
         
         self.btn_clear = QPushButton("Clear List")
-        self.btn_clear.clicked.connect(self.file_list.clear)
+        self.btn_clear.clicked.connect(self.clear_images)
         
         # Progress label & logs
         self.lbl_status = QLabel("Ready")
@@ -172,6 +180,7 @@ class ExamplePluginTab(QWidget):
         left_layout.addWidget(self.slider_vignette)
         left_layout.addStretch()
         left_layout.addWidget(self.lbl_status)
+        left_layout.addWidget(self.btn_add)
         left_layout.addWidget(self.btn_process)
         left_layout.addWidget(self.btn_clear)
         
@@ -204,14 +213,51 @@ class ExamplePluginTab(QWidget):
         # Allows interaction with the main window's Divergence/RAM meter
         self.meter = meter
 
+    def browse_images(self):
+        patterns = " ".join(f"*{suffix}" for suffix in sorted(VALID_EXTENSIONS))
+        files, _ = QFileDialog.getOpenFileNames(self, "Select Images", "", f"Images ({patterns})")
+        if files:
+            self.add_files([Path(file) for file in files])
+
+    def clear_images(self):
+        self.file_list.clear()
+        self.lbl_status.setText("Ready")
+
+    def add_files(self, paths):
+        if self.worker is not None:
+            return
+        existing = {self.file_list.item(index).data(Qt.UserRole) for index in range(self.file_list.count())}
+        added = 0
+        for path in paths:
+            if path.suffix.lower() not in VALID_EXTENSIONS or not path.is_file():
+                continue
+            path = path.resolve()
+            if str(path) in existing:
+                continue
+            item = QListWidgetItem(path.name)
+            item.setData(Qt.UserRole, str(path))
+            item.setToolTip(str(path))
+            self.file_list.addItem(item)
+            existing.add(str(path))
+            added += 1
+        if added:
+            self.lbl_status.setText(f"{self.file_list.count()} image(s) ready")
+
+    def set_processing(self, processing):
+        self.btn_process.setEnabled(not processing)
+        self.btn_add.setEnabled(not processing)
+        self.btn_clear.setEnabled(not processing)
+        self.file_list.setAcceptDrops(not processing)
+
     def start_processing(self):
-        # Fetch file paths dropped in the list widget
-        files = self.file_list.get_files()
+        if self.worker is not None:
+            return
+        files = [self.file_list.item(index).data(Qt.UserRole) for index in range(self.file_list.count())]
         if not files:
-            QMessageBox.warning(self, "No Files", "Please drop one or more images into the list box.")
+            ModernDialog.show_warning(self, "No Images", "Add or drop one or more images first.")
             return
             
-        self.btn_process.setEnabled(False)
+        self.set_processing(True)
         self.lbl_status.setText("Processing...")
         
         if self.meter:
@@ -228,16 +274,26 @@ class ExamplePluginTab(QWidget):
         self.worker.finished.connect(self.processing_finished)
         self.worker.start()
 
-    def processing_finished(self, output_files):
-        self.btn_process.setEnabled(True)
-        self.lbl_status.setText("Done!")
+    def processing_finished(self):
+        worker = self.worker
+        self.worker = None
+        output_count = len(worker.output_files)
+        failures = worker.failures
+        worker.deleteLater()
+        self.set_processing(False)
+        self.lbl_status.setText(f"{output_count} image(s) processed")
         if self.meter:
-            self.meter.reset()
-        QMessageBox.information(
-            self,
-            "Success",
-            f"Successfully processed {len(output_files)} image(s)!\nSaved with 'processed_' prefix in their folders."
-        )
+            self.meter.set_message(None)
+        message = f"Processed {output_count} of {output_count + len(failures)} image(s)."
+        if output_count:
+            message += "\nOutput files start with 'processed_' and are saved beside the originals."
+        if failures:
+            details = "\n".join(failures[:5])
+            if len(failures) > 5:
+                details += f"\nAnd {len(failures) - 5} more."
+            ModernDialog.show_warning(self, "Processing Finished", f"{message}\n\n{details}")
+        else:
+            ModernDialog.show_info(self, "Processing Finished", message)
 
     def set_theme(self, theme_name):
         # Apply theme-specific stylesheets to match the rest of LABOKit

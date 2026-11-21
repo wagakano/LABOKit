@@ -26,6 +26,7 @@ from PySide6.QtWidgets import (
     QDialog, QPlainTextEdit, QSplashScreen, QMenuBar, QSizePolicy,
     QScrollArea, QMenu
 )
+from shiboken6 import isValid
 from ui_shared import FileDropListWidget, ZoomableImageWidget, DivergenceMeter, create_plus_icon, ModernDialog, ModernProgressDialog, VALID_EXTENSIONS
 
 # Import Core Tabs
@@ -421,7 +422,8 @@ class LABOKitMainWindow(QMainWindow):
         self.meter = DivergenceMeter()
 
         self.tabs = QTabWidget()
-        self.tabs.setUsesScrollButtons(False)
+        self.tabs.setUsesScrollButtons(True)
+        self.tabs.setElideMode(Qt.ElideNone)
         self.bg_tab = BgRemoverTab(meter=self.meter, parent=self)
         self.up_tab = UpscalerTab(meter=self.meter, parent=self)
         self.tabs.addTab(self.bg_tab, tr("tab_bg"))
@@ -433,6 +435,10 @@ class LABOKitMainWindow(QMainWindow):
         self.inactivity_timer = QTimer(self)
         self.inactivity_timer.timeout.connect(self.purge_ai_models)
         self.inactivity_timer.start(300000) # 5 mins
+        self._close_retry = QTimer(self)
+        self._close_retry.setSingleShot(True)
+        self._close_retry.setInterval(250)
+        self._close_retry.timeout.connect(self.close)
 
         self.loaded_plugins = []
         self._setup_menu()
@@ -449,6 +455,7 @@ class LABOKitMainWindow(QMainWindow):
         save_settings({"theme": theme_name})
         app = QApplication.instance()
         if app:
+            app.setProperty("labokitTheme", theme_name)
             app.setStyleSheet(get_app_stylesheet(theme_name))
         
         if hasattr(self, 'custom_title_bar') and hasattr(self.custom_title_bar, 'set_theme'):
@@ -538,6 +545,9 @@ class LABOKitMainWindow(QMainWindow):
                 except Exception as e:
                     print(f"Error setting theme for {p.get('name')}: {e}")
 
+        for preview in self.tabs.findChildren(ZoomableImageWidget):
+            preview.set_theme(theme_name)
+
     def nativeEvent(self, eventType, message):
         if sys.platform == "win32" and eventType == b"windows_generic_MSG":
             import ctypes
@@ -597,19 +607,22 @@ class LABOKitMainWindow(QMainWindow):
                 self._purge_notice_active = False
 
     def closeEvent(self, event):
-        """Gracefully terminate worker threads and release model memory on application shutdown."""
-        try:
-            if hasattr(self, 'bg_tab') and hasattr(self.bg_tab, 'worker') and self.bg_tab.worker:
-                if self.bg_tab.worker.isRunning():
-                    self.bg_tab.worker.stop()
-                    self.bg_tab.worker.wait(1000)
-            if hasattr(self, 'up_tab') and hasattr(self.up_tab, 'worker') and self.up_tab.worker:
-                if self.up_tab.worker.isRunning():
-                    self.up_tab.worker.stop()
-                    self.up_tab.worker.wait(1000)
-            self.purge_ai_models()
-        except Exception as e:
-            print(f"Error during closeEvent cleanup: {e}")
+        owners = [self, self.bg_tab, self.up_tab, *(plugin["tab"] for plugin in self.loaded_plugins)]
+        running = {
+            worker for owner in owners for worker in vars(owner).values()
+            if isinstance(worker, QThread) and isValid(worker) and worker.isRunning()
+        }
+        if running:
+            for tab in (self.bg_tab, self.up_tab):
+                worker = getattr(tab, "worker", None)
+                if worker in running:
+                    worker.stop()
+            self.meter.set_message("Waiting for active work before closing…")
+            self._close_retry.start()
+            event.ignore()
+            return
+        self._close_retry.stop()
+        self.purge_ai_models()
         event.accept()
 
 
@@ -652,6 +665,9 @@ class LABOKitMainWindow(QMainWindow):
                         tab.set_meter(self.meter)
                     if hasattr(self, "current_theme") and hasattr(tab, "set_theme"):
                         tab.set_theme(self.current_theme)
+                    if hasattr(self, "current_theme"):
+                        for preview in tab.findChildren(ZoomableImageWidget):
+                            preview.set_theme(self.current_theme)
                     
                     name = getattr(mod, "PLUGIN_NAME", f.stem)
                     self.tabs.addTab(tab, name)
@@ -893,11 +909,12 @@ def global_exception_handler(exc_type, exc_value, exc_traceback):
         print(f"Failed to display crash dialog: {e}")
 
 def get_app_stylesheet(theme="light"):
-    arrow_dark = (APP_DATA / "arrow_dark.png").as_posix()
-    arrow_light = (APP_DATA / "arrow_light.png").as_posix()
+    arrow_dark = (INTERNAL_DIR / "arrow_dark.png").as_posix()
+    arrow_light = (INTERNAL_DIR / "arrow_light.png").as_posix()
     if theme == "dark":
         return f"""
             QMessageBox {{ font-family: "Segoe UI", sans-serif; background-color: #16161a; color: #e1e1e6; }}
+            QMessageBox QLabel {{ color: #e1e1e6; background: transparent; border: none; }}
             QMainWindow {{ background-color: #121216; }}
             #MainFrame {{
                 background-color: #121216;
@@ -907,8 +924,9 @@ def get_app_stylesheet(theme="light"):
             QTabWidget::pane {{ border: none; top: -1px; }}
             QTabBar::tab {{ background-color: #1c1c22; border: 1px solid #2e2e38; padding: 4px 12px; border-top-left-radius: 4px; border-top-right-radius: 4px; color: #e1e1e6; font-weight: bold; }}
             QTabBar::tab:selected {{ background-color: #16161a; border-bottom: 1px solid #16161a; color: #ffffff; }}
-            QTabBar::scroller {{ width: 0px; height: 0px; }}
-            QTabBar QToolButton {{ width: 0px; height: 0px; border: none; background: transparent; }}
+            QTabBar::scroller {{ width: 43px; }}
+            QTabBar QToolButton {{ background-color: #282832; color: #e1e1e6; border: 1px solid #383846; }}
+            QTabBar QToolButton:hover {{ background-color: #383846; }}
             QPushButton {{
                 background-color: qlineargradient(x1:0, y1:0, x2:0, y2:1, stop:0 #282832, stop:1 #1c1c22);
                 border: 1px solid #383846;
@@ -925,7 +943,7 @@ def get_app_stylesheet(theme="light"):
             QListWidget::item:hover {{ background-color: #242430; border-radius: 3px; }}
             QComboBox {{ background-color: #16161a; border: 1px solid #2e2e38; border-radius: 4px; padding: 4px 20px 4px 10px; color: #e1e1e6; font-weight: bold; }}
             QComboBox::drop-down {{ subcontrol-origin: padding; subcontrol-position: top right; width: 20px; border: none; background: transparent; }}
-            QComboBox::down-arrow {{ image: url({arrow_dark}); }}
+            QComboBox::down-arrow {{ image: url("{arrow_dark}"); }}
             QComboBox QAbstractItemView, QComboBox QListView {{ background-color: #1c1c1c; border: 1px solid #3d3d3d; border-radius: 6px; color: #ffffff; selection-background-color: #333333; selection-color: #ffffff; outline: 0px; padding: 4px; }}
             QComboBox QAbstractItemView::item, QComboBox QListView::item {{ min-height: 24px; padding: 4px 8px; border-radius: 4px; color: #ffffff; }}
             QComboBox QAbstractItemView::item:hover, QComboBox QAbstractItemView::item:selected {{ background-color: #333333; color: #ffffff; }}
@@ -934,6 +952,8 @@ def get_app_stylesheet(theme="light"):
             QScrollBar::add-line:vertical, QScrollBar::sub-line:vertical {{ height: 0px; }}
             QLabel#SectionHeader {{ background-color: #22222a; border-radius: 4px; padding: 4px; font-weight: bold; color: #e1e1e6; }}
             QLabel {{ padding: 2px; color: #e1e1e6; }}
+            QLabel#OutputPath {{ color: #a6adc8; margin-bottom: 5px; border: none; background: transparent; }}
+            QLabel#ImageFileDetails {{ color: #e1e1e6; border: 1px solid #383846; border-radius: 4px; padding: 4px; background: #1c1c22; }}
             QMenuBar {{ background-color: #121216; color: #e1e1e6; border-bottom: 1px solid #2e2e38; }}
             QMenuBar::item {{ background: transparent; padding: 3px 8px; color: #e1e1e6; }}
             QMenuBar::item:selected {{ background-color: #282832; color: #ffffff; }}
@@ -971,8 +991,9 @@ def get_app_stylesheet(theme="light"):
             QTabWidget::pane {{ border: none; top: -1px; }}
             QTabBar::tab {{ background-color: #dde4f5; border: 1px solid #b3bcd1; padding: 4px 12px; border-top-left-radius: 4px; border-top-right-radius: 4px; color: #1c2333; font-weight: bold; }}
             QTabBar::tab:selected {{ background-color: #f5f7fb; border-bottom: 1px solid #f5f7fb; }}
-            QTabBar::scroller {{ width: 0px; height: 0px; }}
-            QTabBar QToolButton {{ width: 0px; height: 0px; border: none; background: transparent; }}
+            QTabBar::scroller {{ width: 43px; }}
+            QTabBar QToolButton {{ background-color: #dde4f5; color: #1c2333; border: 1px solid #b3bcd1; }}
+            QTabBar QToolButton:hover {{ background-color: #cfe2ff; }}
             QPushButton {{
                 background-color: qlineargradient(x1:0, y1:0, x2:0, y2:1, stop:0 #ffffff, stop:1 #d8dfee);
                 border: 1px solid #9ca7c2;
@@ -989,7 +1010,7 @@ def get_app_stylesheet(theme="light"):
             QListWidget::item:hover {{ background-color: #e6f0ff; border-radius: 3px; }}
             QComboBox {{ background-color: #f7f9fc; border: 1px solid #b3bcd1; border-radius: 4px; padding: 4px 20px 4px 10px; color: #1c2333; font-weight: bold; }}
             QComboBox::drop-down {{ subcontrol-origin: padding; subcontrol-position: top right; width: 20px; border: none; background: transparent; }}
-            QComboBox::down-arrow {{ image: url({arrow_light}); }}
+            QComboBox::down-arrow {{ image: url("{arrow_light}"); }}
             QComboBox QAbstractItemView, QComboBox QListView {{ background-color: #ffffff; border: 1px solid #9ca7c2; border-radius: 6px; color: #1c2333; selection-background-color: #d4e3fc; selection-color: #1c2333; outline: 0px; padding: 4px; }}
             QComboBox QAbstractItemView::item, QComboBox QListView::item {{ min-height: 24px; padding: 4px 8px; border-radius: 4px; color: #1c2333; }}
             QComboBox QAbstractItemView::item:hover, QComboBox QAbstractItemView::item:selected {{ background-color: #d4e3fc; color: #1c2333; }}
@@ -998,6 +1019,8 @@ def get_app_stylesheet(theme="light"):
             QScrollBar::add-line:vertical, QScrollBar::sub-line:vertical {{ height: 0px; }}
             QLabel#SectionHeader {{ background-color: #dce3f0; border-radius: 4px; padding: 4px; font-weight: bold; color: #333d51; }}
             QLabel {{ padding: 2px; color: #1c2333; }}
+            QLabel#OutputPath {{ color: #4b556b; margin-bottom: 5px; border: none; background: transparent; }}
+            QLabel#ImageFileDetails {{ color: #1c2333; border: 1px solid #b3bcd1; border-radius: 4px; padding: 4px; background: #ffffff; }}
             QMenuBar {{ background-color: #dbe2f2; color: #1c2333; border-bottom: 1px solid #b3bcd1; }}
             QMenuBar::item {{ background: transparent; padding: 3px 8px; color: #1c2333; }}
             QMenuBar::item:selected {{ background-color: #cfe2ff; color: #101522; }}
@@ -1059,6 +1082,7 @@ def main():
         try:
             settings = load_settings()
             current_theme = settings.get("theme", "light")
+            app.setProperty("labokitTheme", current_theme)
             app.setStyleSheet(get_app_stylesheet(current_theme))
 
             # Attach to app to prevent GC
@@ -1071,23 +1095,10 @@ def main():
             app.main_window.show()
             splash.finish(app.main_window)
 
-            # Warm up AI engines on the main thread after window is shown (Idle background warmup).
-            # This makes the app open instantly in <1s while avoiding background QThread CUDA loading deadlocks.
+            # Initialize PyTorch on the main thread for CUDA compatibility.
+            # The BG Remover loads rembg in its worker because a cold Numba import can take over a minute.
             QTimer.singleShot(400, lambda: core_config.load_ai_engine())
-            QTimer.singleShot(900, lambda: core_config.load_rembg_engine())
             QTimer.singleShot(1400, lambda: app.main_window.up_tab.init_upsampler("realesr-general-x4v3.pth"))
-            
-            def _warmup_rembg_session():
-                try:
-                    rembg = core_config.load_rembg_engine()
-                    if rembg and "u2net" not in core_config.GLOBAL_REMBG_SESSION_CACHE:
-                        os.environ["U2NET_HOME"] = str(core_config.get_u2net_home("u2net"))
-                        os.environ["MODEL_CHECKSUM_DISABLED"] = "1"
-                        core_config.GLOBAL_REMBG_SESSION_CACHE["u2net"] = rembg.new_session("u2net")
-                except Exception as e:
-                    print(f"Background rembg session warmup notice: {e}")
-
-            QTimer.singleShot(1800, _warmup_rembg_session)
         except Exception as e:
             print(f"Error during startup: {e}")
 

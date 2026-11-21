@@ -40,6 +40,13 @@ All notable changes and updates made during this development cycle for the relea
 * **Loaded Images Dark Theme universalization**: Explicitly targeted `FileDropListWidget` and its viewports in both local widget styles and parent frame scoped sheets to eliminate all remaining light background and border leaks in Dark Mode.
 
 ### Fixed
+* **Theme Readability**: Corrected Dark Mode dialog colors, output paths, image metadata, format menus, and preview zoom controls. Restored dropdown arrows in both themes on a fresh install.
+* **Tab Overflow**: Restored scroll controls so all tools are reachable at smaller window widths.
+* **Video Upscaler Completion**: Reports one result per job and replaces the output only after FFmpeg completes successfully.
+* **Example Plugin**: Added file browsing and working drag and drop, JPEG export, and batch failure reporting.
+* **Dithering FX Animation**: Uses Jitter / Noise when the selected dither mode has no pattern to scroll.
+* **Cold Startup Responsiveness**: Loads background-removal dependencies in the processing worker so first-time Numba compilation leaves the main window responsive.
+* **Safe Shutdown**: Keeps the app open until running processing and update threads can exit safely.
 * **Main Window Thread Cleanup**: Added a `closeEvent` handler to `LABOKitMainWindow` in `main.py` to gracefully stop active `BgRemovalWorker` and `UpscalerWorker` `QThread` instances before purging AI model memory on application shutdown.
 * **Worker Partial Error Logging**: Fixed partial batch error reporting in `BgRemovalWorker` and `UpscalerWorker` to prevent silent discarding of item-level errors.
 * **Redundant Main Block Clean-Up**: Removed duplicate incomplete `main()` function definition and dead event filter blocks in `main.py`.

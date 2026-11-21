@@ -40,6 +40,7 @@ os.environ["MKL_NUM_THREADS"] = "1"
 
 import json
 import shutil
+import tempfile
 import zipfile
 from pathlib import Path
 from packaging import version
@@ -145,11 +146,20 @@ def load_settings():
     return default_settings
 
 def save_settings(settings):
+    pending_path = None
     try:
-        with open(SETTINGS_FILE, "w", encoding="utf-8") as f:
-            json.dump(settings, f, indent=2)
+        with tempfile.NamedTemporaryFile(mode="w", encoding="utf-8", dir=APP_DATA, delete=False) as pending:
+            pending_path = Path(pending.name)
+            json.dump(load_settings() | settings, pending, indent=2)
+        pending_path.replace(SETTINGS_FILE)
     except Exception as e:
         print(f"Error saving settings: {e}")
+    finally:
+        if pending_path is not None:
+            try:
+                pending_path.unlink(missing_ok=True)
+            except OSError as e:
+                print(f"Error cleaning up temporary settings: {e}")
 
 MODEL_DIR = APP_DATA / "models"
 REALESRGAN_DIR = APP_DATA / "realesrgan"

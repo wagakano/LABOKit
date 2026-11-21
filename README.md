@@ -20,7 +20,7 @@ LABOKit is a modular desktop tool for offline batch image processing. Built with
 ---
 
 > [!NOTE]
-> Plugin fixes are still in progress. Video Upscaler may show two completion dialogs for a single export. The MP4 still saves successfully. The bundled Example Plugin is still undergoing verification.
+> The Windows stability build fixes Dark Mode readability, Video Upscaler export handling, and Example Plugin file import and export. Optional plugins are still undergoing fixes and compatibility testing.
 
 <div align="center">
   <img src="assets/labokit_3.3.2_preview.png" alt="LABOKit 3.3.2 Interface Preview" width="100%" />
@@ -76,7 +76,7 @@ LABOKit is a modular desktop tool for offline batch image processing. Built with
 - **ImageLAB:** Built-in editor for creative filters, ASCII art, pixel adjustments, and glitches.
 - **Image Sequencer:** Convert image frames into animated GIFs or MP4 videos.
 - **Plugin System:** Add new tools with `.kit` plugin modules.
-- **Offline & Private:** Runs entirely on your computer — no data leaves your machine.
+- **Local processing:** Image and video processing runs on your computer. Update checks and optional downloads use an internet connection.
 - **Multilanguage Support:** Supports English, Japanese, Indonesian, Chinese, Korean, Spanish, French, German, and more.
 
 ---
@@ -86,6 +86,8 @@ LABOKit is a modular desktop tool for offline batch image processing. Built with
 ### Windows
 - **Windows installer** — [LABOKit_v3.3.2_Setup.exe](https://github.com/wagakano/LABOKit/releases/download/v3.3.2-windows/LABOKit_v3.3.2_Setup.exe)
 - **Patch ZIP for source checkouts** — [LABOKit_v3.3.2_Patch.zip](https://github.com/wagakano/LABOKit/releases/download/v3.3.2-windows/LABOKit_v3.3.2_Patch.zip)
+
+Use the Setup EXE for a new Windows installation or to upgrade an existing Windows installation. The ZIP contains source files for an existing source checkout. Supporters can install Advanced Plugins separately.
 
 ### Linux
 Source code and Linux build instructions are on the [main_linux branch](https://github.com/wagakano/LABOKit/tree/main_linux).
@@ -98,7 +100,7 @@ Contributed by **[Chizuu](https://github.com/Chizuui)**:
 
 ## Plugins & Downloads
 
-LABOKit features can be extended using `.kit` plugins. You can download `.kit` files directly below or update them in the app via **Config** > **Check for Plugin Updates**.
+LABOKit features can be extended using `.kit` plugins. Download plugins below and install them through **Config** > **Load Plugin (.kit)**. LABOKit checks for updates to installed plugins on startup.
 
 ### Installing Plugins (.kit)
 1. Open **LABOKit**.
@@ -233,5 +235,7 @@ def create_tab(ctx=None):
 
 ## License & Credits
 
-This project is licensed under the [MIT License](LICENSE).
+This project is licensed under the [MIT License](https://opensource.org/license/mit).
+
+The Windows installer bundles the FFmpeg Essentials build from Gyan Doshi under GPL version 3 or later. The release downloads include the FFmpeg source revision and build information. [FFmpeg source revision](https://github.com/FFmpeg/FFmpeg/commit/c4d22f2d2c)
 See [LABOKit_NOTICE.txt](LABOKit_NOTICE.txt) for license details regarding bundled third-party libraries.
